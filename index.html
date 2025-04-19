@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Matthew's Page</title>
+  <style>
+    body {
+      background-color: orange;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .marquee {
+      width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      box-sizing: border-box;
+      border: 2px solid white;
+      padding: 10px;
+      color: white;
+      font-size: 24px;
+      font-weight: bold;
+    }
+
+    .marquee-text {
+      display: inline-block;
+      padding-left: 100%;
+      animation: scroll-left 10s linear infinite;
+    }
+
+    @keyframes scroll-left {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-100%); }
+    }
+
+    .controls {
+      margin-top: 40px;
+    }
+
+    button, input[type="range"] {
+      display: block;
+      margin: 20px 0;
+      font-size: 18px;
+      padding: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="marquee">
+    <div class="marquee-text">Matthew is wonderful ✨ Matthew is wonderful ✨ Matthew is wonderful ✨</div>
+  </div>
+
+  <div class="controls">
+    <button onclick="alert('You clicked Button 1')">Button 1</button>
+    <button onclick="alert('You clicked Button 2')">Button 2</button>
+    
+    <label for="slider1">Slider 1</label>
+    <input type="range" id="slider1" name="slider1" min="0" max="100">
+
+    <label for="slider2">Slider 2</label>
+    <input type="range" id="slider2" name="slider2" min="0" max="100">
+  </div>
+
+</body>
+</html>
