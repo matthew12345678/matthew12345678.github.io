@@ -1,0 +1,704 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<title>Dot Sequencer Ultimate (with Real Quantize ON/OFF)</title>
+
+<style>
+
+body {
+
+background: #222;
+
+color: #eee;
+
+font-family: sans-serif;
+
+padding: 20px;
+
+}
+
+canvas {
+
+background: #444;
+
+display: block;
+
+margin-bottom: 10px;
+
+border: 2px solid #eee;
+
+max-width: 100%;
+
+height: auto;
+
+}
+
+input, button {
+
+margin: 5px 0;
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+
+
+<h1>Dot Sequencer Ultimate</h1>
+
+
+
+<!-- Controls -->
+
+<input type="file" id="imgLoader" accept="image/*"><br>
+
+
+
+<canvas id="canvas"></canvas>
+
+
+
+<label for="columnInput">Column:</label>
+
+<input type="number" id="columnInput" value="0" min="0" step="1"><br>
+
+
+
+<label for="colorPicker">Dot Color:</label>
+
+<input type="color" id="colorPicker" value="#00ff00"><br>
+
+
+
+<button id="saveBtn">💾 Save Dots</button>
+
+<input type="file" id="loadDotsInput" accept=".json"><br>
+
+
+
+<button id="playBtn">▶️ Play</button>
+
+<button id="stopBtn">⏹️ Stop</button>
+
+<button id="beginBtn">⏮️ Begin at Start</button>
+
+<button id="clearBtn">🧹 Clear All Dots</button><br>
+
+
+
+<label for="tempoSlider">Tempo (ms per step):</label>
+
+<input type="range" id="tempoSlider" min="50" max="2000" value="500" step="10">
+
+<span id="tempoValue">500</span> ms<br>
+
+
+
+<label for="columnsInput">Columns:</label>
+
+<input type="number" id="columnsInput" value="8" min="1" step="1"><br>
+
+
+
+<label for="dotSizeSlider">Dot Size:</label>
+
+<input type="range" id="dotSizeSlider" min="2" max="50" value="6">
+
+<span id="dotSizeValue">6</span> px<br>
+
+
+
+<label><input type="checkbox" id="quantizeSizeToggle"> Quantize Dot Size to Column Width</label><br>
+
+<label><input type="checkbox" id="quantizeGridToggle"> Quantize Dot Position to Grid</label><br>
+
+
+
+<div id="output"></div>
+
+
+
+<script>
+
+// Setup
+
+let canvas = document.getElementById('canvas');
+
+let ctx = canvas.getContext('2d');
+
+let image = new Image();
+
+let dots = [];
+
+let columns = 8;
+
+let dotColor = "#00ff00";
+
+let dotSize = 6;
+
+let quantizeSize = false;
+
+let quantizeGrid = false;
+
+let isPlaying = false;
+
+let currentColumn = 0;
+
+let tempo = 500;
+
+let lastStepTime = 0;
+
+
+
+// Load image
+
+document.getElementById('imgLoader').addEventListener('change', e => {
+
+const file = e.target.files[0];
+
+if (!file) return;
+
+const reader = new FileReader();
+
+reader.onload = evt => {
+
+image.src = evt.target.result;
+
+};
+
+reader.readAsDataURL(file);
+
+});
+
+
+
+// Update controls
+
+document.getElementById('colorPicker').addEventListener('input', e => {
+
+dotColor = e.target.value;
+
+});
+
+
+
+document.getElementById('columnsInput').addEventListener('input', () => {
+
+columns = parseInt(document.getElementById('columnsInput').value) || 1;
+
+recalculateDotColumns();
+
+if (currentColumn >= columns) currentColumn = 0;
+
+redraw();
+
+});
+
+
+
+document.getElementById('tempoSlider').addEventListener('input', e => {
+
+tempo = parseInt(e.target.value);
+
+document.getElementById('tempoValue').textContent = tempo;
+
+});
+
+
+
+document.getElementById('dotSizeSlider').addEventListener('input', e => {
+
+dotSize = parseInt(e.target.value);
+
+document.getElementById('dotSizeValue').textContent = dotSize;
+
+redraw();
+
+});
+
+
+
+document.getElementById('quantizeSizeToggle').addEventListener('change', e => {
+
+quantizeSize = e.target.checked;
+
+redraw();
+
+});
+
+
+
+document.getElementById('quantizeGridToggle').addEventListener('change', e => {
+
+quantizeGrid = e.target.checked;
+
+if (quantizeGrid) {
+
+quantizeAllDotsToGrid();
+
+} else {
+
+unquantizeAllDots();
+
+}
+
+redraw();
+
+});
+
+
+
+// Redraw everything
+
+function redraw() {
+
+ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+if (image.src) {
+
+ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+}
+
+
+
+if (isPlaying) {
+
+const colWidth = canvas.width / columns;
+
+const playheadX = currentColumn * colWidth;
+
+ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
+
+ctx.fillRect(playheadX, 0, colWidth, canvas.height);
+
+}
+
+
+
+for (let dot of dots) {
+
+ctx.beginPath();
+
+const size = quantizeSize ? (canvas.width / columns) * 0.5 : dotSize;
+
+ctx.arc(dot.x, dot.y, size, 0, Math.PI * 2);
+
+
+
+if (isPlaying && dot.column === currentColumn) {
+
+ctx.fillStyle = 'yellow';
+
+} else {
+
+ctx.fillStyle = dot.color;
+
+}
+
+
+
+ctx.fill();
+
+ctx.strokeStyle = 'black';
+
+ctx.stroke();
+
+}
+
+}
+
+
+
+// Image loaded
+
+image.onload = () => {
+
+canvas.width = image.width;
+
+canvas.height = image.height;
+
+redraw();
+
+};
+
+
+
+// Add or remove dots
+
+canvas.addEventListener('click', e => {
+
+const rect = canvas.getBoundingClientRect();
+
+const scaleX = canvas.width / rect.width;
+
+const scaleY = canvas.height / rect.height;
+
+
+
+let x = (e.clientX - rect.left) * scaleX;
+
+let y = (e.clientY - rect.top) * scaleY;
+
+
+
+const gridSize = canvas.width / columns;
+
+if (quantizeGrid) {
+
+x = Math.round(x / gridSize) * gridSize;
+
+y = Math.round(y / gridSize) * gridSize;
+
+}
+
+
+
+let clickedDotIndex = dots.findIndex(dot => {
+
+const dx = dot.x - x;
+
+const dy = dot.y - y;
+
+return Math.sqrt(dx * dx + dy * dy) < 10;
+
+});
+
+
+
+if (clickedDotIndex !== -1) {
+
+dots.splice(clickedDotIndex, 1);
+
+console.log(`Removed dot ${clickedDotIndex}`);
+
+} else {
+
+let colWidth = canvas.width / columns;
+
+let column = Math.floor(x / colWidth);
+
+
+
+dots.push({
+
+x,
+
+y,
+
+column,
+
+color: dotColor,
+
+originalX: x,
+
+originalY: y
+
+});
+
+console.log(`Added dot at x=${x.toFixed(1)}, y=${y.toFixed(1)}, column=${column}, color=${dotColor}`);
+
+}
+
+
+
+redraw();
+
+logAllDots();
+
+});
+
+
+
+// Quantize all existing dots
+
+function quantizeAllDotsToGrid() {
+    const colWidth = canvas.width / columns;
+    for (let dot of dots) {
+        dot.x = Math.round(dot.originalX / colWidth) * colWidth;
+        dot.y = dot.originalY; // don't quantize Y
+    }
+    recalculateDotColumns();
+    console.log("🎯 All dots snapped to columns (Quantize ON).");
+}
+
+
+
+// Restore original positions
+
+function unquantizeAllDots() {
+
+for (let dot of dots) {
+
+dot.x = dot.originalX;
+
+dot.y = dot.originalY;
+
+}
+
+recalculateDotColumns();
+
+console.log("🎯 All dots restored to original positions (Quantize OFF).");
+
+}
+
+
+
+// Recalculate columns
+
+function recalculateDotColumns() {
+
+const colWidth = canvas.width / columns;
+
+for (let dot of dots) {
+
+dot.column = Math.floor(dot.x / colWidth);
+
+}
+
+}
+
+
+
+// Recall dots
+
+document.getElementById('columnInput').addEventListener('input', () => {
+
+recallColumn();
+
+});
+
+
+
+function recallColumn() {
+
+const colNum = parseInt(document.getElementById('columnInput').value);
+
+if (isNaN(colNum)) return;
+
+
+
+const recalledDots = dots.filter(dot => dot.column === colNum);
+
+
+
+document.getElementById('output').innerHTML = `<h3>Dots in column ${colNum}:</h3>` +
+
+recalledDots.map(dot => `x: ${dot.x.toFixed(1)}, y: ${dot.y.toFixed(1)}, color: ${dot.color}`).join('<br>');
+
+
+
+console.log("Recalled dots:", recalledDots);
+
+}
+
+
+
+function logAllDots() {
+
+console.log("All dots:");
+
+dots.forEach((dot, idx) => {
+
+console.log(`Dot ${idx}: x=${dot.x.toFixed(1)}, y=${dot.y.toFixed(1)}, column=${dot.column}, color=${dot.color}`);
+
+});
+
+}
+
+
+
+// Save/load
+
+document.getElementById('saveBtn').addEventListener('click', () => {
+
+const blob = new Blob([JSON.stringify(dots, null, 2)], { type: 'application/json' });
+
+const url = URL.createObjectURL(blob);
+
+
+
+const a = document.createElement('a');
+
+a.href = url;
+
+a.download = 'dots.json';
+
+a.click();
+
+
+
+URL.revokeObjectURL(url);
+
+console.log("✅ Dots saved!");
+
+});
+
+
+
+document.getElementById('loadDotsInput').addEventListener('change', e => {
+
+const file = e.target.files[0];
+
+if (!file) return;
+
+
+
+const reader = new FileReader();
+
+reader.onload = evt => {
+
+try {
+
+const loadedDots = JSON.parse(evt.target.result);
+
+if (Array.isArray(loadedDots)) {
+
+dots = loadedDots;
+
+recalculateDotColumns();
+
+redraw();
+
+console.log("✅ Dots loaded:", dots);
+
+} else {
+
+console.error("Invalid dots file!");
+
+}
+
+} catch (err) {
+
+console.error("Error loading dots:", err);
+
+}
+
+};
+
+reader.readAsText(file);
+
+});
+
+
+
+// Clear dots
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+
+dots = [];
+
+document.getElementById('output').innerHTML = "";
+
+redraw();
+
+console.log("🧹 All dots cleared.");
+
+});
+
+
+
+// Play/Stop/Begin
+
+document.getElementById('playBtn').addEventListener('click', () => {
+
+if (isPlaying) return;
+
+isPlaying = true;
+
+lastStepTime = performance.now();
+
+requestAnimationFrame(playLoop);
+
+});
+
+
+
+document.getElementById('stopBtn').addEventListener('click', () => {
+
+isPlaying = false;
+
+});
+
+
+
+document.getElementById('beginBtn').addEventListener('click', () => {
+
+currentColumn = 0;
+
+document.getElementById('columnInput').value = currentColumn;
+
+recallColumn();
+
+redraw();
+
+if (!isPlaying) {
+
+isPlaying = true;
+
+lastStepTime = performance.now();
+
+requestAnimationFrame(playLoop);
+
+}
+
+});
+
+
+
+// Play loop
+
+function playLoop(now) {
+
+if (!isPlaying) return;
+
+
+
+const elapsed = now - lastStepTime;
+
+if (elapsed >= tempo) {
+
+stepSequencer();
+
+lastStepTime = now;
+
+}
+
+
+
+requestAnimationFrame(playLoop);
+
+}
+
+
+
+function stepSequencer() {
+
+currentColumn = (currentColumn + 1) % columns;
+
+document.getElementById('columnInput').value = currentColumn;
+
+recallColumn();
+
+redraw();
+
+}
+
+</script>
+
+
+
+</body>
+
+</html>
+
+
