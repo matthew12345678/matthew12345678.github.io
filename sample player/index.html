@@ -1,1218 +1,361 @@
-
-
-
 <!DOCTYPE html>
-
-
-
 <html lang="en">
-
-
-
 <head>
-
-
-
-<meta charset="utf-8">
-
-
-
-<title>RNBO Sample Loader + GUI</title>
-
-
-
+<meta charset="UTF-8">
+<title>RNBO Sample Slicer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-
-
-<meta name="theme-color" content="#000000">
-
-
-
-<meta name="rnbo-version" content="1.0.0-alpha.5">
-
-
-
-<style>
-
-
-
-body {
-
-
-
-font-family: sans-serif;
-
-
-
-background: #121212;
-
-
-
-color: yellow;
-
-
-
-padding: 2em;
-
-
-
-}
-
-
-
-
-
-
-
-input[type="file"] {
-
-
-
-margin-bottom: 2rem;
-
-
-
-}
-
-
-
-
-
-
-
-#log {
-
-
-
-background: #333;
-
-
-
-color: #eee;
-
-
-
-padding: 1em;
-
-
-
-margin-top: 2em;
-
-
-
-font-size: 0.9em;
-
-
-
-}
-
-
-
-
-
-
-
-.waveform-container {
-
-
-
-display: flex;
-
-
-
-align-items: center;
-
-
-
-}
-
-
-
-
-
-
-
-.waveform-block {
-
-
-
-display: flex;
-
-
-
-flex-direction: column;
-
-
-
-align-items: flex-start;
-
-
-
-}
-
-
-
-
-
-
-
-.visual-wrapper {
-
-
-
-display: flex;
-
-
-
-flex-direction: row;
-
-
-
-align-items: center;
-
-
-
-margin-bottom: 10px;
-
-
-
-}
-
-
-
-
-
-
-
-.side-sliders {
-
-
-
-display: flex;
-
-
-
-flex-direction: column;
-
-
-
-align-items: center;
-
-
-
-margin-right: 10px;
-
-
-
-height: 120px;
-
-
-
-}
-
-
-
-
-
-
-
-.pan-slider,
-
-
-
-.volume-slider {
-
-
-
-display: flex;
-
-
-
-flex-direction: column;
-
-
-
-align-items: center;
-
-
-
-margin-bottom: 10px;
-
-
-
-}
-
-
-
-
-
-
-
-.volume-slider input[type="range"] {
-
-
-
-writing-mode: bt-lr;
-
-
-
--webkit-appearance: slider-vertical;
-
-
-
-width: 20px;
-
-
-
-height: 100%;
-
-
-
-}
-
-
-
-
-
-
-
-#waveform {
-
-
-
-display: block;
-
-
-
-background: #fff;
-
-
-
-border: 1px solid #ccc;
-
-
-
-width: 600px;
-
-
-
-height: 120px;
-
-
-
-}
-
-
-
-
-
-
-
-.range-slider {
-
-
-
-position: relative;
-
-
-
-width: 600px;
-
-
-
-height: 40px;
-
-
-
-}
-
-
-
-
-
-
-
-/* Disable interaction on base input so only the thumb is clickable */
-
-
-
-.range-slider input[type="range"] {
-
-
-
-position: absolute;
-
-
-
-width: 100%;
-
-
-
-height: 40px;
-
-
-
-background: none;
-
-
-
--webkit-appearance: none;
-
-
-
-pointer-events: none;
-
-
-
-}
-
-
-
-
-
-
-
-/* Enable pointer events only on the thumb for each slider */
-
-
-
-.range-slider input#min {
-
-
-
-z-index: 2;
-
-
-
-}
-
-
-
-
-
-
-
-.range-slider input#max {
-
-
-
-z-index: 3;
-
-
-
-}
-
-
-
-
-
-
-
-/* Make the thumbs large and fully clickable */
-
-
-
-.range-slider input[type="range"]::-webkit-slider-thumb {
-
-
-
--webkit-appearance: none;
-
-
-
-pointer-events: all;
-
-
-
-height: 24px;
-
-
-
-width: 24px;
-
-
-
-background: #ccc;
-
-
-
-border-radius: 50%;
-
-
-
-cursor: pointer;
-
-
-
-margin-top: -10px;
-
-
-
-position: relative;
-
-
-
-z-index: 4;
-
-
-
-}
-
-
-
-
-
-
-
-.range-fill {
-
-
-
-position: absolute;
-
-
-
-height: 4px;
-
-
-
-background: #888;
-
-
-
-top: 50%;
-
-
-
-transform: translateY(-50%);
-
-
-
-z-index: 0;
-
-
-
-}
-
-
-
-
-
-
-
-#dragZone {
-
-
-
-margin-left: 110px;
-
-
-
-margin-top: 0.5rem;
-
-
-
-}
-
-
-
-
-
-
-
-.control-column {
-
-
-
-display: flex;
-
-
-
-flex-direction: column;
-
-
-
-justify-content: flex-start;
-
-
-
-margin-left: 20px;
-
-
-
-gap: 10px;
-
-
-
-}
-
-
-
-
-
-
-
-.control-row {
-
-
-
-display: flex;
-
-
-
-align-items: center;
-
-
-
-gap: 12px;
-
-
-
-flex-wrap: wrap;
-
-
-
-}
-
-
-
-
-
-
-
-.rate-block {
-
-
-
-display: flex;
-
-
-
-flex-direction: column;
-
-
-
-align-items: flex-start;
-
-
-
-gap: 6px;
-
-
-
-}
-
-
-
-
-
-
-
-.rate-group {
-
-
-
-display: flex;
-
-
-
-align-items: center;
-
-
-
-gap: 6px;
-
-
-
-font-size: 14px;
-
-
-
-}
-
-
-
-
-
-
-
-.toggle {
-
-
-
-display: flex;
-
-
-
-align-items: center;
-
-
-
-gap: 6px;
-
-
-
-}
-
-
-
-
-
-
-
-button.momentary {
-
-
-
-font-size: 11px;
-
-
-
-padding: 3px 6px;
-
-
-
-min-width: 80px;
-
-
-
-}
-
-
-
-</style>
-
-
-
-
-
-
-
-
-
-
-
-</head>
-
-
-
-<body>
-
-
-
-
-
-
-
-<h1>RNBO Sample Loader + GUI</h1>
-
-
-
-
-
-
-
-<input type="file" id="fileInput" accept="audio/*">
-
-
-
-<div id="log">📝 Log Output:</div>
-
-
-
-
-
-
-
-<div class="waveform-container">
-
-
-
-<div class="waveform-block">
-
-
-
-
-
-
-
-<!-- Waveform + sliders in a shared column -->
-
-
-
-<div style="display: flex; flex-direction: column;">
-
-
-
-<!-- Position slider aligned with waveform -->
-
-
-
-<div style="margin: 0 0 25px 135px; width: 600px;">
-
-
-
-<label for="positionSlider" style="font-size: 12px;">Position</label><br>
-
-
-
-<input type="range" id="positionSlider" min="0" max="1" step="0.001" value="0" style="width: 100%;">
-
-
-
-</div>
-
-
-
-
-
-
-
-<div class="visual-wrapper">
-
-
-
-<div class="side-sliders">
-
-
-
-<div class="pan-slider">
-
-
-
-<input type="range" id="panSlider" min="0" max="1" step="0.01" value="0">
-
-
-
-<label for="panSlider">Pan</label>
-
-
-
-</div>
-
-
-
-<div class="volume-slider">
-
-
-
-<input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.8">
-
-
-
-<label for="volumeSlider">Volume</label>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-<canvas id="waveform" width="600" height="120"></canvas>
-
-
-
-</div>
-
-
-
-
-
-
-
-<div style="margin-left: 130px;">
-
-
-
-<div class="range-slider">
-
-
-
-<input type="range" id="min" min="0" max="100" value="0" step="1">
-
-
-
-<input type="range" id="max" min="0" max="100" value="180" step="1">
-
-
-
-<div id="range-fill" class="range-fill"></div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-<button id="dragZone">← Drag Range →</button>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-
-
-
-
-<!-- Controls -->
-
-
-
-<div class="control-column">
-
-
-
-<div class="control-row">
-
-
-
-<label class="toggle">
-
-
-
-<input type="checkbox" id="toggleStart">
-
-
-
-<span>Start</span>
-
-
-
-</label>
-
-
-
-<label class="toggle">
-
-
-
-<input type="checkbox" id="toggleBackwards">
-
-
-
-<span>Backwards</span>
-
-
-
-</label>
-
-
-
-<label class="toggle">
-
-
-
-<input type="checkbox" id="toggleLoop">
-
-
-
-<span>Loop</span>
-
-
-
-</label>
-
-
-
-</div>
-
-
-
-<div class="rate-block">
-
-
-
-<div class="rate-group">
-
-
-
-<label for="rateSlider">Rate:</label>
-
-
-
-<input type="range" id="rateSlider" min="-5" max="5" step="0.1" value="0">
-
-
-
-<span id="rateValue">0</span>
-
-
-
-</div>
-
-
-
-<button class="momentary" id="selectAllBtn">Select All</button>
-
-
-
-<button class="momentary" id="panicBtn">Panic</button>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-
-
-
-
+<!-- noUiSlider -->
+<link href="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.js"></script>
+
+<!-- RNBO -->
 <script src="https://cdn.cycling74.com/rnbo/1.3.3/rnbo.min.js"></script>
 
+<style>
+  body {
+    font-family: sans-serif;
+    background: #121212;
+    color: yellow;
+    padding: 2em;
+  }
+  .main-container {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 20px;
+  }
+  .left-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+  .slider-vertical {
+    writing-mode: bt-lr;
+    -webkit-appearance: slider-vertical;
+    width: 20px;
+    height: 150px;
+  }
+  #waveform {
+    background: #fff;
+    border: 1px solid #ccc;
+    width: 600px;
+    height: 120px;
+  }
+  #rangeSlider {
+    margin-top: 10px;
+    margin-bottom: 10px;
+    width: 600px;
+  }
+  .right-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .toggle-group, .button-group {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .midi-learn-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  button {
+    padding: 6px 12px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+</style>
+
+</head>
+<body>
+
+<input type="file" id="fileInput" accept="audio/*"><br><br>
+
+<div class="main-container">
+
+  <!-- Left controls -->
+  <div class="left-controls">
+    <div>
+      <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.8" class="slider-vertical">
+      <div>Volume</div>
+    </div>
+
+    <div>
+      <input type="range" id="panSlider" min="0" max="1" step="0.01" value="0.5" style="width: 150px;">
+      <div>Pan</div>
+    </div>
+
+    <div class="midi-learn-group">
+      <button id="midiLearnVolume">MIDI Learn Volume</button>
+      <button id="midiLearnRate">MIDI Learn Rate</button>
+      <button id="midiLearnPlay">MIDI Learn Play</button>
+      <button id="midiLearnBackwards">MIDI Learn Backwards</button>
+      <button id="midiLearnPosL">MIDI Learn Left Position</button>
+      <button id="midiLearnPosR">MIDI Learn Right Position</button>
+      <button id="midiLearnDragRange">MIDI Learn Move Head</button>
+    </div>
+  </div>
+
+  <!-- Center waveform -->
+  <div>
+    <canvas id="waveform" width="600" height="120"></canvas>
+    <div id="rangeSlider"></div>
+  </div>
+
+  <!-- Right controls -->
+  <div class="right-controls">
+
+    <div class="toggle-group">
+      <label><input type="checkbox" id="toggleStart" checked> Start</label>
+      <label><input type="checkbox" id="toggleBackwards"> Backwards</label>
+      <label><input type="checkbox" id="toggleLoop" checked> Loop</label>
+    </div>
+
+    <div>
+      <input type="range" id="rateSlider" min="0.001" max="3" step="0.001" value="1.0" style="width: 150px;">
+      <div>Rate: <span id="rateValue">1.00</span></div>
+    </div>
+
+    <div class="button-group">
+      <button id="selectAllBtn">Select All</button>
+      <button id="panicBtn">Panic</button>
+    </div>
+
+  </div>
+
+</div>
+
 <script>
-
-const log = msg => {
-    console.log(msg);
-    document.getElementById("log").innerHTML += `<br>${msg}`;
-};
-
+// RNBO Setup
 let device;
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 window.audioContext = audioContext;
 
 async function setupRNBO() {
-    try {
-        log("🧠 Fetching patch...");
-        const res = await fetch("export/patch.export.json");
-        if (!res.ok) throw new Error("⚠️ Failed to load patch.export.json");
-
-        const patcher = await res.json();
-        device = await RNBO.createDevice({ patcher, context: audioContext });
-        device.node.connect(audioContext.destination);
-        window.device = device;
-
-        log("✅ RNBO device is ready.");
-    } catch (err) {
-        log("❌ RNBO setup error: " + err.message);
-    }
+  const res = await fetch("export/patch.export.json");
+  const patcher = await res.json();
+  device = await RNBO.createDevice({ patcher, context: audioContext });
+  device.node.connect(audioContext.destination);
 }
-
-function setRNBOParam(id, value) {
-    const param = device?.parametersById.get(id);
-    if (param) param.value = value;
-}
-
-// 🔥 NEW - Reset everything neatly
-function resetAllControls() {
-    setRNBOParam("panic", 1);
-    setTimeout(() => setRNBOParam("panic", 0), 100);
-
-    document.getElementById("volumeSlider").value = 0.8;
-    document.getElementById("panSlider").value = 0.5;
-    document.getElementById("rateSlider").value = 1.0;
-    document.getElementById("rateValue").textContent = "1.0";
-    document.getElementById("toggleLoop").checked = true;
-    document.getElementById("toggleBackwards").checked = false;
-    document.getElementById("toggleStart").checked = true;
-
-    setRNBOParam("volume", 0.8);
-    setRNBOParam("pan", 0.5);
-    setRNBOParam("rate", 1.0);
-    setRNBOParam("loop", 1.0);
-    setRNBOParam("backwards", 0);
-    setRNBOParam("play", 1.0);
-
-    const minSlider = document.getElementById("min");
-    const maxSlider = document.getElementById("max");
-    const rangeFill = document.getElementById("range-fill");
-
-    minSlider.value = 0;
-    maxSlider.value = 100;
-    rangeFill.style.left = "0%";
-    rangeFill.style.width = "100%";
-
-    setRNBOParam("posl", 0);
-    setRNBOParam("posr", 1);
-}
-
-document.getElementById("volumeSlider").addEventListener("input", e => {
-    setRNBOParam("volume", parseFloat(e.target.value));
-});
-
-document.getElementById("panSlider").addEventListener("input", e => {
-    setRNBOParam("pan", parseFloat(e.target.value));
-});
-
-document.getElementById("rateSlider").addEventListener("input", e => {
-    const val = parseFloat(e.target.value);
-    document.getElementById("rateValue").textContent = val.toFixed(1);
-    setRNBOParam("rate", val);
-});
-
-document.getElementById("toggleLoop").addEventListener("change", e => {
-    setRNBOParam("loop", e.target.checked ? 1 : 0);
-});
-
-document.getElementById("toggleBackwards").addEventListener("change", e => {
-    setRNBOParam("backwards", e.target.checked ? 1 : 0);
-});
-
-document.getElementById("toggleStart").addEventListener("change", e => {
-    setRNBOParam("play", e.target.checked ? 1 : 0);
-});
-
-// Panic button - now just calls resetAllControls!
-document.getElementById("panicBtn").addEventListener("click", () => {
-    resetAllControls();
-});
-
-// Select All button (you can keep your existing logic for this one)
-document.getElementById("selectAllBtn").addEventListener("click", () => {
-    setRNBOParam("selectall", 1);
-    setTimeout(() => setRNBOParam("selectall", 0), 100);
-
-    const minSlider = document.getElementById("min");
-    const maxSlider = document.getElementById("max");
-    const rangeFill = document.getElementById("range-fill");
-
-    minSlider.value = 0;
-    maxSlider.value = 100;
-    rangeFill.style.left = "0%";
-    rangeFill.style.width = "100%";
-
-    setRNBOParam("posl", 0);
-    setRNBOParam("posr", 1);
-});
-
-// ------- Sliders and Dragging logic (same as before) -------
-const minSlider = document.getElementById('min');
-const maxSlider = document.getElementById('max');
-const rangeFill = document.getElementById('range-fill');
-const dragZone = document.getElementById('dragZone');
-
-function updateRange() {
-    let min = parseInt(minSlider.value);
-    let max = parseInt(maxSlider.value);
-    if (min > max) [min, max] = [max, min];
-
-    minSlider.value = min;
-    maxSlider.value = max;
-    rangeFill.style.left = min + '%';
-    rangeFill.style.width = (max - min) + '%';
-
-    setRNBOParam("posl", min / 100);
-    setRNBOParam("posr", max / 100);
-}
-
-minSlider.addEventListener('input', updateRange);
-maxSlider.addEventListener('input', updateRange);
-
-let isDragging = false;
-let startX, startMin, startMax;
-
-dragZone.addEventListener('mousedown', e => {
-    isDragging = true;
-    startX = e.clientX;
-    startMin = parseInt(minSlider.value);
-    startMax = parseInt(maxSlider.value);
-    document.body.style.cursor = 'ew-resize';
-});
-
-window.addEventListener('mouseup', () => {
-    isDragging = false;
-    document.body.style.cursor = '';
-});
-
-window.addEventListener('mousemove', e => {
-    if (!isDragging) return;
-    const dx = e.clientX - startX;
-    const delta = Math.round(dx / 3);
-    const range = startMax - startMin;
-    let newMin = Math.max(0, Math.min(100 - range, startMin + delta));
-    let newMax = newMin + range;
-
-    minSlider.value = newMin;
-    maxSlider.value = newMax;
-    updateRange();
-});
-
-updateRange();
-
-// 🔥 After loading an audio file, reset everything automatically
-document.getElementById('fileInput').addEventListener('change', async (evt) => {
-    const file = evt.target.files[0];
-    if (!file) return log("⚠️ No file selected");
-
-    const reader = new FileReader();
-    reader.onload = async () => {
-        try {
-            await audioContext.resume();
-            log("🎵 Decoding audio...");
-            const buffer = await audioContext.decodeAudioData(reader.result);
-            log("✅ Audio decoded");
-
-            device.setDataBuffer("kick", buffer, buffer.numberOfChannels, buffer.sampleRate);
-            drawWaveform(buffer);
-
-            // 👉 Automatically reset all controls after loading
-            resetAllControls();
-        } catch (err) {
-            log("❌ Audio decode/load error: " + err.message);
-        }
-    };
-    reader.readAsArrayBuffer(file);
-});
-
-// Waveform drawing (same as before)
-function drawWaveform(buffer) {
-    const canvas = document.getElementById("waveform");
-    const ctx = canvas.getContext("2d");
-    const width = canvas.width;
-    const height = canvas.height;
-    const data = buffer.getChannelData(0);
-    const step = Math.ceil(data.length / width);
-    const amp = height / 2;
-
-    ctx.clearRect(0, 0, width, height);
-    ctx.beginPath();
-    for (let i = 0; i < width; i++) {
-        const slice = data.slice(i * step, (i + 1) * step);
-        const min = Math.min(...slice);
-        const max = Math.max(...slice);
-        ctx.moveTo(i, (1 + min) * amp);
-        ctx.lineTo(i, (1 + max) * amp);
-    }
-    ctx.strokeStyle = "#0077aa";
-    ctx.stroke();
-}
-
 setupRNBO();
+
+// Set Parameter
+function setRNBOParam(id, value) {
+  const param = device?.parametersById.get(id);
+  if (param) param.value = value;
+}
+
+// Draw Waveform
+function drawWaveform(buffer) {
+  const canvas = document.getElementById("waveform");
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const data = buffer.getChannelData(0);
+  const step = Math.ceil(data.length / width);
+  const amp = height / 2;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.beginPath();
+  for (let i = 0; i < width; i++) {
+    const slice = data.slice(i * step, (i + 1) * step);
+    const min = Math.min(...slice);
+    const max = Math.max(...slice);
+    ctx.moveTo(i, (1 + min) * amp);
+    ctx.lineTo(i, (1 + max) * amp);
+  }
+  ctx.strokeStyle = "#0077aa";
+  ctx.stroke();
+}
+
+// Setup noUiSlider
+const rangeSlider = document.getElementById('rangeSlider');
+noUiSlider.create(rangeSlider, {
+  start: [0, 1],
+  connect: true,
+  behaviour: 'drag',
+  range: { min: 0, max: 1 },
+  step: 0.001,
+  margin: 0.01
+});
+rangeSlider.noUiSlider.on('update', (values) => {
+  const [posl, posr] = values.map(parseFloat);
+  setRNBOParam('posl', posl);
+  setRNBOParam('posr', posr);
+});
+
+// Flash button
+function flashButton(id) {
+  const button = document.getElementById(id);
+  const originalColor = window.getComputedStyle(button).backgroundColor;
+  button.style.backgroundColor = 'red';
+  setTimeout(() => {
+    button.style.backgroundColor = originalColor;
+  }, 150);
+}
+
+// Reset
+function resetAllControls() {
+  document.getElementById('volumeSlider').value = 0.8;
+  document.getElementById('rateSlider').value = 1.0;
+  document.getElementById('rateValue').textContent = "1.00";
+  document.getElementById('panSlider').value = 0.5;
+  document.getElementById('toggleLoop').checked = true;
+  document.getElementById('toggleBackwards').checked = false;
+  document.getElementById('toggleStart').checked = true;
+  rangeSlider.noUiSlider.set([0, 1]);
+  setRNBOParam('volume', 0.8);
+  setRNBOParam('rate', 1.0);
+  setRNBOParam('pan', 0.5);
+  setRNBOParam('loop', 1.0);
+  setRNBOParam('backwards', 0);
+  setRNBOParam('play', 1.0);
+  setRNBOParam('posl', 0);
+  setRNBOParam('posr', 1);
+}
+
+// File Upload
+document.getElementById('fileInput').addEventListener('change', async (evt) => {
+  const file = evt.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    await audioContext.resume();
+    const buffer = await audioContext.decodeAudioData(reader.result);
+    device.setDataBuffer("kick", buffer, buffer.numberOfChannels, buffer.sampleRate);
+    drawWaveform(buffer);
+    resetAllControls();
+    setRNBOParam('panic', 1);
+    setTimeout(() => setRNBOParam('panic', 0), 100);
+    flashButton('panicBtn');
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+// Buttons
+document.getElementById('panicBtn').addEventListener('click', () => {
+  setRNBOParam('panic', 1);
+  setTimeout(() => setRNBOParam('panic', 0), 100);
+  resetAllControls();
+  flashButton('panicBtn');
+});
+
+document.getElementById('selectAllBtn').addEventListener('click', () => {
+  rangeSlider.noUiSlider.set([0, 1]);
+  setRNBOParam('posl', 0);
+  setRNBOParam('posr', 1);
+  flashButton('selectAllBtn');
+});
+
+// Sliders and Toggles
+document.getElementById('volumeSlider').addEventListener('input', (e) => {
+  setRNBOParam('volume', parseFloat(e.target.value));
+});
+document.getElementById('rateSlider').addEventListener('input', (e) => {
+  setRNBOParam('rate', parseFloat(e.target.value));
+  document.getElementById('rateValue').textContent = parseFloat(e.target.value).toFixed(2);
+});
+document.getElementById('panSlider').addEventListener('input', (e) => {
+  setRNBOParam('pan', parseFloat(e.target.value));
+});
+document.getElementById('toggleStart').addEventListener('change', (e) => {
+  setRNBOParam('play', e.target.checked ? 1 : 0);
+});
+document.getElementById('toggleBackwards').addEventListener('change', (e) => {
+  setRNBOParam('backwards', e.target.checked ? 1 : 0);
+});
+document.getElementById('toggleLoop').addEventListener('change', (e) => {
+  setRNBOParam('loop', e.target.checked ? 1 : 0);
+});
+
+// MIDI Learn
+let midiAccess = null;
+let midiMapping = JSON.parse(localStorage.getItem('midiMapping') || '{}');
+
+navigator.requestMIDIAccess().then((access) => {
+  midiAccess = access;
+  for (let input of midiAccess.inputs.values()) {
+    input.onmidimessage = handleMIDIMessage;
+  }
+});
+
+function handleMIDIMessage(message) {
+  const [status, data1, data2] = message.data;
+  if (status >= 176 && status <= 191) {
+    for (let id in midiMapping) {
+      if (midiMapping[id] === data1) {
+        if (id === 'posl') {
+          const values = rangeSlider.noUiSlider.get();
+          let r = parseFloat(values[1]);
+          let newL = (data2 / 127);
+          if (r - newL < 0.01) newL = r - 0.01;
+          rangeSlider.noUiSlider.set([newL, r]);
+        }
+        else if (id === 'posr') {
+          const values = rangeSlider.noUiSlider.get();
+          let l = parseFloat(values[0]);
+          let newR = (data2 / 127);
+          if (newR - l < 0.01) newR = l + 0.01;
+          rangeSlider.noUiSlider.set([l, newR]);
+        }
+        else if (id === 'dragZone') {
+          const window = rangeSlider.noUiSlider.get();
+          const size = parseFloat(window[1]) - parseFloat(window[0]);
+          const dragPos = data2 / 127;
+          let newMin = Math.min(Math.max(dragPos - size/2, 0), 1 - size);
+          let newMax = newMin + size;
+          rangeSlider.noUiSlider.set([newMin, newMax]);
+        }
+        else {
+          const slider = document.getElementById(id);
+          if (slider) {
+            if (slider.type === "checkbox") {
+              slider.checked = (data2 >= 64);
+              slider.dispatchEvent(new Event('change'));
+            } else {
+              slider.value = data2 / 127;
+              slider.dispatchEvent(new Event('input'));
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+function learnMIDI(id) {
+  alert(`Move a MIDI control now to assign to ${id}`);
+  function tempHandler(message) {
+    const [status, data1] = message.data;
+    if (status >= 176 && status <= 191) {
+      midiMapping[id] = data1;
+      localStorage.setItem('midiMapping', JSON.stringify(midiMapping));
+      for (let input of midiAccess.inputs.values()) {
+        input.onmidimessage = handleMIDIMessage;
+      }
+    }
+  }
+  for (let input of midiAccess.inputs.values()) {
+    input.onmidimessage = tempHandler;
+  }
+}
+
+document.getElementById('midiLearnVolume').addEventListener('click', () => learnMIDI('volumeSlider'));
+document.getElementById('midiLearnRate').addEventListener('click', () => learnMIDI('rateSlider'));
+document.getElementById('midiLearnPlay').addEventListener('click', () => learnMIDI('toggleStart'));
+document.getElementById('midiLearnBackwards').addEventListener('click', () => learnMIDI('toggleBackwards'));
+document.getElementById('midiLearnPosL').addEventListener('click', () => learnMIDI('posl'));
+document.getElementById('midiLearnPosR').addEventListener('click', () => learnMIDI('posr'));
+document.getElementById('midiLearnDragRange').addEventListener('click', () => learnMIDI('dragZone'));
 
 </script>
 
-
 </body>
-
-
-
 </html>
-
-
-
-
-
-
