@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Upload and Play Multiple Sounds</title>
+    <style>
+        #controls {
+            margin-top: 20px;
+        }
+        #status {
+            margin-top: 20px;
+        }
+        .key-status {
+            padding: 20px;
+            margin: 10px;
+            border: 2px solid black;
+            display: inline-block;
+            width: 60px;
+            height: 60px;
+            font-size: 24px;
+            text-align: center;
+            vertical-align: middle;
+            line-height: 60px;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.2s;
+        }
+        .loaded {
+            background-color: lightgreen;
+        }
+        .playing {
+            background-color: gold;
+        }
+        #fileList {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Upload a Folder of Sounds (WAVS or MP3)</h1>
+    <input type="file" id="fileInput" accept="audio/*" webkitdirectory multiple>
+
+    <div id="controls">
+        <label><input type="checkbox" id="loopToggle"> Loop All</label><br>
+        <label>Rate: <input type="range" id="rateSlider" min="0.5" max="2" step="0.01" value="1"></label>
+        <button id="resetRate">Reset Rate</button>
+    </div>
+
+    <div id="status"></div>
+    <div id="fileList"></div>
+
+    <script>
+        const keys = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'];
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const buffers = {};
+        const sources = {};
+        const fileNames = {};
+        const statusDiv = document.getElementById('status');
+        const fileListDiv = document.getElementById('fileList');
+        const loopToggle = document.getElementById('loopToggle');
+        const rateSlider = document.getElementById('rateSlider');
+        const resetRateButton = document.getElementById('resetRate');
+
+        let currentKey = null;
+        let keyDown = {};
+
+        function playSound(key) {
+            if (buffers[key] && !sources[key]) {
+                const source = audioContext.createBufferSource();
+                source.buffer = buffers[key];
+                source.connect(audioContext.destination);
+                source.loop = loopToggle.checked;
+                source.playbackRate.value = parseFloat(rateSlider.value);
+                source.start();
+
+                source.onended = () => {
+                    sources[key] = null;
+                    const keyDiv = document.getElementById(`key-${key}`);
+                    if (keyDiv) keyDiv.classList.remove('playing');
+                };
+                sources[key] = source;
+                currentKey = key;
+
+                const keyDiv = document.getElementById(`key-${key}`);
+                if (keyDiv) keyDiv.classList.add('playing');
+            }
+        }
+
+        function stopSound(key) {
+            if (sources[key]) {
+                sources[key].stop();
+                sources[key] = null;
+                if (currentKey === key) {
+                    currentKey = null;
+                }
+                const keyDiv = document.getElementById(`key-${key}`);
+                if (keyDiv) keyDiv.classList.remove('playing');
+            }
+        }
+
+        keys.forEach(key => {
+            const keyDiv = document.createElement('div');
+            keyDiv.id = `key-${key}`;
+            keyDiv.className = 'key-status';
+            keyDiv.innerText = key;
+            statusDiv.appendChild(keyDiv);
+
+            keyDiv.addEventListener('mousedown', () => {
+                if (!keyDown[key]) {
+                    keyDown[key] = true;
+                    playSound(key);
+                }
+            });
+            keyDiv.addEventListener('mouseup', () => {
+                keyDown[key] = false;
+                stopSound(key);
+            });
+            keyDiv.addEventListener('mouseleave', () => {
+                keyDown[key] = false;
+                stopSound(key);
+            });
+        });
+
+        document.getElementById('fileInput').addEventListener('change', async (event) => {
+            const files = Array.from(event.target.files).filter(file => file.type.startsWith('audio/'));
+            files.sort((a, b) => a.name.localeCompare(b.name));
+            fileListDiv.innerHTML = '';
+
+            for (let i = 0; i < keys.length && i < files.length; i++) {
+                const arrayBuffer = await files[i].arrayBuffer();
+                buffers[keys[i]] = await audioContext.decodeAudioData(arrayBuffer);
+                fileNames[keys[i]] = files[i].name;
+
+                const keyDiv = document.getElementById(`key-${keys[i]}`);
+                if (keyDiv) {
+                    keyDiv.classList.add('loaded');
+                }
+
+                const listItem = document.createElement('div');
+                listItem.innerText = `${keys[i].toUpperCase()}: ${files[i].name}`;
+                fileListDiv.appendChild(listItem);
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            const key = event.key;
+            if (keys.includes(key) && !keyDown[key]) {
+                keyDown[key] = true;
+                playSound(key);
+            }
+        });
+
+        document.addEventListener('keyup', (event) => {
+            const key = event.key;
+            if (keys.includes(key)) {
+                keyDown[key] = false;
+                stopSound(key);
+            }
+        });
+
+        rateSlider.addEventListener('input', () => {
+            if (currentKey && sources[currentKey]) {
+                sources[currentKey].playbackRate.value = parseFloat(rateSlider.value);
+            }
+        });
+
+        resetRateButton.addEventListener('click', () => {
+            rateSlider.value = 1;
+            if (currentKey && sources[currentKey]) {
+                sources[currentKey].playbackRate.value = 1;
+            }
+        });
+    </script>
+</body>
+</html>
