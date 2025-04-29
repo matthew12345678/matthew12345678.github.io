@@ -1,157 +1,173 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Dot Sequencer Ultimate (Grid Relative, Middle C)</title>
-<style>
-body {
-  background: #222;
-  color: #eee;
-  font-family: sans-serif;
-  padding: 20px;
-}
-canvas {
-  background: #444;
-  display: block;
-  margin-bottom: 10px;
-  border: 2px solid #eee;
-  max-width: 100%;
-  height: auto;
-}
-input, button {
-  margin: 5px 0;
-}
-</style>
+  <meta charset="UTF-8">
+  <title>Dot Sequencer Ultimate (Grid Relative, Middle C)</title>
+  <style>
+    body {
+      background: #222;
+      color: #eee;
+      font-family: sans-serif;
+      padding: 20px;
+    }
+    canvas {
+      background: #444;
+      display: block;
+      margin-bottom: 10px;
+      border: 2px solid #eee;
+      max-width: 100%;
+      height: auto;
+    }
+    input, button {
+      margin: 5px 0;
+    }
+  </style>
 </head>
 <body>
 
-<h1>Dot Sequencer Ultimate (Grid-Relative, Middle C)</h1>
+  <input type="file" id="imgLoader" accept="image/*"><br>
+  <canvas id="canvas"></canvas>
 
-<input type="file" id="imgLoader" accept="image/*"><br>
-<canvas id="canvas"></canvas>
+  <label for="columnInput">Column:</label>
+  <input type="number" id="columnInput" value="0" min="0" step="1"><br>
 
-<label for="columnInput">Column:</label>
-<input type="number" id="columnInput" value="0" min="0" step="1"><br>
+  <label for="rowsInput">Rows:</label>
+  <input type="number" id="rowsInput" value="8" min="1" step="1"><br>
 
-<label for="rowsInput">Rows:</label>
-<input type="number" id="rowsInput" value="8" min="1" step="1"><br>
+  <label for="transposeInput">Transpose:</label>
+  <input type="number" id="transposeInput" value="0" step="1"><br>
 
-<label for="transposeInput">Transpose:</label>
-<input type="number" id="transposeInput" value="0" step="1"><br>
+  <label for="colorPicker">Dot Color:</label>
+  <input type="color" id="colorPicker" value="#00ff00"><br>
 
-<label for="colorPicker">Dot Color:</label>
-<input type="color" id="colorPicker" value="#00ff00"><br>
+  <button id="playBtn">▶️ Play</button>
+  <button id="stopBtn">⏹️ Stop</button>
+  <button id="beginBtn">⏮️ Begin at Start</button>
+  <button id="clearBtn">🧹 Clear All Dots</button><br>
 
-<button id="playBtn">▶️ Play</button>
-<button id="stopBtn">⏹️ Stop</button>
-<button id="beginBtn">⏮️ Begin at Start</button>
-<button id="clearBtn">🧹 Clear All Dots</button><br>
+  <label for="tempoSlider">Tempo (ms per step):</label>
+  <input type="range" id="tempoSlider" min="50" max="2000" value="500" step="10">
+  <span id="tempoValue">500</span> ms<br>
 
-<label for="tempoSlider">Tempo (ms per step):</label>
-<input type="range" id="tempoSlider" min="50" max="2000" value="500" step="10">
-<span id="tempoValue">500</span> ms<br>
+  <label for="columnsInput">Columns:</label>
+  <input type="number" id="columnsInput" value="8" min="1" step="1"><br>
 
-<label for="columnsInput">Columns:</label>
-<input type="number" id="columnsInput" value="8" min="1" step="1"><br>
+  <label for="dotSizeSlider">Dot Size:</label>
+  <input type="range" id="dotSizeSlider" min="2" max="50" value="6">
+  <span id="dotSizeValue">6</span> px<br>
 
-<label for="dotSizeSlider">Dot Size:</label>
-<input type="range" id="dotSizeSlider" min="2" max="50" value="6">
-<span id="dotSizeValue">6</span> px<br>
+  <label><input type="checkbox" id="quantizeSizeToggle"> Quantize Dot Size to Column Width</label><br>
+  <label><input type="checkbox" id="quantizeGridToggle"> Quantize Dot Position to Grid</label><br>
 
-<label><input type="checkbox" id="quantizeSizeToggle"> Quantize Dot Size to Column Width</label><br>
-<label><input type="checkbox" id="quantizeGridToggle"> Quantize Dot Position to Grid</label><br>
+  <div id="output"></div>
 
-<div id="output"></div>
-
-<script>
-// Setup
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-function midiToFrequency(midi) {
-    return 440 * Math.pow(2, (midi - 69) / 12);
-}
-function playNote(midiNote) {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = midiToFrequency(midiNote);
-    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.2);
-}
-
-let canvas = document.getElementById('canvas');
-let ctx = canvas.getContext('2d');
-let image = new Image();
-let imageLoaded = false;
-
-image.onload = () => {
-  imageLoaded = true;
-  resizeCanvas();
-  redraw();
-};
-image.src = "Bristol_harbour.jpg";
-
-function resizeCanvas() {
-  canvas.width = image.width || 800;
-  canvas.height = image.height || 600;
-}
-
-let dots = [];
-let columns = 8;
-let rows = 8;
-let transpose = 0;
-let dotColor = "#00ff00";
-let dotSize = 6;
-let quantizeSize = false;
-let quantizeGrid = false;
-let isPlaying = false;
-let currentColumn = 0;
-let tempo = 500;
-let lastStepTime = 0;
-
-// Redraw everything
-function redraw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    if (imageLoaded) {
-        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-    } else {
-        ctx.fillStyle = "#333";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+  <script>
+    // Audio setup
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function midiToFrequency(midi) {
+      return 440 * Math.pow(2, (midi - 69) / 12);
+    }
+    function playNote(midiNote) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = midiToFrequency(midiNote);
+      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.2);
     }
 
-    const colWidth = canvas.width / columns;
-    const rowHeight = canvas.height / rows;
+    // Canvas and image setup
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const image = new Image();
+    let imageLoaded = false;
+    image.onload = () => {
+      imageLoaded = true;
+      resizeCanvas();
+      redraw();
+    };
+    image.src = 'Bristol_harbour.jpg';
 
-    ctx.strokeStyle = '#888';
-    for (let r = 0; r < rows; r++) {
+    function resizeCanvas() {
+      canvas.width = image.width || 800;
+      canvas.height = image.height || 600;
+    }
+
+    // Quantise helpers
+    function quantizeRel(rel, divisions) {
+      const size = 1 / divisions;
+      return Math.floor(rel / size) * size + size / 2;
+    }
+    function getDisplayRelX(dot) {
+      return quantizeGrid ? quantizeRel(dot.originalRelX, columns) : dot.originalRelX;
+    }
+    function getDisplayRelY(dot) {
+      return quantizeGrid ? quantizeRel(dot.originalRelY, rows) : dot.originalRelY;
+    }
+
+    // State
+    let dots = []; // { originalRelX, originalRelY, color }
+    let columns = 8;
+    let rows = 8;
+    let transpose = 0;
+    let dotColor = '#00ff00';
+    let dotSize = 6;
+    let quantizeSize = false;
+    let quantizeGrid = false;
+    let isPlaying = false;
+    let currentColumn = 0;
+    let tempo = 500;
+    let lastStepTime = 0;
+
+    // Redraw everything
+    function redraw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (imageLoaded) {
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      } else {
+        ctx.fillStyle = '#333';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      const colWidth = canvas.width / columns;
+      const rowHeight = canvas.height / rows;
+
+      // Grid lines
+      ctx.strokeStyle = '#888';
+      for (let r = 0; r < rows; r++) {
         ctx.beginPath();
         ctx.moveTo(0, r * rowHeight);
         ctx.lineTo(canvas.width, r * rowHeight);
         ctx.stroke();
-    }
+      }
 
-    ctx.fillStyle = '#eee';
-    ctx.font = `${Math.max(12, rowHeight * 0.5)}px sans-serif`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    for (let r = 0; r < rows; r++) {
-        const midiNote = 60 + (rows - 1 - r) + transpose; // START AT 60!
+      // Note labels
+      ctx.fillStyle = '#eee';
+      ctx.font = `${Math.max(12, rowHeight * 0.5)}px sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      for (let r = 0; r < rows; r++) {
+        const midiNote = 60 + (rows - 1 - r) + transpose;
         ctx.fillText(midiNoteToNoteName(midiNote), 5, r * rowHeight + rowHeight / 2);
-    }
+      }
 
-    if (isPlaying) {
+      // Playhead
+      if (isPlaying) {
         const playheadX = currentColumn * colWidth;
         ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
         ctx.fillRect(playheadX, 0, colWidth, canvas.height);
-    }
+      }
 
-    for (let dot of dots) {
-        const x = dot.relX * canvas.width;
-        const y = dot.relY * canvas.height;
+      // Draw dots
+      for (let dot of dots) {
+        const relX = getDisplayRelX(dot);
+        const relY = getDisplayRelY(dot);
+        const x = relX * canvas.width;
+        const y = relY * canvas.height;
 
         ctx.beginPath();
         const size = quantizeSize ? (canvas.width / columns) * 0.5 : dotSize;
@@ -160,148 +176,108 @@ function redraw() {
         ctx.fill();
         ctx.strokeStyle = 'black';
         ctx.stroke();
-    }
-}
-
-// Image Loader
-document.getElementById('imgLoader').addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = evt => {
-    imageLoaded = false;
-    image.src = evt.target.result;
-  };
-  reader.readAsDataURL(file);
-});
-
-// Click to add/remove dots
-canvas.addEventListener('click', e => {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    let x = (e.clientX - rect.left) * scaleX;
-    let y = (e.clientY - rect.top) * scaleY;
-
-    let relX = x / canvas.width;
-    let relY = y / canvas.height;
-
-    if (quantizeGrid) {
-        const colSize = 1 / columns;
-        const rowSize = 1 / rows;
-        relX = Math.floor(relX / colSize) * colSize + colSize / 2;
-        relY = Math.floor(relY / rowSize) * rowSize + rowSize / 2;
+      }
     }
 
-    // check if clicking on an existing dot
-    let clickedDotIndex = dots.findIndex(dot => {
-        const dx = dot.relX * canvas.width - x;
-        const dy = dot.relY * canvas.height - y;
-        return Math.sqrt(dx * dx + dy * dy) < 10;
+    // Image Loader
+    document.getElementById('imgLoader').addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = evt => {
+        imageLoaded = false;
+        image.src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
     });
 
-    if (clickedDotIndex !== -1) {
+    // Click to add/remove dots
+    canvas.addEventListener('click', e => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+
+      const relX = x / canvas.width;
+      const relY = y / canvas.height;
+
+      // Detect clicks on existing dots
+      let clickedDotIndex = dots.findIndex(dot => {
+        const dx = getDisplayRelX(dot) * canvas.width - x;
+        const dy = getDisplayRelY(dot) * canvas.height - y;
+        return Math.sqrt(dx*dx + dy*dy) < 10;
+      });
+
+      if (clickedDotIndex !== -1) {
         dots.splice(clickedDotIndex, 1);
-    } else {
-        dots.push({ relX, relY, color: dotColor });
+      } else {
+        dots.push({ originalRelX: relX, originalRelY: relY, color: dotColor });
+      }
+
+      redraw();
+    });
+
+    // Controls
+    document.getElementById('colorPicker').addEventListener('input', e => { dotColor = e.target.value; });
+    document.getElementById('columnsInput').addEventListener('input', e => { columns = parseInt(e.target.value) || 1; redraw(); });
+    document.getElementById('rowsInput').addEventListener('input', e => { rows = parseInt(e.target.value) || 1; redraw(); });
+    document.getElementById('tempoSlider').addEventListener('input', e => {
+      tempo = parseInt(e.target.value);
+      document.getElementById('tempoValue').textContent = tempo;
+    });
+    document.getElementById('dotSizeSlider').addEventListener('input', e => {
+      dotSize = parseInt(e.target.value);
+      document.getElementById('dotSizeValue').textContent = dotSize;
+      redraw();
+    });
+    document.getElementById('quantizeSizeToggle').addEventListener('change', e => { quantizeSize = e.target.checked; redraw(); });
+    document.getElementById('quantizeGridToggle').addEventListener('change', e => { quantizeGrid = e.target.checked; redraw(); });
+    document.getElementById('transposeInput').addEventListener('input', e => { transpose = parseInt(e.target.value) || 0; redraw(); });
+
+    // Playback
+    document.getElementById('playBtn').addEventListener('click', () => {
+      if (isPlaying) return;
+      isPlaying = true;
+      lastStepTime = performance.now();
+      requestAnimationFrame(playLoop);
+    });
+    document.getElementById('stopBtn').addEventListener('click', () => { isPlaying = false; });
+    document.getElementById('beginBtn').addEventListener('click', () => { currentColumn = 0; redraw(); });
+    document.getElementById('clearBtn').addEventListener('click', () => { dots = []; redraw(); });
+
+    function getColumnForDot(dot) {
+      const x = getDisplayRelX(dot) * canvas.width;
+      return Math.floor(x / (canvas.width / columns));
     }
 
-    redraw();
-});
-
-
-// Controls
-document.getElementById('colorPicker').addEventListener('input', e => {
-    dotColor = e.target.value;
-});
-document.getElementById('columnsInput').addEventListener('input', e => {
-    columns = parseInt(e.target.value) || 1;
-    redraw();
-});
-document.getElementById('rowsInput').addEventListener('input', e => {
-    rows = parseInt(e.target.value) || 1;
-    redraw();
-});
-document.getElementById('tempoSlider').addEventListener('input', e => {
-    tempo = parseInt(e.target.value);
-    document.getElementById('tempoValue').textContent = tempo;
-});
-document.getElementById('dotSizeSlider').addEventListener('input', e => {
-    dotSize = parseInt(e.target.value);
-    document.getElementById('dotSizeValue').textContent = dotSize;
-    redraw();
-});
-document.getElementById('quantizeSizeToggle').addEventListener('change', e => {
-    quantizeSize = e.target.checked;
-    redraw();
-});
-document.getElementById('quantizeGridToggle').addEventListener('change', e => {
-    quantizeGrid = e.target.checked;
-    redraw();
-});
-document.getElementById('transposeInput').addEventListener('input', e => {
-    transpose = parseInt(e.target.value) || 0;
-    redraw();
-});
-
-// Playback
-document.getElementById('playBtn').addEventListener('click', () => {
-    if (isPlaying) return;
-    isPlaying = true;
-    lastStepTime = performance.now();
-    requestAnimationFrame(playLoop);
-});
-document.getElementById('stopBtn').addEventListener('click', () => {
-    isPlaying = false;
-});
-document.getElementById('beginBtn').addEventListener('click', () => {
-    currentColumn = 0;
-    redraw();
-});
-document.getElementById('clearBtn').addEventListener('click', () => {
-    dots = [];
-    redraw();
-});
-
-
-function playLoop(now) {
-    if (!isPlaying) return;
-    if (now - lastStepTime >= tempo) {
-        stepSequencer();
-        lastStepTime = now;
-    }
-    requestAnimationFrame(playLoop);
-}
-
-function getColumnForDot(dot) {
-    const x = dot.relX * canvas.width;
-    return Math.floor(x / (canvas.width / columns));
-}
-
-function stepSequencer() {
-    currentColumn = (currentColumn + 1) % columns;
-    redraw();
-
-    const rowHeight = canvas.height / rows;
-    for (let dot of dots) {
-        const x = dot.relX * canvas.width;
-        const y = dot.relY * canvas.height;
-        const dotCol = Math.floor(x / (canvas.width / columns));
-        if (dotCol === currentColumn) {
-            let row = Math.floor(y / rowHeight);
-            row = Math.max(0, Math.min(rows - 1, row));
-            let midiNote = 60 + (rows - 1 - row) + transpose;
+    function playLoop(now) {
+      if (!isPlaying) return;
+      if (now - lastStepTime >= tempo) {
+        currentColumn = (currentColumn + 1) % columns;
+        redraw();
+        const rowHeight = canvas.height / rows;
+        for (let dot of dots) {
+          const x = getDisplayRelX(dot) * canvas.width;
+          const y = getDisplayRelY(dot) * canvas.height;
+          const dotCol = Math.floor(x / (canvas.width / columns));
+          if (dotCol === currentColumn) {
+            let rowIdx = Math.floor(y / rowHeight);
+            rowIdx = Math.max(0, Math.min(rows - 1, rowIdx));
+            const midiNote = 60 + (rows - 1 - rowIdx) + transpose;
             console.log(`🎵 Play MIDI note: ${midiNote}`);
             playNote(midiNote);
+          }
         }
+        lastStepTime = now;
+      }
+      requestAnimationFrame(playLoop);
     }
-}
 
-function midiNoteToNoteName(midi) {
-    const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-    return notes[midi % 12] + Math.floor(midi / 12 - 1);
-}
-</script>
-
+    function midiNoteToNoteName(midi) {
+      const notes = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+      return notes[midi % 12] + Math.floor(midi/12 - 1);
+    }
+  </script>
 </body>
 </html>
