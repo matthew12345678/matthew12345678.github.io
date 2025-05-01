@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Sluder v0.3.4 (Karplus-Strong)</title>
+ 
   <script src="https://unpkg.com/tone@next"></script>
   <style>
     body {
@@ -170,6 +170,17 @@
       <input type="range" id="overallVol" min="0" max="1" step="0.01" value="1">
       <span id="dispOverallVol">1.00</span>
     </div>
+    <!-- Karplus-Strong Controls -->
+    <div class="slider-container" style="margin-top:1em;">
+      <label for="dampening">Dampening:</label>
+      <input type="range" id="dampening" min="0" max="10000" step="100" value="4000">
+      <span id="dispDamp">4000</span>
+    </div>
+    <div class="slider-container" style="margin-top:0.5em;">
+      <label for="resonance">Resonance:</label>
+      <input type="range" id="resonance" min="0" max="1" step="0.01" value="0.90">
+      <span id="dispRes">0.90</span>
+    </div>
   </div>
 
   <div class="section" style="margin-top:1em; width:80%; max-width:600px;">
@@ -209,7 +220,6 @@
       });
       ctx.strokeStyle = '#0f0';
       ctx.stroke();
-      // playhead
       const mx = (idx / size) * w;
       ctx.beginPath();
       ctx.moveTo(mx, 0);
@@ -218,7 +228,6 @@
       ctx.stroke();
     }
 
-    // Create Tone.js nodes: envelope-controlled pluck synth (Karplus-Strong), plus volume & pan
     const volNode = new Tone.Volume(0);
     const panNode = new Tone.Panner(0);
     const masterVol = new Tone.Volume(0);
@@ -238,7 +247,6 @@
       const max = +maxTime.value;
       const m   = +multTime.value * +globalSpeed.value;
       const dur = getDuration(min, max, m, amp);
-      // Karplus-Strong: trigger a pluck
       pluckSynth.triggerAttack(currentPitch);
       drawWave('waveCanvasTime', waveTime, iTime);
       iTime = (iTime + 1) % size;
@@ -274,19 +282,14 @@
       toPan = setTimeout(stepPan, dur);
     }
 
-    // Start/Stop handlers
     startBtn.onclick = async () => {
       await Tone.start();
       runTime = runVol = runPan = true;
-      stepNote();
-      stepVolume();
-      stepPan();
+      stepNote(); stepVolume(); stepPan();
     };
     stopBtn.onclick = () => {
       runTime = runVol = runPan = false;
-      clearTimeout(toTime);
-      clearTimeout(toVol);
-      clearTimeout(toPan);
+      clearTimeout(toTime); clearTimeout(toVol); clearTimeout(toPan);
     };
 
     // Slider displays & behaviors
@@ -294,48 +297,34 @@
      ['multVol','dispMultVol',3],
      ['multPan','dispMultPan',3],
      ['globalSpeed','dispGlobalSpeed',2],
-     ['overallVol','dispOverallVol',2]
+     ['overallVol','dispOverallVol',2],
+     ['dampening','dispDamp',0],
+     ['resonance','dispRes',2]
     ].forEach(([s,d,dec]) => {
       const sl = document.getElementById(s);
       const dp = document.getElementById(d);
       sl.oninput = () => {
         const val = parseFloat(sl.value);
-        dp.textContent = val.toFixed(dec);
-        if (s === 'overallVol') {
-          masterVol.volume.value = Tone.gainToDb(val);
-        }
+        dp.textContent = dec === 0 ? String(val) : val.toFixed(dec);
+        if (s === 'overallVol') masterVol.volume.value = Tone.gainToDb(val);
+        if (s === 'dampening') pluckSynth.dampening = val;
+        if (s === 'resonance') pluckSynth.resonance = val;
       };
     });
 
-    // Bag of Pitches control
     const pitchListInput = document.getElementById('pitchList');
     const updatePitchesBtn = document.getElementById('updatePitches');
     updatePitchesBtn.onclick = () => {
-      const newNotes = pitchListInput.value.split(',').map(s => s.trim()).filter(s => s);
-      if (newNotes.length === 0) {
-        alert('Please enter at least one note name.');
-        return;
-      }
+      const newNotes = pitchListInput.value.split(',').map(s => s.trim()).filter(Boolean);
       const validNotes = newNotes.filter(n => {
-        try {
-          Tone.Frequency(n);
-          return true;
-        } catch {
-          console.warn('Invalid note skipped:', n);
-          return false;
-        }
+        try { Tone.Frequency(n); return true; } catch { return false; }
       });
-      if (validNotes.length === 0) {
-        alert('No valid notes found. Use names like C4, D#3, etc.');
-        return;
-      }
-      scaleNotes.length = 0;
-      validNotes.forEach(n => scaleNotes.push(n));
+      if (!validNotes.length) return alert('Enter valid notes like C4,D#3');
+      scaleNotes.length = 0; validNotes.forEach(n => scaleNotes.push(n));
       currentPitch = scaleNotes[0];
-      alert('Pitches updated to: ' + scaleNotes.join(', '));
+      alert('Pitches: ' + scaleNotes.join(', '));
     };
 
-    // Initial visuals
     ['waveCanvasTime','waveCanvasVolume','waveCanvasPan'].forEach((id, idx) =>
       drawWave(id, [waveTime, waveVol, wavePan][idx], 0)
     );
