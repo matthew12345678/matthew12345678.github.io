@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
- 
+  <title>Sluder v0.3.6 (Karplus-Strong)</title>
   <script src="https://unpkg.com/tone@next"></script>
   <style>
     body {
@@ -113,7 +113,7 @@
   </style>
 </head>
 <body>
-  <h1>Sluder v0.3.4 (Karplus-Strong)</h1>
+  <h1>Sluder v0.3.6 (Karplus-Strong)</h1>
 
   <div class="row">
     <div class="section">
@@ -126,7 +126,6 @@
         </label>
       </div>
     </div>
-
     <div class="section">
       <h2>Volume</h2>
       <canvas id="waveCanvasVolume"></canvas>
@@ -137,7 +136,6 @@
         </label>
       </div>
     </div>
-
     <div class="section">
       <h2>Pan</h2>
       <canvas id="waveCanvasPan"></canvas>
@@ -151,7 +149,7 @@
   </div>
 
   <div class="global-control">
-    <h2>Global Speed, Range &amp; Master Volume</h2>
+    <h2>Global Controls</h2>
     <div class="slider-container">
       <label for="globalSpeed">Global Speed:</label>
       <input type="range" id="globalSpeed" min="0.01" max="1" step="0.01" value="1">
@@ -166,11 +164,10 @@
       </label>
     </div>
     <div class="slider-container" style="margin-top:1em;">
-      <label for="overallVol">Master Volume:</label>
+      <label for="overallVol">Overall Volume:</label>
       <input type="range" id="overallVol" min="0" max="1" step="0.01" value="1">
       <span id="dispOverallVol">1.00</span>
     </div>
-    <!-- Karplus-Strong Controls -->
     <div class="slider-container" style="margin-top:1em;">
       <label for="dampening">Dampening:</label>
       <input type="range" id="dampening" min="0" max="10000" step="100" value="4000">
@@ -181,13 +178,22 @@
       <input type="range" id="resonance" min="0" max="1" step="0.01" value="0.90">
       <span id="dispRes">0.90</span>
     </div>
+    <div class="slider-container" style="margin-top:0.5em;">
+      <label for="release">Release (s):</label>
+      <input type="range" id="release" min="0" max="5" step="0.1" value="1">
+      <span id="dispRelease">1.0</span>
+    </div>
+    <div class="slider-container" style="margin-top:0.5em;">
+      <label for="attackNoise">Attack Noise:</label>
+      <input type="range" id="attackNoise" min="0.1" max="20" step="0.1" value="1">
+      <span id="dispAttackNoise">1.0</span>
+    </div>
   </div>
 
   <div class="section" style="margin-top:1em; width:80%; max-width:600px;">
     <h2>Bag of Pitches</h2>
-    <label for="pitchList">Enter notes (comma-separated):</label>
-    <input type="text" id="pitchList" value="C4,D4,E4,G4,A4" style="width:100%; margin-top:0.5em;">
-    <button id="updatePitches" style="margin-top:0.5em;">Update Pitches</button>
+    <input type="text" id="pitchList" value="C4,D4,E4,G4,A4" style="width:100%;">
+    <button id="updatePitches" style="margin-top:0.5em; width:100%">Update Pitches</button>
   </div>
 
   <div class="controls">
@@ -197,137 +203,101 @@
 
   <script>
     const size = 512;
-    const waveTime = Array.from({length:size}, (_,i)=>0.5 + 0.5 * Math.sin(2 * Math.PI * i / size));
-    const waveVol  = [...waveTime];
-    const wavePan  = [...waveTime];
+    const waveTime = Array.from({length:size}, (_,i)=>0.5+0.5*Math.sin(2*Math.PI*i/size));
+    const waveVol = [...waveTime];
+    const wavePan = [...waveTime];
 
     const scaleNotes = ["C4","D4","E4","G4","A4"];
     let currentPitch = scaleNotes[0];
 
-    let iTime = 0, iVol = 0, iPan = 0;
-    let runTime = false, runVol = false, runPan = false;
+    let iTime=0, iVol=0, iPan=0;
+    let runTime=false, runVol=false, runPan=false;
     let toTime, toVol, toPan;
 
     function drawWave(id, wave, idx) {
-      const c = document.getElementById(id), ctx = c.getContext('2d');
-      const w = c.width, h = c.height;
-      ctx.clearRect(0, 0, w, h);
+      const c=document.getElementById(id), ctx=c.getContext('2d');
+      const w=c.width, h=c.height;
+      ctx.clearRect(0,0,w,h);
       ctx.beginPath();
-      wave.forEach((v, i) => {
-        const x = (i / size) * w;
-        const y = h * (1 - v);
-        ctx.lineTo(x, y);
-      });
-      ctx.strokeStyle = '#0f0';
-      ctx.stroke();
-      const mx = (idx / size) * w;
-      ctx.beginPath();
-      ctx.moveTo(mx, 0);
-      ctx.lineTo(mx, h);
-      ctx.strokeStyle = 'red';
-      ctx.stroke();
+      wave.forEach((v,i)=> ctx.lineTo((i/size)*w, h*(1-v)) );
+      ctx.strokeStyle='#0f0'; ctx.stroke();
+      const mx=(idx/size)*w;
+      ctx.beginPath(); ctx.moveTo(mx,0); ctx.lineTo(mx,h);
+      ctx.strokeStyle='red'; ctx.stroke();
     }
 
-    const volNode = new Tone.Volume(0);
-    const panNode = new Tone.Panner(0);
-    const masterVol = new Tone.Volume(0);
-    const pluckSynth = new Tone.PluckSynth({
-      dampening: 4000,
-      resonance: 0.9
-    }).chain(volNode, panNode, masterVol, Tone.Destination);
+    const volNode = new Tone.Volume(0), panNode = new Tone.Panner(0), masterVol = new Tone.Volume(0);
+    const pluckSynth = new Tone.PluckSynth({ dampening:4000, resonance:0.9, release:1, attackNoise:1 })
+      .chain(volNode, panNode, masterVol, Tone.Destination);
 
-    function getDuration(min, max, mult, amp) {
-      return ((amp * (max - min)) + min) * mult;
+    function getDuration(min,max,mult,amp) {
+      return ((amp*(max-min))+min)*mult;
     }
 
     function stepNote() {
-      if (!runTime) return;
-      const amp = waveTime[iTime];
-      const min = +minTime.value;
-      const max = +maxTime.value;
-      const m   = +multTime.value * +globalSpeed.value;
-      const dur = getDuration(min, max, m, amp);
+      if(!runTime) return;
+      const amp=waveTime[iTime];
+      const dur=getDuration(+minTime.value,+maxTime.value,+multTime.value*+globalSpeed.value,amp);
       pluckSynth.triggerAttack(currentPitch);
-      drawWave('waveCanvasTime', waveTime, iTime);
-      iTime = (iTime + 1) % size;
-      toTime = setTimeout(stepNote, dur);
+      drawWave('waveCanvasTime',waveTime,iTime);
+      iTime=(iTime+1)%size;
+      toTime=setTimeout(stepNote,dur);
     }
 
     function stepVolume() {
-      if (!runVol) return;
-      const amp = waveVol[iVol];
-      const min = +minTime.value;
-      const max = +maxTime.value;
-      const m   = +multVol.value * +globalSpeed.value;
-      const dur = getDuration(min, max, m, amp);
-      if (amp === 0) {
-        currentPitch = scaleNotes[Math.floor(Math.random() * scaleNotes.length)];
-      }
-      volNode.volume.value = Tone.gainToDb(amp);
-      drawWave('waveCanvasVolume', waveVol, iVol);
-      iVol = (iVol + 1) % size;
-      toVol = setTimeout(stepVolume, dur);
+      if(!runVol) return;
+      const amp=waveVol[iVol];
+      if(amp===0) currentPitch=scaleNotes[Math.floor(Math.random()*scaleNotes.length)];
+      volNode.volume.value=Tone.gainToDb(amp);
+      drawWave('waveCanvasVolume',waveVol,iVol);
+      iVol=(iVol+1)%size;
+      toVol=setTimeout(stepVolume,getDuration(+minTime.value,+maxTime.value,+multVol.value*+globalSpeed.value,amp));
     }
 
     function stepPan() {
-      if (!runPan) return;
-      const amp = wavePan[iPan];
-      const min = +minTime.value;
-      const max = +maxTime.value;
-      const m   = +multPan.value * +globalSpeed.value;
-      const dur = getDuration(min, max, m, amp);
-      panNode.pan.value = amp * 2 - 1;
-      drawWave('waveCanvasPan', wavePan, iPan);
-      iPan = (iPan + 1) % size;
-      toPan = setTimeout(stepPan, dur);
+      if(!runPan) return;
+      const amp=wavePan[iPan];
+      panNode.pan.value=amp*2-1;
+      drawWave('waveCanvasPan',wavePan,iPan);
+      iPan=(iPan+1)%size;
+      toPan=setTimeout(stepPan,getDuration(+minTime.value,+maxTime.value,+multPan.value*+globalSpeed.value,amp));
     }
 
-    startBtn.onclick = async () => {
+    startBtn.onclick=async()=>{
       await Tone.start();
-      runTime = runVol = runPan = true;
+      runTime=runVol=runPan=true;
       stepNote(); stepVolume(); stepPan();
     };
-    stopBtn.onclick = () => {
-      runTime = runVol = runPan = false;
+    stopBtn.onclick=()=>{
+      runTime=runVol=runPan=false;
       clearTimeout(toTime); clearTimeout(toVol); clearTimeout(toPan);
     };
 
-    // Slider displays & behaviors
-    [['multTime','dispMultTime',3],
-     ['multVol','dispMultVol',3],
-     ['multPan','dispMultPan',3],
-     ['globalSpeed','dispGlobalSpeed',2],
-     ['overallVol','dispOverallVol',2],
-     ['dampening','dispDamp',0],
-     ['resonance','dispRes',2]
-    ].forEach(([s,d,dec]) => {
-      const sl = document.getElementById(s);
-      const dp = document.getElementById(d);
-      sl.oninput = () => {
-        const val = parseFloat(sl.value);
-        dp.textContent = dec === 0 ? String(val) : val.toFixed(dec);
-        if (s === 'overallVol') masterVol.volume.value = Tone.gainToDb(val);
-        if (s === 'dampening') pluckSynth.dampening = val;
-        if (s === 'resonance') pluckSynth.resonance = val;
+    [['multTime','dispMultTime',3],['multVol','dispMultVol',3],['multPan','dispMultPan',3],['globalSpeed','dispGlobalSpeed',2],
+     ['overallVol','dispOverallVol',2],['dampening','dispDamp',0],['resonance','dispRes',2],['release','dispRelease',1],['attackNoise','dispAttackNoise',1]
+    ].forEach(([s,d,dec])=>{
+      const sl=document.getElementById(s), dp=document.getElementById(d);
+      sl.oninput=()=>{
+        const val=parseFloat(sl.value);
+        dp.textContent=val.toFixed(dec);
+        if(s==='overallVol') masterVol.volume.value=Tone.gainToDb(val);
+        if(s==='dampening') pluckSynth.dampening=val;
+        if(s==='resonance') pluckSynth.resonance=val;
+        if(s==='release') pluckSynth.release=val;
+        if(s==='attackNoise') pluckSynth.attackNoise=val;
       };
     });
 
-    const pitchListInput = document.getElementById('pitchList');
-    const updatePitchesBtn = document.getElementById('updatePitches');
-    updatePitchesBtn.onclick = () => {
-      const newNotes = pitchListInput.value.split(',').map(s => s.trim()).filter(Boolean);
-      const validNotes = newNotes.filter(n => {
-        try { Tone.Frequency(n); return true; } catch { return false; }
-      });
-      if (!validNotes.length) return alert('Enter valid notes like C4,D#3');
-      scaleNotes.length = 0; validNotes.forEach(n => scaleNotes.push(n));
-      currentPitch = scaleNotes[0];
-      alert('Pitches: ' + scaleNotes.join(', '));
+    document.getElementById('updatePitches').onclick=()=>{
+      const input=document.getElementById('pitchList').value.split(',').map(s=>s.trim()).filter(Boolean);
+      const valid=input.filter(n=>{ try{Tone.Frequency(n);return true;}catch{return false;} });
+      if(!valid.length) return alert('Enter valid notes');
+      scaleNotes.splice(0,scaleNotes.length,...valid);
+      currentPitch=scaleNotes[0];
+      alert('Pitches updated to: '+scaleNotes.join(', '));
     };
 
-    ['waveCanvasTime','waveCanvasVolume','waveCanvasPan'].forEach((id, idx) =>
-      drawWave(id, [waveTime, waveVol, wavePan][idx], 0)
-    );
+    ['waveCanvasTime','waveCanvasVolume','waveCanvasPan'].forEach((id,i)=>drawWave(id,[waveTime,waveVol,wavePan][i],0));
   </script>
 </body>
 </html>
