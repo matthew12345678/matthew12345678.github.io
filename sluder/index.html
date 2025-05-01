@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sluder v0.3.3</title>
+  <script src="https://unpkg.com/tone@next"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #111;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2em;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1em;
+      justify-content: center;
+    }
+    .section {
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 1em;
+      width: 300px;
+    }
+    .section h2 {
+      margin-top: 0;
+      font-size: 1.2em;
+      text-align: center;
+    }
+    canvas {
+      background: #333;
+      border: 1px solid #555;
+      width: 100%;
+      height: 100px;
+      display: block;
+      margin: 0.5em 0;
+    }
+    .sliders {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5em;
+    }
+    .sliders label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9em;
+    }
+    input[type="range"] {
+      width: 100px;
+    }
+    .global-control {
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 1em;
+      width: 80%;
+      max-width: 600px;
+      margin-top: 2em;
+    }
+    .global-control h2 {
+      margin: 0 0 0.5em;
+      text-align: center;
+    }
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 1em;
+      flex-wrap: wrap;
+    }
+    .slider-container label {
+      flex-shrink: 0;
+    }
+    .slider-container input[type="range"] {
+      flex-grow: 1;
+    }
+    .min-max-inputs {
+      display: flex;
+      gap: 1em;
+      margin-top: 0.5em;
+      justify-content: center;
+    }
+    .min-max-inputs label {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-size: 0.9em;
+    }
+    input[type="number"] {
+      width: 80px;
+    }
+    .controls {
+      margin-top: 1.5em;
+      display: flex;
+      gap: 1em;
+    }
+    button {
+      padding: 0.5em 1em;
+      background: #444;
+      border: none;
+      border-radius: 4px;
+      color: #eee;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #555;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sluder v0.3.3</h1>
+
+  <div class="row">
+    <!-- Note Timing Section -->
+    <div class="section">
+      <h2>Note Timing</h2>
+      <canvas id="waveCanvasTime"></canvas>
+      <div class="sliders">
+        <label>Speed:
+          <input type="range" id="multTime" min="0.001" max="1" step="0.001" value="1">
+          <span id="dispMultTime">1.000</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Volume Section -->
+    <div class="section">
+      <h2>Volume</h2>
+      <canvas id="waveCanvasVolume"></canvas>
+      <div class="sliders">
+        <label>Speed:
+          <input type="range" id="multVol" min="0.001" max="1" step="0.001" value="1">
+          <span id="dispMultVol">1.000</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Pan Section -->
+    <div class="section">
+      <h2>Pan</h2>
+      <canvas id="waveCanvasPan"></canvas>
+      <div class="sliders">
+        <label>Speed:
+          <input type="range" id="multPan" min="0.001" max="1" step="0.001" value="1">
+          <span id="dispMultPan">1.000</span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Speed + Min/Max Controls -->
+  <div class="global-control">
+    <h2>Global Speed &amp; Range</h2>
+    <div class="slider-container">
+      <label for="globalSpeed">Global Speed:</label>
+      <input type="range" id="globalSpeed" min="0.01" max="1" step="0.01" value="1">
+      <span id="dispGlobalSpeed">1.00</span>
+    </div>
+    <div class="min-max-inputs">
+      <label>Min (ms):
+        <input type="number" id="minTime" value="100" min="0">
+      </label>
+      <label>Max (ms):
+        <input type="number" id="maxTime" value="1000" min="1">
+      </label>
+    </div>
+    <!-- Overall Volume Slider -->
+    <div class="slider-container" style="margin-top:1em;">
+      <label for="overallVol">Overall Volume:</label>
+      <input type="range" id="overallVol" min="0" max="1" step="0.01" value="1">
+      <span id="dispOverallVol">1.00</span>
+    </div>
+  </div>
+
+  <!-- Bag of Pitches Control -->
+  <div class="section" style="margin-top:1em; width:80%; max-width:600px;">
+    <h2>Bag of Pitches</h2>
+    <label for="pitchList">Enter notes (comma-separated):</label>
+    <input type="text" id="pitchList" value="C4,D4,E4,G4,A4" style="width:100%; margin-top:0.5em;">
+    <button id="updatePitches" style="margin-top:0.5em;">Update Pitches</button>
+  </div>
+
+  <!-- Start/Stop Buttons -->
+  <div class="controls">
+    <button id="startBtn">Start</button>
+    <button id="stopBtn">Stop</button>
+  </div>
+
+  <script>
+    const size = 512;
+    const waveTime = Array.from({length:size}, (_,i)=>0.5+0.5*Math.sin(2*Math.PI*i/size));
+    const waveVol  = [...waveTime];
+    const wavePan  = [...waveTime];
+
+    // Harmonic pitch list and current pitch
+    const scaleNotes = ["C4","D4","E4","G4","A4"];
+    let currentPitch = scaleNotes[0];
+
+    let iTime=0, iVol=0, iPan=0;
+    let runTime=false, runVol=false, runPan=false;
+    let toTime,toVol,toPan;
+
+    function drawWave(id, wave, idx) {
+      const c = document.getElementById(id),
+            ctx = c.getContext('2d'),
+            w = c.width, h = c.height;
+      ctx.clearRect(0,0,w,h);
+      ctx.beginPath();
+      wave.forEach((v,i)=>{
+        const x = i/size*w,
+              y = h*(1-v);
+        ctx.lineTo(x,y);
+      });
+      ctx.strokeStyle = '#0f0';
+      ctx.stroke();
+      // playhead
+      const mx = idx/size*w;
+      ctx.beginPath();
+      ctx.moveTo(mx,0);
+      ctx.lineTo(mx,h);
+      ctx.strokeStyle = 'red';
+      ctx.stroke();
+    }
+
+    // Nodes: timing, volume, pan, overall volume
+    const volNode = new Tone.Volume(0),
+          panNode = new Tone.Panner(0),
+          overallVolNode = new Tone.Volume(0),
+          synth   = new Tone.Synth({
+            oscillator:{type:'sine'},
+            envelope:{attack:0,decay:0.1,sustain:0,release:0.5}
+          }).chain(volNode, panNode, overallVolNode, Tone.Destination);
+
+    function getDuration(min,max,mult,amp){
+      return ((amp*(max-min))+min)*mult;
+    }
+
+    function stepNote(){
+      if(!runTime) return;
+      const amp = waveTime[iTime],
+            min = +minTime.value,
+            max = +maxTime.value,
+            m   = +multTime.value * +globalSpeed.value,
+            dur = getDuration(min,max,m,amp);
+      synth.triggerAttackRelease(currentPitch,0.2);
+      drawWave('waveCanvasTime',waveTime,iTime);
+      iTime=(iTime+1)%size;
+      toTime=setTimeout(stepNote,dur);
+    }
+
+    function stepVolume(){
+      if(!runVol) return;
+      const amp = waveVol[iVol],
+            min = +minTime.value,
+            max = +maxTime.value,
+            m   = +multVol.value * +globalSpeed.value,
+            dur = getDuration(min,max,m,amp);
+      if (amp === 0) {
+        currentPitch = scaleNotes[Math.floor(Math.random() * scaleNotes.length)];
+      }
+      volNode.volume.value = Tone.gainToDb(amp);
+      drawWave('waveCanvasVolume',waveVol,iVol);
+      iVol=(iVol+1)%size;
+      toVol=setTimeout(stepVolume,dur);
+    }
+
+    function stepPan(){
+      if(!runPan) return;
+      const amp = wavePan[iPan],
+            min = +minTime.value,
+            max = +maxTime.value,
+            m   = +multPan.value * +globalSpeed.value,
+            dur = getDuration(min,max,m,amp);
+      panNode.pan.value = amp*2 -1;
+      drawWave('waveCanvasPan',wavePan,iPan);
+      iPan=(iPan+1)%size;
+      toPan=setTimeout(stepPan,dur);
+    }
+
+    // Start/Stop
+    startBtn.onclick = async ()=>{
+      await Tone.start();
+      runTime=runVol=runPan=true;
+      stepNote(); stepVolume(); stepPan();
+    };
+    stopBtn.onclick = ()=>{
+      runTime=runVol=runPan=false;
+      clearTimeout(toTime);
+      clearTimeout(toVol);
+      clearTimeout(toPan);
+    };
+
+    // Live slider displays
+    [['multTime','dispMultTime',3],
+     ['multVol','dispMultVol',3],
+     ['multPan','dispMultPan',3],
+     ['globalSpeed','dispGlobalSpeed',2],
+     ['overallVol','dispOverallVol',2]
+    ].forEach(([s,d,dec])=>{
+      const sl=document.getElementById(s), dp=document.getElementById(d);
+      sl.oninput = ()=> {
+        const val = parseFloat(sl.value);
+        dp.textContent = val.toFixed(dec);
+        if(s==='overallVol') overallVolNode.volume.value = Tone.gainToDb(val);
+      };
+    });
+
+    // Bag of Pitches control logic
+    const pitchListInput = document.getElementById('pitchList');
+    const updatePitchesBtn = document.getElementById('updatePitches');
+    updatePitchesBtn.onclick = () => {
+      const newNotes = pitchListInput.value
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s);
+      if (newNotes.length === 0) {
+        alert('Please enter at least one note name.');
+        return;
+      }
+      const validNotes = newNotes.filter(n => {
+        try {
+          Tone.Frequency(n);
+          return true;
+        } catch {
+          console.warn('Invalid note skipped:', n);
+          return false;
+        }
+      });
+      if (validNotes.length === 0) {
+        alert('No valid notes found. Use names like C4, D#3, etc.');
+        return;
+      }
+      scaleNotes.length = 0;
+      validNotes.forEach(n => scaleNotes.push(n));
+      currentPitch = scaleNotes[0];
+      console.log('Updated scaleNotes:', scaleNotes);
+      alert('Pitches updated to: ' + scaleNotes.join(', '));
+    };
+
+    // Initial draw
+    ['waveCanvasTime','waveCanvasVolume','waveCanvasPan']
+      .forEach((id,i)=> drawWave(id,[waveTime,waveVol,wavePan][i],0));
+  </script>
+</body>
+</html>
