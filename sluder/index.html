@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Sluder v0.3.3</title>
+  <title>Sluder v0.3.4 (Karplus-Strong)</title>
   <script src="https://unpkg.com/tone@next"></script>
   <style>
     body {
@@ -113,10 +113,9 @@
   </style>
 </head>
 <body>
-  <h1>Sluder v0.3.3</h1>
+  <h1>Sluder v0.3.4 (Karplus-Strong)</h1>
 
   <div class="row">
-    <!-- Note Timing Section -->
     <div class="section">
       <h2>Note Timing</h2>
       <canvas id="waveCanvasTime"></canvas>
@@ -128,7 +127,6 @@
       </div>
     </div>
 
-    <!-- Volume Section -->
     <div class="section">
       <h2>Volume</h2>
       <canvas id="waveCanvasVolume"></canvas>
@@ -140,7 +138,6 @@
       </div>
     </div>
 
-    <!-- Pan Section -->
     <div class="section">
       <h2>Pan</h2>
       <canvas id="waveCanvasPan"></canvas>
@@ -153,9 +150,8 @@
     </div>
   </div>
 
-  <!-- Global Speed + Min/Max Controls -->
   <div class="global-control">
-    <h2>Global Speed &amp; Range</h2>
+    <h2>Global Speed, Range &amp; Master Volume</h2>
     <div class="slider-container">
       <label for="globalSpeed">Global Speed:</label>
       <input type="range" id="globalSpeed" min="0.01" max="1" step="0.01" value="1">
@@ -169,15 +165,13 @@
         <input type="number" id="maxTime" value="1000" min="1">
       </label>
     </div>
-    <!-- Overall Volume Slider -->
     <div class="slider-container" style="margin-top:1em;">
-      <label for="overallVol">Overall Volume:</label>
+      <label for="overallVol">Master Volume:</label>
       <input type="range" id="overallVol" min="0" max="1" step="0.01" value="1">
       <span id="dispOverallVol">1.00</span>
     </div>
   </div>
 
-  <!-- Bag of Pitches Control -->
   <div class="section" style="margin-top:1em; width:80%; max-width:600px;">
     <h2>Bag of Pitches</h2>
     <label for="pitchList">Enter notes (comma-separated):</label>
@@ -185,7 +179,6 @@
     <button id="updatePitches" style="margin-top:0.5em;">Update Pitches</button>
   </div>
 
-  <!-- Start/Stop Buttons -->
   <div class="controls">
     <button id="startBtn">Start</button>
     <button id="stopBtn">Stop</button>
@@ -193,131 +186,132 @@
 
   <script>
     const size = 512;
-    const waveTime = Array.from({length:size}, (_,i)=>0.5+0.5*Math.sin(2*Math.PI*i/size));
+    const waveTime = Array.from({length:size}, (_,i)=>0.5 + 0.5 * Math.sin(2 * Math.PI * i / size));
     const waveVol  = [...waveTime];
     const wavePan  = [...waveTime];
 
-    // Harmonic pitch list and current pitch
     const scaleNotes = ["C4","D4","E4","G4","A4"];
     let currentPitch = scaleNotes[0];
 
-    let iTime=0, iVol=0, iPan=0;
-    let runTime=false, runVol=false, runPan=false;
-    let toTime,toVol,toPan;
+    let iTime = 0, iVol = 0, iPan = 0;
+    let runTime = false, runVol = false, runPan = false;
+    let toTime, toVol, toPan;
 
     function drawWave(id, wave, idx) {
-      const c = document.getElementById(id),
-            ctx = c.getContext('2d'),
-            w = c.width, h = c.height;
-      ctx.clearRect(0,0,w,h);
+      const c = document.getElementById(id), ctx = c.getContext('2d');
+      const w = c.width, h = c.height;
+      ctx.clearRect(0, 0, w, h);
       ctx.beginPath();
-      wave.forEach((v,i)=>{
-        const x = i/size*w,
-              y = h*(1-v);
-        ctx.lineTo(x,y);
+      wave.forEach((v, i) => {
+        const x = (i / size) * w;
+        const y = h * (1 - v);
+        ctx.lineTo(x, y);
       });
       ctx.strokeStyle = '#0f0';
       ctx.stroke();
       // playhead
-      const mx = idx/size*w;
+      const mx = (idx / size) * w;
       ctx.beginPath();
-      ctx.moveTo(mx,0);
-      ctx.lineTo(mx,h);
+      ctx.moveTo(mx, 0);
+      ctx.lineTo(mx, h);
       ctx.strokeStyle = 'red';
       ctx.stroke();
     }
 
-    // Nodes: timing, volume, pan, overall volume
-    const volNode = new Tone.Volume(0),
-          panNode = new Tone.Panner(0),
-          overallVolNode = new Tone.Volume(0),
-          synth   = new Tone.Synth({
-            oscillator:{type:'sine'},
-            envelope:{attack:0,decay:0.1,sustain:0,release:0.5}
-          }).chain(volNode, panNode, overallVolNode, Tone.Destination);
+    // Create Tone.js nodes: envelope-controlled pluck synth (Karplus-Strong), plus volume & pan
+    const volNode = new Tone.Volume(0);
+    const panNode = new Tone.Panner(0);
+    const masterVol = new Tone.Volume(0);
+    const pluckSynth = new Tone.PluckSynth({
+      dampening: 4000,
+      resonance: 0.9
+    }).chain(volNode, panNode, masterVol, Tone.Destination);
 
-    function getDuration(min,max,mult,amp){
-      return ((amp*(max-min))+min)*mult;
+    function getDuration(min, max, mult, amp) {
+      return ((amp * (max - min)) + min) * mult;
     }
 
-    function stepNote(){
-      if(!runTime) return;
-      const amp = waveTime[iTime],
-            min = +minTime.value,
-            max = +maxTime.value,
-            m   = +multTime.value * +globalSpeed.value,
-            dur = getDuration(min,max,m,amp);
-      synth.triggerAttackRelease(currentPitch,0.2);
-      drawWave('waveCanvasTime',waveTime,iTime);
-      iTime=(iTime+1)%size;
-      toTime=setTimeout(stepNote,dur);
+    function stepNote() {
+      if (!runTime) return;
+      const amp = waveTime[iTime];
+      const min = +minTime.value;
+      const max = +maxTime.value;
+      const m   = +multTime.value * +globalSpeed.value;
+      const dur = getDuration(min, max, m, amp);
+      // Karplus-Strong: trigger a pluck
+      pluckSynth.triggerAttack(currentPitch);
+      drawWave('waveCanvasTime', waveTime, iTime);
+      iTime = (iTime + 1) % size;
+      toTime = setTimeout(stepNote, dur);
     }
 
-    function stepVolume(){
-      if(!runVol) return;
-      const amp = waveVol[iVol],
-            min = +minTime.value,
-            max = +maxTime.value,
-            m   = +multVol.value * +globalSpeed.value,
-            dur = getDuration(min,max,m,amp);
+    function stepVolume() {
+      if (!runVol) return;
+      const amp = waveVol[iVol];
+      const min = +minTime.value;
+      const max = +maxTime.value;
+      const m   = +multVol.value * +globalSpeed.value;
+      const dur = getDuration(min, max, m, amp);
       if (amp === 0) {
         currentPitch = scaleNotes[Math.floor(Math.random() * scaleNotes.length)];
       }
       volNode.volume.value = Tone.gainToDb(amp);
-      drawWave('waveCanvasVolume',waveVol,iVol);
-      iVol=(iVol+1)%size;
-      toVol=setTimeout(stepVolume,dur);
+      drawWave('waveCanvasVolume', waveVol, iVol);
+      iVol = (iVol + 1) % size;
+      toVol = setTimeout(stepVolume, dur);
     }
 
-    function stepPan(){
-      if(!runPan) return;
-      const amp = wavePan[iPan],
-            min = +minTime.value,
-            max = +maxTime.value,
-            m   = +multPan.value * +globalSpeed.value,
-            dur = getDuration(min,max,m,amp);
-      panNode.pan.value = amp*2 -1;
-      drawWave('waveCanvasPan',wavePan,iPan);
-      iPan=(iPan+1)%size;
-      toPan=setTimeout(stepPan,dur);
+    function stepPan() {
+      if (!runPan) return;
+      const amp = wavePan[iPan];
+      const min = +minTime.value;
+      const max = +maxTime.value;
+      const m   = +multPan.value * +globalSpeed.value;
+      const dur = getDuration(min, max, m, amp);
+      panNode.pan.value = amp * 2 - 1;
+      drawWave('waveCanvasPan', wavePan, iPan);
+      iPan = (iPan + 1) % size;
+      toPan = setTimeout(stepPan, dur);
     }
 
-    // Start/Stop
-    startBtn.onclick = async ()=>{
+    // Start/Stop handlers
+    startBtn.onclick = async () => {
       await Tone.start();
-      runTime=runVol=runPan=true;
-      stepNote(); stepVolume(); stepPan();
+      runTime = runVol = runPan = true;
+      stepNote();
+      stepVolume();
+      stepPan();
     };
-    stopBtn.onclick = ()=>{
-      runTime=runVol=runPan=false;
+    stopBtn.onclick = () => {
+      runTime = runVol = runPan = false;
       clearTimeout(toTime);
       clearTimeout(toVol);
       clearTimeout(toPan);
     };
 
-    // Live slider displays
+    // Slider displays & behaviors
     [['multTime','dispMultTime',3],
      ['multVol','dispMultVol',3],
      ['multPan','dispMultPan',3],
      ['globalSpeed','dispGlobalSpeed',2],
      ['overallVol','dispOverallVol',2]
-    ].forEach(([s,d,dec])=>{
-      const sl=document.getElementById(s), dp=document.getElementById(d);
-      sl.oninput = ()=> {
+    ].forEach(([s,d,dec]) => {
+      const sl = document.getElementById(s);
+      const dp = document.getElementById(d);
+      sl.oninput = () => {
         const val = parseFloat(sl.value);
         dp.textContent = val.toFixed(dec);
-        if(s==='overallVol') overallVolNode.volume.value = Tone.gainToDb(val);
+        if (s === 'overallVol') {
+          masterVol.volume.value = Tone.gainToDb(val);
+        }
       };
     });
 
-    // Bag of Pitches control logic
+    // Bag of Pitches control
     const pitchListInput = document.getElementById('pitchList');
     const updatePitchesBtn = document.getElementById('updatePitches');
     updatePitchesBtn.onclick = () => {
-      const newNotes = pitchListInput.value
-        .split(',')
-        .map(s => s.trim())
-        .filter(s => s);
+      const newNotes = pitchListInput.value.split(',').map(s => s.trim()).filter(s => s);
       if (newNotes.length === 0) {
         alert('Please enter at least one note name.');
         return;
@@ -338,13 +332,13 @@
       scaleNotes.length = 0;
       validNotes.forEach(n => scaleNotes.push(n));
       currentPitch = scaleNotes[0];
-      console.log('Updated scaleNotes:', scaleNotes);
       alert('Pitches updated to: ' + scaleNotes.join(', '));
     };
 
-    // Initial draw
-    ['waveCanvasTime','waveCanvasVolume','waveCanvasPan']
-      .forEach((id,i)=> drawWave(id,[waveTime,waveVol,wavePan][i],0));
+    // Initial visuals
+    ['waveCanvasTime','waveCanvasVolume','waveCanvasPan'].forEach((id, idx) =>
+      drawWave(id, [waveTime, waveVol, wavePan][idx], 0)
+    );
   </script>
 </body>
 </html>
