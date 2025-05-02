@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Web Audio Drone Instrument</title>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; }
+    .top-controls { margin-bottom: 1rem; }
+    button, input[type=file] { margin-right: 0.5rem; }
+    .controls { display: flex; flex-wrap: wrap; gap: 1rem; }
+    .layer, .global { border: 1px solid #ccc; padding: 0.5rem; border-radius: 6px; width: 320px; }
+    .layer h3, .global h3 { margin-top: 0; font-size: 1.1rem; }
+    .control { margin: 0.5rem 0; display: flex; align-items: center; }
+    .control label { flex: 1; }
+    .control input[type=range] { flex: 2; margin-right: 0.5rem; }
+    .control input[type=number], .control select { width: 60px; }
+    #keyboard { margin-top: 1rem; }
+    #keyboard button { width: 40px; height: 120px; margin: 0 1px; border: 1px solid #333; background: #fff; cursor: pointer; }
+    #keyboard button.black { width: 28px; height: 80px; background: #333; color: #fff; margin-left: -14px; margin-right: -14px; z-index: 1; }
+  </style>
+</head>
+<body>
+  <h1>Web Audio Drone</h1>
+  <div class="top-controls">
+    <button id="start">Start Audio</button>
+    <button id="export">Export Settings</button>
+    <input type="file" id="importFile" accept="application/json" />
+    <div id="status"></div>
+  </div>
+  <div class="controls" id="layers"></div>
+  <div id="keyboard"></div>
+
+  <script>
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const layers = [];
+    let masterGain, filter;
+    let globalLFO = {}, filterLFO = {};
+    let octaveFactor = 1, currentMidi = 60, currentFreq = 440;
+
+    const midiToFreq = m => 440 * Math.pow(2, (m - 69) / 12);
+    const defs = [
+      { name: 'Pure Sine', type: 'sine' },
+      { name: 'Sitar Saw', type: 'sawtooth' },
+      { name: 'Organ Pulse', type: 'square' }
+    ];
+
+    document.getElementById('export').onclick = () => {
+      const data = getSettings();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'droneSettings.json'; a.click(); URL.revokeObjectURL(url);
+    };
+
+    document.getElementById('importFile').onchange = e => {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try { applySettings(JSON.parse(ev.target.result)); buildUI(); alert('Settings loaded'); }
+        catch { alert('Invalid file'); }
+      };
+      reader.readAsText(file);
+    };
+
+    document.getElementById('start').onclick = async () => {
+      await ctx.resume(); document.getElementById('status').textContent = 'Audio started';
+      setupAudio(); createLayers(); setupGlobalLFO(); setupFilterLFO(); buildUI(); buildKeyboard(36,84); updatePitch(currentMidi);
+    };
+
+    function setupAudio() {
+      masterGain = ctx.createGain(); masterGain.gain.value = 0.5; masterGain.connect(ctx.destination);
+      filter = ctx.createBiquadFilter(); filter.type = 'bandpass'; filter.frequency.value = 800; filter.Q.value = 10; filter.connect(masterGain);
+    }
+
+    function createLayers() {
+      defs.forEach(d => {
+        const osc = ctx.createOscillator(); osc.type = d.type;
+        const gainNode = ctx.createGain(); gainNode.gain.value = 0.5;
+        const staticDetune = ctx.createConstantSource(); staticDetune.offset.value = 0; staticDetune.connect(osc.detune); staticDetune.start();
+        const lfoGain = ctx.createGain(), lfoConst = ctx.createConstantSource();
+        layers.push({ name: d.name, osc, gainNode, staticDetune, lfoGain, lfoConst, lfoLower: -5, lfoUpper: 5 });
+        lfoConst.connect(osc.detune); lfoGain.connect(osc.detune);
+        osc.connect(gainNode).connect(filter);
+        osc.start(); lfoConst.start();
+      });
+    }
+
+    function setupGlobalLFO() {
+      const osc = ctx.createOscillator(), gain = ctx.createGain(), cons = ctx.createConstantSource();
+      osc.frequency.value = 1; osc.type = 'sine'; cons.offset.value = 0; gain.gain.value = 5;
+      layers.forEach(l => { cons.connect(l.osc.detune); gain.connect(l.osc.detune); });
+      osc.connect(gain); cons.start(); osc.start();
+      globalLFO = { osc, gain, cons, lower: 0, upper: 5 };
+    }
+
+    function setupFilterLFO() {
+      const osc = ctx.createOscillator(), gain = ctx.createGain(), cons = ctx.createConstantSource();
+      osc.frequency.value = 1; osc.type = 'sine'; cons.offset.value = filter.frequency.value; gain.gain.value = 0;
+      cons.connect(filter.frequency); gain.connect(filter.frequency);
+      osc.connect(gain); cons.start(); osc.start();
+      filterLFO = { osc, gain, cons, lower: 0, upper: 0 };
+    }
+
+    function updateLayerLFO(layer, lower, upper) {
+      layer.lfoLower = lower; layer.lfoUpper = upper;
+      const mid = (upper + lower) / 2; const amp = (upper - lower) / 2;
+      layer.lfoConst.offset.setValueAtTime(mid, ctx.currentTime);
+      layer.lfoGain.gain.setValueAtTime(amp, ctx.currentTime);
+    }
+
+    function updateFilterLFO(lower, upper) {
+      filterLFO.lower = lower; filterLFO.upper = upper;
+      const base = filter.frequency.value; const effLower = Math.max(lower, -base);
+      const mid = (upper + effLower) / 2; const amp = (upper - effLower) / 2;
+      filterLFO.cons.offset.setValueAtTime(Math.max(base + mid, 0), ctx.currentTime);
+      filterLFO.gain.gain.setValueAtTime(amp, ctx.currentTime);
+    }
+
+    function buildUI() {
+      const c = document.getElementById('layers'); c.innerHTML = '';
+      const g = document.createElement('div'); g.className = 'global'; g.innerHTML = '<h3>Global Controls</h3>';
+      g.appendChild(wrap('Master Vol:', genRangeNum(0,1,0.01, masterGain.gain.value, v => masterGain.gain.setValueAtTime(v, ctx.currentTime))));
+      g.appendChild(wrap('Frequency (Hz):', genRangeNum(20,440,0.001, currentFreq, v => updateFrequency(v))));
+      g.appendChild(wrap('Octave:', genSelect([['-2','0.25'],['-1','0.5'],['0','1'],['+1','2'],['+2','4']], ''+octaveFactor, v => { octaveFactor=+v; updatePitch(currentMidi); })));
+      g.appendChild(wrap('Filter Cutoff:', genRangeNum(0,3000,1, filter.frequency.value, v => filter.frequency.setValueAtTime(v, ctx.currentTime))));
+      g.appendChild(wrap('Filter Q:', genRangeNum(1,30,1, filter.Q.value, v => filter.Q.setValueAtTime(v, ctx.currentTime))));
+      // Filter LFO controls
+      g.appendChild(wrap('Filter LFO Low Dev (Hz):', genRangeNum(-200,0,1, filterLFO.lower, v => updateFilterLFO(v, filterLFO.upper))));
+      g.appendChild(wrap('Filter LFO High Dev (Hz):', genRangeNum(0,600,1, filterLFO.upper, v => updateFilterLFO(filterLFO.lower, v))));
+      g.appendChild(wrap('Filter LFO Speed (Hz):', genRangeNum(0.01,20,0.01, filterLFO.osc.frequency.value, v => filterLFO.osc.frequency.setValueAtTime(v, ctx.currentTime))));
+      g.appendChild(wrap('Filter LFO Wave:', genSelect(['sine','square','sawtooth','triangle'], filterLFO.osc.type, v => filterLFO.osc.type = v)));
+      // Detune LFO
+      g.appendChild(wrap('Detune LFO Depth (¢):', genRangeNum(0,50,0.1, globalLFO.gain.gain.value, v => globalLFO.gain.gain.setValueAtTime(v, ctx.currentTime))));
+      g.appendChild(wrap('Detune LFO Lower (¢):', genRangeNum(-50,50,0.1, globalLFO.lower, v => updateLayerLFO(globalLFO, v, globalLFO.upper))));
+      g.appendChild(wrap('Detune LFO Upper (¢):', genRangeNum(-50,50,0.1, globalLFO.upper, v => updateLayerLFO(globalLFO, globalLFO.lower, v))));
+      g.appendChild(wrap('Detune LFO Speed (Hz):', genRangeNum(0.01,20,0.01, globalLFO.osc.frequency.value, v => globalLFO.osc.frequency.setValueAtTime(v, ctx.currentTime))));
+      g.appendChild(wrap('Detune LFO Wave:', genSelect(['sine','square','sawtooth','triangle'], globalLFO.osc.type, v => globalLFO.osc.type = v)));
+      c.appendChild(g);
+      layers.forEach((l,i) => {
+        const box = document.createElement('div'); box.className = 'layer';
+        box.innerHTML = `<h3>Layer ${i+1}: ${l.name}</h3>`;
+        box.appendChild(wrap('Waveform:', genSelect(['sine','square','sawtooth','triangle'], l.osc.type, v => l.osc.type = v)));
+        box.appendChild(wrap('Level:', genRangeNum(0,1,0.01, l.gainNode.gain.value, v => l.gainNode.gain.setValueAtTime(v, ctx.currentTime))));
+        box.appendChild(wrap('Static Detune (¢):', genRangeNum(-100,100,0.01, l.staticDetune.offset.value, v => l.staticDetune.offset.setValueAtTime(v, ctx.currentTime))));
+        box.appendChild(wrap('LFO Depth (¢):', genRangeNum(0,50,0.1, l.lfoGain.gain.value, v => l.lfoGain.gain.setValueAtTime(v, ctx.currentTime))));
+        box.appendChild(wrap('LFO Lower (¢):', genRangeNum(-50,50,0.1, l.lfoLower, v => updateLayerLFO(l, v, l.lfoUpper))));
+        box.appendChild(wrap('LFO Upper (¢):', genRangeNum(-50,50,0.1, l.lfoUpper, v => updateLayerLFO(l, l.lfoLower, v))));
+        box.appendChild(wrap('LFO Speed (Hz):', genRangeNum(0.01,20,0.01, globalLFO.osc.frequency.value, v => globalLFO.osc.frequency.setValueAtTime(v, ctx.currentTime))));
+        box.appendChild(wrap('LFO Wave:', genSelect(['sine','square','sawtooth','triangle'], globalLFO.osc.type, v => globalLFO.osc.type = v)));
+        c.appendChild(box);
+      });
+    }
+
+    function updatePitch(m) { currentMidi = m; updateFrequency(midiToFreq(m) * octaveFactor); }
+    function updateFrequency(f) { currentFreq = f; layers.forEach(l => l.osc.frequency.setValueAtTime(f, ctx.currentTime)); if (freqControl && freqControl.slider) { freqControl.slider.value = f; freqControl.number.value = +f.toFixed(3); } }
+    function buildKeyboard(lo, hi) { const kb = document.getElementById('keyboard'); kb.innerHTML = ''; for (let n=lo; n<=hi; n++) if (![1,3,6,8,10].includes(n%12)) kb.appendChild(makeKey(n,false)); for (let n=lo; n<=hi; n++) if ([1,3,6,8,10].includes(n%12)) kb.appendChild(makeKey(n,true)); }
+    function makeKey(m,b) { const btn=document.createElement('button'); btn.dataset.midi=m; if(b)btn.classList.add('black'); btn.onclick=()=>updatePitch(m); return btn; }
+    function genRangeNum(min,max,step,val,onch){ const c=document.createElement('div'); const s=document.createElement('input'); s.type='range'; s.min=min; s.max=max; s.step=step; s.value=val; const n=document.createElement('input'); n.type='number'; n.min=min; n.max=max; n.step=step; n.value=+val.toFixed(3); s.oninput=e=>{ n.value=+parseFloat(e.target.value).toFixed(3); onch(+e.target.value); }; n.oninput=e=>{ s.value=e.target.value; onch(+e.target.value); }; c.appendChild(s); c.appendChild(n); if(onch===updateFrequency) freqControl={slider:s,number:n}; return c; }
+    function genSelect(opts,sel,onch){ const s=document.createElement('select'); opts.forEach(o => { const opt=document.createElement('option'); if(Array.isArray(o)){ opt.textContent=o[0]; opt.value=o[1]; } else { opt.textContent=o; opt.value=o; } if(opt.value==sel) opt.selected=true; s.appendChild(opt); }); s.onchange=e=>onch(e.target.value); return s; }
+    function wrap(lbl,ctrl){ const d=document.createElement('div'); d.className='control'; const l=document.createElement('label'); l.textContent=lbl+' '; l.appendChild(ctrl); d.appendChild(l); return d; }
+    function getSettings(){ return { masterVolume: masterGain.gain.value, frequency: currentFreq, octave: octaveFactor, filterFreq: filter.frequency.value, filterQ: filter.Q.value, global:{ lower:globalLFO.lower, upper:globalLFO.upper, depth:globalLFO.gain.gain.value, speed:globalLFO.osc.frequency.value, wave:globalLFO.osc.type }, layers:layers.map(l=>({ waveform:l.osc.type, level:l.gainNode.gain.value, staticDetune:l.staticDetune.offset.value, lfoLower:l.lfoLower, lfoUpper:l.lfoUpper, lfoDepth:l.lfoGain.gain.value })) }; }
+    function applySettings(d){ masterGain.gain.setValueAtTime(d.masterVolume,ctx.currentTime); updateFrequency(d.frequency); octaveFactor=d.octave; filter.frequency.setValueAtTime(d.filterFreq,ctx.currentTime); filter.Q.setValueAtTime(d.filterQ,ctx.currentTime); globalLFO.lower=d.global.lower; globalLFO.upper=d.global.upper; globalLFO.gain.gain.setValueAtTime(d.global.depth,ctx.currentTime); globalLFO.cons.offset.setValueAtTime((d.global.upper+d.global.lower)/2,ctx.currentTime); globalLFO.osc.frequency.setValueAtTime(d.global.speed,ctx.currentTime); globalLFO.osc.type=d.global.wave; layers.forEach((l,i)=>{ const ld=d.layers[i]; l.osc.type=ld.waveform; l.gainNode.gain.setValueAtTime(ld.level,ctx.currentTime); l.staticDetune.offset.setValueAtTime(ld.staticDetune,ctx.currentTime); updateLayerLFO(l,ld.lfoLower,ld.lfoUpper); l.lfoGain.gain.setValueAtTime(ld.lfoDepth,ctx.currentTime); }); }
+  </script>
+</body>
+</html>
