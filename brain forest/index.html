@@ -1,0 +1,510 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wave Modules with Carrier Controls</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #282c34; color: #eee; margin: 0; padding: 20px; }
+    .global-controls { margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .modules-container { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+    .wave-module { background: #1a1d23; padding: 10px; border-radius: 8px; position: relative; }
+    .wave-trigger { cursor: pointer; color: #61dafb; font-size: 18px; }
+    .settings { display: none; margin-top: 10px; background: #2b2f36; padding: 8px; border-radius: 6px; }
+    .control-group { margin-bottom: 8px; }
+    .control-group label { color: #61dafb; font-size: 12px; display: block; margin-bottom: 4px; }
+    .control-group select, .control-group input { width: 100%; padding: 4px; background: #1a1d23; border: 1px solid #444; border-radius: 4px; color: #eee; font-size: 12px; }
+    .external-output { margin-top: 10px; text-align: center; }
+    .external-output canvas { width: 100%; height: 50px; background: #282c34; display: block; }
+    .value { color: #61dafb; font-family: monospace; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="global-controls">
+    <button id="exportBtn">Export All</button>
+    <button id="importBtn">Import</button>
+    <input type="file" id="importFile" accept="application/json" style="display:none;">
+    <label>Wave:</label>
+    <select id="carrierType">
+      <option value="sine">Sine</option>
+      <option value="square">Square</option>
+      <option value="sawtooth">Sawtooth</option>
+      <option value="reverse-sawtooth">Reverse Saw</option>
+      <option value="triangle">Triangle</option>
+      <option value="reverse-triangle">Reverse Triangle</option>
+    </select>
+    <label>Freq:</label><input type="range" id="carrierFreq" min="20" max="2000" value="440" step="1" style="width:120px;"><span id="carrierFreqDisplay" style="width:40px; display:inline-block; text-align:right;">440</span><span>Hz</span>
+    <label>Vol:</label><input type="range" id="masterVol" min="0" max="1" step="0.01" value="0.5">
+    <label>Detune:</label><input type="range" id="detune" min="-100" max="100" step="1" value="0">
+    <label>Pan:</label><input type="range" id="pan" min="-1" max="1" step="0.01" value="0">
+    <label>Test:</label><input type="range" id="testSlider" min="-7" max="1" step="0.01" value="0" style="width:120px;"><span id="testSliderDisplay" style="width:50px; display:inline-block; text-align:right;">0.00</span>
+    <label>Test2:</label><input type="range" id="test2Slider" min="-7" max="1" step="0.01" value="0" style="width:120px;"><span id="test2SliderDisplay" style="width:50px; display:inline-block; text-align:right;">0.00</span>
+  </div>
+
+  <div class="modules-container" id="modulesContainer"></div>
+
+  <template id="waveModuleTemplate">
+    <div class="wave-module" data-id="__id__">
+      <div class="wave-trigger">☰ Settings</div>
+      <div class="external-output">
+        <canvas class="output-canvas"></canvas>
+        <div class="value output-value">0.000</div>
+      </div>
+      <div class="settings">
+        <div class="control-group">
+          <label>Type</label>
+          <select class="wave-type">
+            <option value="sine">Sine</option>
+            <option value="square">Square</option>
+            <option value="sawtooth">Sawtooth</option>
+            <option value="reverse-sawtooth">Reverse Saw</option>
+            <option value="triangle">Triangle</option>
+            <option value="reverse-triangle">Reverse Triangle</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="control-group custom-container" style="display:none;">
+          <label>Draw Custom Wave</label>
+          <canvas class="draw-canvas" width="200" height="80" style="border:1px solid #444; background:#fff;"></canvas>
+          <button class="clear-draw" style="font-size:12px;margin-top:4px;">Clear</button>
+        </div>
+        <div class="control-group">
+          <label>Speed (exp)</label>
+          <input type="range" class="speed" min="-7" max="1" step="0.01" value="0">
+          <div class="speed-display">1.0000000 Hz</div>
+        </div>
+        <div class="control-group speed-range-controls" style="/* Initially hide for modules 1-7 via JS if needed */">
+          <label>Speed Min (log)</label>
+          <input type="number" class="speed-min" value="-7" step="0.01">
+          <label>Speed Max (log)</label>
+          <input type="number" class="speed-max" value="1" step="0.01">
+        </div>
+        <div class="control-group">
+          <label>Depth</label>
+          <input type="range" class="depth" min="0" max="1" step="0.01" value="0.5">
+          <div class="depth-display">0.50</div>
+        </div>
+        <div class="control-group">
+          <label>Range</label>
+          <input type="number" class="low" value="-1" step="any">
+          <input type="number" class="high" value="1" step="any">
+        </div>
+        <div class="control-group">
+          <label>Phase</label>
+          <input type="range" class="phase" min="0" max="360" step="1" value="0">
+          <div class="phase-display">0°</div>
+        </div>
+        <div class="control-group">
+          <label>Log</label>
+          <input type="range" class="log-scale" min="0.1" max="2" step="0.01" value="1">
+          <div class="log-display">1.00</div>
+        </div>
+        <div class="control-group">
+          <label>Enable</label>
+          <input type="checkbox" class="enable">
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const carrierOsc = audioCtx.createOscillator();
+      const masterGain = audioCtx.createGain();
+      const panner = audioCtx.createStereoPanner();
+      carrierOsc.connect(masterGain).connect(panner).connect(audioCtx.destination);
+      carrierOsc.start();
+
+      // Global controls
+      document.getElementById('carrierType').addEventListener('change', e => { carrierOsc.type = e.target.value; });
+      // document.getElementById('carrierFreq').addEventListener('input', e => { carrierOsc.frequency.setValueAtTime(parseFloat(e.target.value), audioCtx.currentTime); }); // Managed in modulationLoop
+      // document.getElementById('masterVol').addEventListener('input', e => { masterGain.gain.setValueAtTime(parseFloat(e.target.value), audioCtx.currentTime); });   // Managed in modulationLoop
+      document.getElementById('detune').addEventListener('input', e => { carrierOsc.detune.setValueAtTime(parseFloat(e.target.value), audioCtx.currentTime); });
+      document.getElementById('pan').addEventListener('input', e => { panner.pan.setValueAtTime(parseFloat(e.target.value), audioCtx.currentTime); });
+
+      const carrierFreqSlider = document.getElementById('carrierFreq');
+      const carrierFreqDisplay = document.getElementById('carrierFreqDisplay');
+      carrierFreqSlider.addEventListener('input', e => { carrierFreqDisplay.textContent = e.target.value; });
+
+      const testSlider = document.getElementById('testSlider');
+      const testSliderDisplay = document.getElementById('testSliderDisplay');
+      testSlider.addEventListener('input', e => { testSliderDisplay.textContent = parseFloat(e.target.value).toFixed(2); });
+
+      const test2Slider = document.getElementById('test2Slider');
+      const test2SliderDisplay = document.getElementById('test2SliderDisplay');
+      test2Slider.addEventListener('input', e => { test2SliderDisplay.textContent = parseFloat(e.target.value).toFixed(2); });
+
+      // Create modules
+      const container = document.getElementById('modulesContainer');
+      const template = document.getElementById('waveModuleTemplate').innerHTML;
+      const modules = [];
+      for (let i = 0; i < 8; i++) {
+        const html = template.replace(/__id__/g, i);
+        container.insertAdjacentHTML('beforeend', html);
+        modules.push(new WaveModule(container.children[i], audioCtx));
+      }
+
+      // Modulation loop
+      function modulationLoop() {
+        // Carrier Frequency: Controlled by global knob, additively modulated by modules[0]
+        const carrierFreqKnobVal = parseFloat(document.getElementById('carrierFreq').value);
+        let finalCarrierFreq = carrierFreqKnobVal; // Start with the knob value
+        if (modules[0].isPlaying) {
+            const freqModSignal = parseFloat(modules[0].outputValue.textContent);
+            if (!isNaN(freqModSignal)) { // Check if output is a valid number
+                finalCarrierFreq += freqModSignal; // Add module 0 output to the knob value
+            }
+        }
+        carrierOsc.frequency.setValueAtTime(Math.max(1, finalCarrierFreq), audioCtx.currentTime); // Min 1Hz
+
+        // Master Volume: Controlled by global knob, multiplicatively modulated by modules[1]
+        const masterVolKnobVal = parseFloat(document.getElementById('masterVol').value);
+        let finalMasterGainMultiplier = 1.0; // Default to no modulation on gain knob value
+        if (modules[1].isPlaying) {
+            const ampModSignal = parseFloat(modules[1].outputValue.textContent);
+            if (!isNaN(ampModSignal)) {
+                finalMasterGainMultiplier = ampModSignal;
+            }
+        }
+        const targetMasterGain = Math.max(0, masterVolKnobVal * finalMasterGainMultiplier);
+        // Smooth gain changes to prevent clicks
+        masterGain.gain.setValueAtTime(masterGain.gain.value, audioCtx.currentTime); // Cancel previous automations and set current value
+        masterGain.gain.linearRampToValueAtTime(targetMasterGain, audioCtx.currentTime + 0.01); // Ramp to new target in 10ms
+
+        // Module 2 output controls the global "Test" slider
+        let targetTestSliderValue = parseFloat(document.getElementById('testSlider').value); // Keep current if module 2 is off
+        if (modules[2].isPlaying) {
+            const mod2Output = parseFloat(modules[2].outputValue.textContent);
+            if (!isNaN(mod2Output)) {
+                // Directly use module 2's output, clamped to Test slider's range
+                targetTestSliderValue = Math.max(-7, Math.min(1, mod2Output)); 
+            }
+        }
+        document.getElementById('testSlider').value = targetTestSliderValue;
+        document.getElementById('testSliderDisplay').textContent = targetTestSliderValue.toFixed(2);
+        
+        // Module 0 Speed: "Test" slider (now driven by module 2) controls it, scaled by module 0's own speed min/max settings.
+        const testSliderRawValue = targetTestSliderValue; // Use the value we just set for the Test slider
+        const testSliderMinFixed = -7; // Fixed range of the global Test slider
+        const testSliderMaxFixed = 1;  // Fixed range of the global Test slider
+
+        // Normalize testSliderRawValue to a 0-1 range
+        const normalizedTestValue = (testSliderRawValue - testSliderMinFixed) / (testSliderMaxFixed - testSliderMinFixed);
+
+        let mod0MinLogSpeed = parseFloat(modules[0].prefs.speedMin.value);
+        let mod0MaxLogSpeed = parseFloat(modules[0].prefs.speedMax.value);
+
+        // Validate and set default for module 0's dynamic range if necessary
+        if (isNaN(mod0MinLogSpeed) || isNaN(mod0MaxLogSpeed) || mod0MinLogSpeed >= mod0MaxLogSpeed) {
+            mod0MinLogSpeed = -7; // Default min for module 0's effective range
+            mod0MaxLogSpeed = 1;  // Default max for module 0's effective range
+            // Optionally update the input fields if they were invalid
+            modules[0].prefs.speedMin.value = mod0MinLogSpeed;
+            modules[0].prefs.speedMax.value = mod0MaxLogSpeed;
+        }
+
+        // Update module 0's speed slider's actual min and max attributes
+        modules[0].prefs.speed.min = mod0MinLogSpeed;
+        modules[0].prefs.speed.max = mod0MaxLogSpeed;
+
+        // Scale the normalizedTestValue to the new dynamic range of module 0's slider
+        let targetMod0LogSpeed = mod0MinLogSpeed + (normalizedTestValue * (mod0MaxLogSpeed - mod0MinLogSpeed));
+        
+        // The step attribute of module 0's speed slider (modules[0].prefs.speed.step) remains 0.01 by default.
+        // If the dynamic range (mod0MaxLogSpeed - mod0MinLogSpeed) becomes very small, the slider might feel coarse.
+        // If it becomes very large, it might feel too fine. For now, 0.01 is kept.
+
+        modules[0].setSpeed(targetMod0LogSpeed);
+
+        // Module 3 output controls the global "Test2" slider (as before)
+        let targetTest2SliderValue = parseFloat(document.getElementById('test2Slider').value); 
+        if (modules[3].isPlaying) {
+            const mod3Output = parseFloat(modules[3].outputValue.textContent);
+            if (!isNaN(mod3Output)) {
+                targetTest2SliderValue = Math.max(-7, Math.min(1, mod3Output)); 
+            }
+        }
+        document.getElementById('test2Slider').value = targetTest2SliderValue;
+        document.getElementById('test2SliderDisplay').textContent = targetTest2SliderValue.toFixed(2);
+
+        // Module 1 Speed: "Test2" slider (driven by module 3) controls it, scaled by module 1's own speed min/max settings.
+        const test2SliderRawValue = targetTest2SliderValue; // Value from Test2 slider (which is -7 to 1 log)
+        const test2SliderMinFixed = -7; // Fixed range of the global Test2 slider
+        const test2SliderMaxFixed = 1;  // Fixed range of the global Test2 slider
+
+        // Normalize test2SliderRawValue to a 0-1 range
+        const normalizedTest2Value = (test2SliderRawValue - test2SliderMinFixed) / (test2SliderMaxFixed - test2SliderMinFixed);
+
+        let mod1MinLogSpeed = parseFloat(modules[1].prefs.speedMin.value);
+        let mod1MaxLogSpeed = parseFloat(modules[1].prefs.speedMax.value);
+
+        // Validate and set default for module 1's dynamic range if necessary
+        if (isNaN(mod1MinLogSpeed) || isNaN(mod1MaxLogSpeed) || mod1MinLogSpeed >= mod1MaxLogSpeed) {
+            mod1MinLogSpeed = -7; 
+            mod1MaxLogSpeed = 1;  
+            modules[1].prefs.speedMin.value = mod1MinLogSpeed;
+            modules[1].prefs.speedMax.value = mod1MaxLogSpeed;
+        }
+
+        // Update module 1's speed slider's actual min and max attributes
+        modules[1].prefs.speed.min = mod1MinLogSpeed;
+        modules[1].prefs.speed.max = mod1MaxLogSpeed;
+
+        // Scale the normalizedTest2Value to the new dynamic range of module 1's slider
+        let targetMod1LogSpeed = mod1MinLogSpeed + (normalizedTest2Value * (mod1MaxLogSpeed - mod1MinLogSpeed));
+        
+        modules[1].setSpeed(targetMod1LogSpeed);
+
+        requestAnimationFrame(modulationLoop);
+      }
+      modulationLoop();
+      // Export settings as JSON
+      document.getElementById('exportBtn').addEventListener('click', () => {
+        const settings = {
+          carrier: {
+            type: document.getElementById('carrierType').value,
+            freq: parseFloat(document.getElementById('carrierFreq').value),
+            vol: parseFloat(document.getElementById('masterVol').value),
+            detune: parseFloat(document.getElementById('detune').value),
+            pan: parseFloat(document.getElementById('pan').value)
+          },
+          modules: modules.map(m => m.getSettings())
+        };
+        const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'wave-settings.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+      // Import settings
+      document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFile').click());
+      document.getElementById('importFile').addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          try {
+            const settings = JSON.parse(ev.target.result);
+            // Apply carrier settings
+            const c = settings.carrier;
+            if (c) {
+              document.getElementById('carrierType').value = c.type;
+              document.getElementById('carrierFreq').value = c.freq;
+              document.getElementById('masterVol').value = c.vol;
+              document.getElementById('detune').value = c.detune;
+              document.getElementById('pan').value = c.pan;
+              ['change','input'].forEach(evt=>document.getElementById('carrierType').dispatchEvent(new Event(evt)));
+              ['input'].forEach(evt=>{
+                ['carrierFreq','masterVol','detune','pan'].forEach(id=>document.getElementById(id).dispatchEvent(new Event(evt)));
+              });
+            }
+            // Apply module settings
+            if (Array.isArray(settings.modules)) {
+              settings.modules.forEach((mod, idx) => {
+                if (modules[idx] && typeof modules[idx].applySettings === 'function') {
+                  modules[idx].applySettings(mod);
+                }
+              });
+            }
+          } catch (err) {
+            console.error('Failed to import settings:', err);
+          }
+        };
+        reader.readAsText(file);
+      });
+    });
+
+    class WaveModule {
+      constructor(root, audioCtx) {
+        this.root = root;
+        this.audioCtx = audioCtx;
+        this.customPoints = [];
+        this.history = [];
+        this.isPlaying = false;
+        this.startTime = 0;
+        this.lastSpeed = 1;
+        this.outputValue = root.querySelector('.output-value');
+        this.outputCanvas = root.querySelector('.output-canvas'); this.outputCanvas.width = 200; this.outputCanvas.height = 50;
+        this.outputCtx = this.outputCanvas.getContext('2d');
+        this.trigger = root.querySelector('.wave-trigger');
+        this.settings = root.querySelector('.settings');
+        this.prefs = {
+          waveType: root.querySelector('.wave-type'),
+          customContainer: root.querySelector('.custom-container'),
+          drawCanvas: root.querySelector('.draw-canvas'),
+          drawCtx: root.querySelector('.draw-canvas') ? root.querySelector('.draw-canvas').getContext('2d') : null,
+          clearDraw: root.querySelector('.clear-draw'),
+          speed: root.querySelector('.speed'), speedDisplay: root.querySelector('.speed-display'),
+          speedMin: root.querySelector('.speed-min'),
+          speedMax: root.querySelector('.speed-max'),
+          speedRangeControls: root.querySelector('.speed-range-controls'),
+          depth: root.querySelector('.depth'), depthDisplay: root.querySelector('.depth-display'),
+          low: root.querySelector('.low'), high: root.querySelector('.high'),
+          phase: root.querySelector('.phase'), phaseDisplay: root.querySelector('.phase-display'),
+          log: root.querySelector('.log-scale'), logDisplay: root.querySelector('.log-display'),
+          enable: root.querySelector('.enable')
+        };
+        this.bind();
+        // Hide speed range controls if not module 0 or module 1
+        if (this.root.dataset.id !== '0' && this.root.dataset.id !== '1' && this.prefs.speedRangeControls) {
+            this.prefs.speedRangeControls.style.display = 'none';
+        }
+      }
+      bind() {
+        const p = this.prefs;
+        this.trigger.addEventListener('click', () => this.settings.style.display = this.settings.style.display === 'block' ? 'none' : 'block');
+        p.enable.addEventListener('change', () => { this.isPlaying = p.enable.checked; this.audioCtx.resume(); if (this.isPlaying) { this.startTime = Date.now(); this.history = []; this.update(); }});
+        p.waveType.addEventListener('change', () => {
+            p.customContainer.style.display = p.waveType.value === 'custom' ? 'block' : 'none';
+            this.redrawDrawCanvas(); // Redraw when type changes, might be to/from custom
+        });
+        if (p.drawCanvas) {
+          let drawing = false;
+          p.drawCanvas.addEventListener('mousedown', e => { if (p.waveType.value!=='custom') return; drawing=true; this.customPoints=[]; p.drawCtx.clearRect(0,0,p.drawCanvas.width,p.drawCanvas.height); p.drawCtx.beginPath(); const r=p.drawCanvas.getBoundingClientRect(); const pt={x:e.clientX-r.left, y:e.clientY-r.top}; p.drawCtx.moveTo(pt.x,pt.y); this.customPoints.push(pt); });
+          p.drawCanvas.addEventListener('mousemove', e => { if (!drawing) return; const r=p.drawCanvas.getBoundingClientRect(); const pt={x:e.clientX-r.left, y:e.clientY-r.top}; this.customPoints.push(pt); p.drawCtx.lineTo(pt.x,pt.y); p.drawCtx.strokeStyle='#61dafb';p.drawCtx.lineWidth=2;p.drawCtx.stroke(); });
+          ['mouseup','mouseleave'].forEach(evt=>p.drawCanvas.addEventListener(evt,()=>drawing=false));
+          p.clearDraw.addEventListener('click',()=>{p.drawCtx.clearRect(0,0,p.drawCanvas.width,p.drawCanvas.height); this.customPoints=[];});
+        }
+        p.speed.addEventListener('input', () => this.setSpeed(this.prefs.speed.value));
+        p.depth.addEventListener('input',()=>p.depthDisplay.textContent=parseFloat(p.depth.value).toFixed(2));
+        p.phase.addEventListener('input',()=>p.phaseDisplay.textContent=p.phase.value+'°');
+        p.log.addEventListener('input',()=>p.logDisplay.textContent=parseFloat(p.log.value).toFixed(2));
+      }
+      setSpeed(newLogSpeed) {
+        // Ensure newLogSpeed is a number
+        newLogSpeed = parseFloat(newLogSpeed);
+        if (isNaN(newLogSpeed)) return; // Safety check
+
+        // Update the slider's visual position if it's not already there
+        if (parseFloat(this.prefs.speed.value) !== newLogSpeed) {
+            this.prefs.speed.value = newLogSpeed;
+        }
+
+        const newSpeedHz = Math.pow(10, newLogSpeed);
+        const now = Date.now();
+
+        // Phase correction logic
+        // this.lastSpeed is the speed *before* this change
+        // this.startTime is the startTime for the speed *before* this change
+        const elapsedSinceLastStartTime = (now - this.startTime) / 1000;
+        const currentPhaseProgress = (elapsedSinceLastStartTime * this.lastSpeed) % 1;
+
+        this.lastSpeed = newSpeedHz; // Update to the new speed in Hz
+        // Adjust startTime for phase continuity: startTime = now - time_into_new_cycle
+        // time_into_new_cycle = currentPhaseProgress / newSpeedHz (if currentPhaseProgress is in cycles)
+        this.startTime = now - (currentPhaseProgress / newSpeedHz) * 1000;
+        if (newSpeedHz === 0) { // Avoid division by zero if speed is set to effectively zero
+            this.startTime = now; 
+        }
+
+        this.prefs.speedDisplay.textContent = newSpeedHz.toFixed(7) + ' Hz';
+      }
+      calculate(t) {
+        const p=this.prefs,dep=parseFloat(p.depth.value);
+        let raw=t,logS=parseFloat(p.log.value);
+        raw=logS===1?raw:(Math.log(raw*(logS-1)+1)/Math.log(logS));
+        const phase=(raw*2*Math.PI+parseFloat(p.phase.value)*Math.PI/180);
+        let v=0;
+        switch(p.waveType.value){
+          case 'sine': v=Math.sin(phase);break;
+          case 'square': v=Math.sign(Math.sin(phase));break;
+          case 'sawtooth': v=2*(raw-0.5);break;
+          case 'reverse-sawtooth': v=2*(0.5-raw);break;
+          case 'triangle': v=2*Math.abs(2*(raw-0.5))-1;break;
+          case 'reverse-triangle': v=1-2*Math.abs(2*(raw-0.5));break;
+          case 'custom': if(this.customPoints.length>1){const pts=this.customPoints, idx=raw*(pts.length-1),i=Math.floor(idx),ni=(i+1)%pts.length,f=idx-i; const y=pts[i].y*(1-f)+pts[ni].y*f; v=1-2*(y/this.prefs.drawCanvas.height);}break;
+        }
+        return v*dep;
+      }
+      update(){ if(!this.isPlaying) return; const t=((Date.now()-this.startTime)/1000*this.lastSpeed)%1; const val=this.calculate(t); const low=parseFloat(this.prefs.low.value),high=parseFloat(this.prefs.high.value); const sc=low+(val+1)*(high-low)/2; this.outputValue.textContent=sc.toFixed(3); this.history.push(sc); if(this.history.length>this.outputCanvas.width) this.history.shift(); const c=this.outputCtx; c.fillStyle='#282c34';c.fillRect(0,0,this.outputCanvas.width,this.outputCanvas.height); c.beginPath();c.strokeStyle='#61dafb';c.lineWidth=2; this.history.forEach((v,i)=>{const y=this.outputCanvas.height-((v-low)/(high-low))*this.outputCanvas.height; i===0?c.moveTo(i,y):c.lineTo(i,y);});c.stroke(); requestAnimationFrame(()=>this.update()); }
+      getSettings() {
+        const p = this.prefs;
+        return {
+          id: this.root.dataset.id,
+          waveType: p.waveType.value,
+          customPoints: this.customPoints,
+          speed: parseFloat(p.speed.value),
+          speedMin: p.speedMin ? parseFloat(p.speedMin.value) : -7,
+          speedMax: p.speedMax ? parseFloat(p.speedMax.value) : 1,
+          depth: parseFloat(p.depth.value),
+          low: parseFloat(p.low.value),
+          high: parseFloat(p.high.value),
+          phase: parseInt(p.phase.value),
+          logScale: parseFloat(p.log.value),
+          enabled: p.enable.checked
+        };
+      }
+      applySettings(s) {
+        if (!s) return;
+        const p = this.prefs;
+
+        p.waveType.value = s.waveType || 'sine';
+        this.customPoints = s.customPoints || [];
+        p.customContainer.style.display = p.waveType.value === 'custom' ? 'block' : 'none';
+        this.redrawDrawCanvas();
+
+        // Restore speedMin and speedMax for module 0 if they exist on prefs
+        if (p.speedMin) {
+            p.speedMin.value = s.speedMin !== undefined ? s.speedMin : -7;
+        }
+        if (p.speedMax) {
+            p.speedMax.value = s.speedMax !== undefined ? s.speedMax : 1;
+        }
+
+        // The actual speed slider value (p.speed.value) will be set by setSpeed via modulationLoop
+        // For initial load, if not playing, we can set it here or rely on setSpeed being called.
+        // However, setSpeed itself will be called in modulationLoop based on these min/max and testSlider.
+
+        p.depth.value = s.depth !== undefined ? s.depth : 0.5;
+        p.depthDisplay.textContent = parseFloat(p.depth.value).toFixed(2);
+
+        p.low.value = s.low !== undefined ? s.low : -1;
+        p.high.value = s.high !== undefined ? s.high : 1;
+
+        p.phase.value = s.phase !== undefined ? s.phase : 0;
+        p.phaseDisplay.textContent = p.phase.value + '°';
+
+        p.log.value = s.logScale !== undefined ? s.logScale : 1;
+        p.logDisplay.textContent = parseFloat(p.log.value).toFixed(2);
+        
+        p.enable.checked = s.enabled || false;
+        this.isPlaying = p.enable.checked;
+        if (this.isPlaying) {
+            this.startTime = Date.now(); // Reset start time on enable
+            this.history = [];
+            this.update(); 
+        } else {
+            // Clear output display if not playing
+            this.outputValue.textContent = (0).toFixed(3);
+            const c = this.outputCtx;
+            c.fillStyle = '#282c34';
+            c.fillRect(0, 0, this.outputCanvas.width, this.outputCanvas.height);
+        }
+      }
+      
+      redrawDrawCanvas() {
+        if (this.prefs.waveType.value === 'custom' && this.prefs.drawCtx) {
+            const ctx = this.prefs.drawCtx;
+            const canvas = this.prefs.drawCanvas;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (this.customPoints && this.customPoints.length > 1) {
+                ctx.beginPath();
+                ctx.moveTo(this.customPoints[0].x, this.customPoints[0].y);
+                for (let i = 1; i < this.customPoints.length; i++) {
+                    ctx.lineTo(this.customPoints[i].x, this.customPoints[i].y);
+                }
+                ctx.strokeStyle = '#61dafb';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+      }
+    }
+  </script>
+</body>
+</html>
+
