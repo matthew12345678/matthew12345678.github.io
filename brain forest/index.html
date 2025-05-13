@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -44,6 +43,67 @@
 
   <div class="modules-container" id="modulesContainer"></div>
 
+  <!-- Added Filter and Reverb Controls -->
+  <div class="control-group" style="margin-top: 30px; padding: 15px; border: 1px solid #555; border-radius: 8px;">
+    <h2>Effects Section</h2>
+    
+    <!-- Filter Controls -->
+    <div style="margin-bottom: 20px; padding-bottom:15px; border-bottom: 1px solid #444;">
+      <h3>Filter</h3>
+      <div class="control-group">
+        <label for="effectFilterType">Filter Type:</label>
+        <select id="effectFilterType" style="width: auto;">
+          <option value="lowpass">Low-pass</option>
+          <option value="highpass">High-pass</option>
+          <option value="bandpass">Band-pass</option>
+          <option value="lowshelf">Low-shelf</option>
+          <option value="highshelf">High-shelf</option>
+          <option value="peaking">Peaking</option>
+          <option value="notch">Notch</option>
+          <option value="allpass">All-pass</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="effectFilterFrequency">Frequency (Hz): <span id="effectFreqValue">1000</span></label>
+        <input type="range" id="effectFilterFrequency" min="0" max="100" step="1" value="50">
+      </div>
+      <div class="control-group">
+        <label for="effectFilterQ">Resonance (Q): <span id="effectQValue">1</span></label>
+        <input type="range" id="effectFilterQ" min="0.0001" max="30" step="0.0001" value="1">
+      </div>
+      <div class="control-group" id="effectFilterGainGroup">
+        <label for="effectFilterGain">Gain (dB): <span id="effectGainValue">0</span></label>
+        <input type="range" id="effectFilterGain" min="-40" max="40" step="0.1" value="0">
+      </div>
+    </div>
+
+    <!-- Reverb Controls -->
+    <div style="margin-bottom: 20px; padding-bottom:15px; border-bottom: 1px solid #444;">
+      <h3>Plate Reverb</h3>
+      <div class="control-group">
+        <label for="effectReverbMix">Reverb Mix (Dry/Wet): <span id="effectRevValue">0.50</span></label>
+        <input type="range" id="effectReverbMix" min="0" max="1" step="0.01" value="0.5">
+      </div>
+      <div class="control-group">
+        <label for="effectReverbPreDelay">Pre-Delay (ms): <span id="effectPDValue">20</span></label>
+        <input type="range" id="effectReverbPreDelay" min="0" max="1000" step="10" value="20">
+      </div>
+      <div class="control-group">
+        <label for="effectReverbDecay">Reverb Decay: <span id="effectDecayValue">0.50</span></label>
+        <input type="range" id="effectReverbDecay" min="0" max="0.95" step="0.01" value="0.5">
+      </div>
+    </div>
+
+    <!-- Effects Output Control -->
+    <div>
+      <h3>Effects Output</h3>
+      <div class="control-group">
+        <label for="effectsOutputVolume">Effects Output Volume: <span id="effectsVolValue">0.80</span></label>
+        <input type="range" id="effectsOutputVolume" min="0" max="1" step="0.01" value="0.8">
+      </div>
+    </div>
+  </div>
+
   <template id="waveModuleTemplate">
     <div class="wave-module" data-id="__id__">
       <div class="wave-trigger">☰ Settings</div>
@@ -64,10 +124,10 @@
             <option value="custom">Custom</option>
           </select>
         </div>
-        <div class="control-group custom-container" style="display:none;">
-          <label>Draw Custom Wave</label>
+        <div class="control-group waveform-display-area"> 
+          <label class="waveform-display-label">Waveform Shape</label> 
           <canvas class="draw-canvas" width="200" height="80" style="border:1px solid #444; background:#fff;"></canvas>
-          <button class="clear-draw" style="font-size:12px;margin-top:4px;">Clear</button>
+          <button class="clear-draw" style="font-size:12px;margin-top:4px; display:none;">Clear</button> 
         </div>
         <div class="control-group">
           <label>Speed (exp)</label>
@@ -114,8 +174,58 @@
       const carrierOsc = audioCtx.createOscillator();
       const masterGain = audioCtx.createGain();
       const panner = audioCtx.createStereoPanner();
-      carrierOsc.connect(masterGain).connect(panner).connect(audioCtx.destination);
+      // carrierOsc.connect(masterGain).connect(panner).connect(audioCtx.destination); // Old connection
+      carrierOsc.connect(masterGain).connect(panner); // Connect synth output to panner
       carrierOsc.start();
+
+      // --- BEGIN EFFECTS SECTION --- 
+      const effectFilter = audioCtx.createBiquadFilter();
+      const effectDryGain = audioCtx.createGain();
+      const effectWetGain = audioCtx.createGain();
+      const effectPreDelay = audioCtx.createDelay(1.0); // Max 1 second pre-delay
+      const effectFeedback = audioCtx.createGain();
+      const effectConvolver = audioCtx.createConvolver();
+      const effectsFinalOutputVolume = audioCtx.createGain();
+
+      // Connect panner output (main synth out) to the start of the effects chain
+      panner.connect(effectFilter);
+
+      // Generate impulse response for reverb
+      function createIREffects(duration, decay) {
+        const sr = audioCtx.sampleRate;
+        const len = sr * duration;
+        const buf = audioCtx.createBuffer(2, len, sr);
+        for (let ch = 0; ch < 2; ch++) {
+          const data = buf.getChannelData(ch);
+          for (let i = 0; i < len; i++) {
+            data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+          }
+        }
+        return buf;
+      }
+      effectConvolver.buffer = createIREffects(2, 2); // Default IR
+
+      // Connect effects chain nodes
+      effectFilter.connect(effectDryGain);          // Dry path
+      effectFilter.connect(effectPreDelay);       // Wet path starts here
+      effectPreDelay.connect(effectConvolver);
+      effectConvolver.connect(effectFeedback);
+      effectFeedback.connect(effectPreDelay);       // Feedback loop for plate reverb
+      effectConvolver.connect(effectWetGain);       // Output from convolver to wet gain
+      
+      effectDryGain.connect(effectsFinalOutputVolume);
+      effectWetGain.connect(effectsFinalOutputVolume);
+      effectsFinalOutputVolume.connect(audioCtx.destination); // Final output of effects to destination
+
+      // Helper for smooth parameter changes
+      function smoothSetParam(param, value) { 
+        if (param && typeof param.setTargetAtTime === 'function') {
+            param.setTargetAtTime(value, audioCtx.currentTime, 0.01); 
+        } else if (param && param.value !== undefined) {
+            param.value = value; // For params that don't have setTargetAtTime (like delayTime on older APIs)
+        }
+      }
+      // --- END EFFECTS SECTION --- 
 
       // Global controls
       document.getElementById('carrierType').addEventListener('change', e => { carrierOsc.type = e.target.value; });
@@ -135,6 +245,53 @@
       const test2Slider = document.getElementById('test2Slider');
       const test2SliderDisplay = document.getElementById('test2SliderDisplay');
       test2Slider.addEventListener('input', e => { test2SliderDisplay.textContent = parseFloat(e.target.value).toFixed(2); });
+
+      // --- BEGIN EFFECTS PARAMETER CONTROL ---
+      const effectElems = {};
+      ['effectFilterType', 'effectFilterFrequency', 'effectFilterQ', 'effectFilterGain', 'effectReverbMix', 'effectReverbPreDelay', 'effectReverbDecay', 'effectsOutputVolume']
+        .forEach(id => effectElems[id] = document.getElementById(id));
+      ['effectFreqValue', 'effectQValue', 'effectGainValue', 'effectRevValue', 'effectPDValue', 'effectDecayValue', 'effectsVolValue']
+        .forEach(id => effectElems[id] = document.getElementById(id));
+      const effectFilterGainGroup = document.getElementById('effectFilterGainGroup');
+
+      function updateEffectsParams() {
+        if (!effectFilter || !audioCtx) return; // Ensure nodes are ready
+
+        effectFilter.type = effectElems.effectFilterType.value;
+        const frac = +effectElems.effectFilterFrequency.value / 100;
+        const logMin = Math.log10(20), logMax = Math.log10(20000);
+        const freq = Math.pow(10, logMin + (logMax - logMin) * frac);
+        smoothSetParam(effectFilter.frequency, freq);
+        smoothSetParam(effectFilter.Q, +effectElems.effectFilterQ.value);
+        smoothSetParam(effectFilter.gain, +effectElems.effectFilterGain.value);
+        effectElems.effectFreqValue.textContent = freq.toFixed(1);
+        effectElems.effectQValue.textContent = (+effectElems.effectFilterQ.value).toFixed(2);
+        effectElems.effectGainValue.textContent = effectElems.effectFilterGain.value;
+        effectFilterGainGroup.style.display = ['lowshelf', 'highshelf', 'peaking'].includes(effectFilter.type) ? 'block' : 'none';
+
+        // Reverb
+        smoothSetParam(effectPreDelay.delayTime, +effectElems.effectReverbPreDelay.value / 1000);
+        smoothSetParam(effectWetGain.gain, +effectElems.effectReverbMix.value);
+        smoothSetParam(effectDryGain.gain, 1 - +effectElems.effectReverbMix.value);
+        smoothSetParam(effectFeedback.gain, +effectElems.effectReverbDecay.value);
+        effectElems.effectRevValue.textContent = (+effectElems.effectReverbMix.value).toFixed(2);
+        effectElems.effectPDValue.textContent = effectElems.effectReverbPreDelay.value;
+        effectElems.effectDecayValue.textContent = (+effectElems.effectReverbDecay.value).toFixed(2);
+
+        // Effects Output Volume
+        smoothSetParam(effectsFinalOutputVolume.gain, +effectElems.effectsOutputVolume.value);
+        effectElems.effectsVolValue.textContent = (+effectElems.effectsOutputVolume.value).toFixed(2);
+      }
+
+      ['effectFilterType', 'effectFilterFrequency', 'effectFilterQ', 'effectFilterGain', 'effectReverbMix', 'effectReverbPreDelay', 'effectReverbDecay', 'effectsOutputVolume']
+        .forEach(id => {
+          if (effectElems[id]) {
+            effectElems[id].addEventListener('input', updateEffectsParams);
+          }
+        });
+      
+      updateEffectsParams(); // Initial call to set parameters
+      // --- END EFFECTS PARAMETER CONTROL ---
 
       // Create modules
       const container = document.getElementById('modulesContainer');
@@ -270,7 +427,17 @@
             detune: parseFloat(document.getElementById('detune').value),
             pan: parseFloat(document.getElementById('pan').value)
           },
-          modules: modules.map(m => m.getSettings())
+          modules: modules.map(m => m.getSettings()),
+          effects: {
+            filterType: effectElems.effectFilterType.value,
+            filterFrequency: effectElems.effectFilterFrequency.value, // Store raw slider value (0-100)
+            filterQ: effectElems.effectFilterQ.value,
+            filterGain: effectElems.effectFilterGain.value,
+            reverbMix: effectElems.effectReverbMix.value,
+            reverbPreDelay: effectElems.effectReverbPreDelay.value,
+            reverbDecay: effectElems.effectReverbDecay.value,
+            outputVolume: effectElems.effectsOutputVolume.value
+          }
         };
         const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -310,6 +477,27 @@
                 }
               });
             }
+            // Apply effects settings
+            const fx = settings.effects;
+            if (fx) {
+              effectElems.effectFilterType.value = fx.filterType || 'lowpass';
+              effectElems.effectFilterFrequency.value = fx.filterFrequency !== undefined ? fx.filterFrequency : 50;
+              effectElems.effectFilterQ.value = fx.filterQ !== undefined ? fx.filterQ : 1;
+              effectElems.effectFilterGain.value = fx.filterGain !== undefined ? fx.filterGain : 0;
+              effectElems.effectReverbMix.value = fx.reverbMix !== undefined ? fx.reverbMix : 0.5;
+              effectElems.effectReverbPreDelay.value = fx.reverbPreDelay !== undefined ? fx.reverbPreDelay : 20;
+              effectElems.effectReverbDecay.value = fx.reverbDecay !== undefined ? fx.reverbDecay : 0.5;
+              effectElems.effectsOutputVolume.value = fx.outputVolume !== undefined ? fx.outputVolume : 0.8;
+              
+              // Trigger input events to update displays and audio params via updateEffectsParams
+              ['effectFilterType', 'effectFilterFrequency', 'effectFilterQ', 'effectFilterGain', 'effectReverbMix', 'effectReverbPreDelay', 'effectReverbDecay', 'effectsOutputVolume']
+                .forEach(id => {
+                  if (effectElems[id]) {
+                      effectElems[id].dispatchEvent(new Event('input'));
+                  }
+              });
+              // updateEffectsParams(); // Call directly after setting all values, or rely on dispatched events.
+            }
           } catch (err) {
             console.error('Failed to import settings:', err);
           }
@@ -334,7 +522,8 @@
         this.settings = root.querySelector('.settings');
         this.prefs = {
           waveType: root.querySelector('.wave-type'),
-          customContainer: root.querySelector('.custom-container'),
+          waveformDisplayArea: root.querySelector('.waveform-display-area'),
+          waveformDisplayLabel: root.querySelector('.waveform-display-label'),
           drawCanvas: root.querySelector('.draw-canvas'),
           drawCtx: root.querySelector('.draw-canvas') ? root.querySelector('.draw-canvas').getContext('2d') : null,
           clearDraw: root.querySelector('.clear-draw'),
@@ -349,31 +538,170 @@
           enable: root.querySelector('.enable')
         };
         this.bind();
-        // Hide speed range controls if not module 0 or module 1
         if (this.root.dataset.id !== '0' && this.root.dataset.id !== '1' && this.prefs.speedRangeControls) {
             this.prefs.speedRangeControls.style.display = 'none';
         }
+        this.updateDrawCanvasVisualization(); // Initial draw
       }
+
       bind() {
         const p = this.prefs;
         this.trigger.addEventListener('click', () => this.settings.style.display = this.settings.style.display === 'block' ? 'none' : 'block');
         p.enable.addEventListener('change', () => { this.isPlaying = p.enable.checked; this.audioCtx.resume(); if (this.isPlaying) { this.startTime = Date.now(); this.history = []; this.update(); }});
+        
         p.waveType.addEventListener('change', () => {
-            p.customContainer.style.display = p.waveType.value === 'custom' ? 'block' : 'none';
-            this.redrawDrawCanvas(); // Redraw when type changes, might be to/from custom
+            p.clearDraw.style.display = p.waveType.value === 'custom' ? 'inline-block' : 'none';
+            this.updateDrawCanvasVisualization();
         });
+
         if (p.drawCanvas) {
           let drawing = false;
-          p.drawCanvas.addEventListener('mousedown', e => { if (p.waveType.value!=='custom') return; drawing=true; this.customPoints=[]; p.drawCtx.clearRect(0,0,p.drawCanvas.width,p.drawCanvas.height); p.drawCtx.beginPath(); const r=p.drawCanvas.getBoundingClientRect(); const pt={x:e.clientX-r.left, y:e.clientY-r.top}; p.drawCtx.moveTo(pt.x,pt.y); this.customPoints.push(pt); });
-          p.drawCanvas.addEventListener('mousemove', e => { if (!drawing) return; const r=p.drawCanvas.getBoundingClientRect(); const pt={x:e.clientX-r.left, y:e.clientY-r.top}; this.customPoints.push(pt); p.drawCtx.lineTo(pt.x,pt.y); p.drawCtx.strokeStyle='#61dafb';p.drawCtx.lineWidth=2;p.drawCtx.stroke(); });
-          ['mouseup','mouseleave'].forEach(evt=>p.drawCanvas.addEventListener(evt,()=>drawing=false));
-          p.clearDraw.addEventListener('click',()=>{p.drawCtx.clearRect(0,0,p.drawCanvas.width,p.drawCanvas.height); this.customPoints=[];});
+          p.drawCanvas.addEventListener('mousedown', e => { 
+            if (p.waveType.value !=='custom') return;
+            drawing=true; this.customPoints=[]; 
+            this.updateDrawCanvasVisualization(); 
+            const r=p.drawCanvas.getBoundingClientRect(); 
+            const pt={x:e.clientX-r.left, y:e.clientY-r.top}; 
+            this.customPoints.push(pt);
+            p.drawCtx.beginPath();
+            p.drawCtx.moveTo(pt.x, pt.y);
+          });
+          p.drawCanvas.addEventListener('mousemove', e => { 
+            if (!drawing || p.waveType.value !=='custom') return; 
+            const r=p.drawCanvas.getBoundingClientRect(); 
+            const pt={x:e.clientX-r.left, y:e.clientY-r.top};
+            this.customPoints.push(pt); 
+            p.drawCtx.lineTo(pt.x,pt.y); 
+            p.drawCtx.strokeStyle='#007bff';
+            p.drawCtx.lineWidth=2; p.drawCtx.stroke(); 
+          });
+          p.drawCanvas.addEventListener('mouseup',() => {
+            if (p.waveType.value === 'custom') drawing = false;
+          });
+          p.drawCanvas.addEventListener('mouseleave',()=> {
+            if (p.waveType.value === 'custom') drawing = false;
+          });
+          p.clearDraw.addEventListener('click',()=>{
+            if (p.waveType.value === 'custom') {
+              this.customPoints=[];
+              this.updateDrawCanvasVisualization();
+            }
+          });
         }
         p.speed.addEventListener('input', () => this.setSpeed(this.prefs.speed.value));
         p.depth.addEventListener('input',()=>p.depthDisplay.textContent=parseFloat(p.depth.value).toFixed(2));
-        p.phase.addEventListener('input',()=>p.phaseDisplay.textContent=p.phase.value+'°');
-        p.log.addEventListener('input',()=>p.logDisplay.textContent=parseFloat(p.log.value).toFixed(2));
+        
+        p.phase.addEventListener('input',()=>{
+            p.phaseDisplay.textContent=p.phase.value+'°';
+            this.updateDrawCanvasVisualization();
+        });
+        p.log.addEventListener('input',()=>{
+            p.logDisplay.textContent=parseFloat(p.log.value).toFixed(2);
+            this.updateDrawCanvasVisualization();
+        });
       }
+
+      updateDrawCanvasVisualization() {
+        if (!this.prefs.drawCtx || !this.prefs.drawCanvas) return;
+        const ctx = this.prefs.drawCtx;
+        const canvas = this.prefs.drawCanvas;
+        const type = this.prefs.waveType.value;
+        const phaseDeg = parseFloat(this.prefs.phase.value);
+        const logScale = parseFloat(this.prefs.log.value);
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw center line
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height / 2);
+        ctx.lineTo(canvas.width, canvas.height / 2);
+        ctx.strokeStyle = '#ccc';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        if (type === 'custom') {
+            this.redrawCustomWave();
+        } else {
+            this.drawStandardWave(type, phaseDeg * Math.PI / 180, logScale, ctx, canvas);
+        }
+      }
+
+      redrawCustomWave() {
+        if (!this.prefs.drawCtx || !this.prefs.drawCanvas || !this.customPoints) return;
+        const ctx = this.prefs.drawCtx;
+        // Clear and center line are handled by updateDrawCanvasVisualization before this is called
+        // if (this.customPoints.length === 0) return; // No points to draw
+
+        if (this.customPoints.length > 0) {
+            ctx.beginPath();
+            ctx.moveTo(this.customPoints[0].x, this.customPoints[0].y);
+            for (let i = 1; i < this.customPoints.length; i++) {
+                ctx.lineTo(this.customPoints[i].x, this.customPoints[i].y);
+            }
+            ctx.strokeStyle = '#61dafb';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+      }
+
+      drawStandardWave(type, phaseRad, logScale, canvasCtx, canvas) {
+        const width = canvas.width;
+        const height = canvas.height;
+        const midY = height / 2;
+        const numPoints = width; // One point per horizontal pixel for smoothness
+
+        canvasCtx.beginPath();
+        canvasCtx.strokeStyle = '#61dafb';
+        canvasCtx.lineWidth = 2;
+
+        for (let i = 0; i < numPoints; i++) {
+            let xNormalized = i / (numPoints -1); // Normalized x from 0 to 1
+            
+            // Apply log scale to the normalized x-coordinate (time axis)
+            let tNormalized = xNormalized;
+            if (logScale !== 1) {
+                // Ensure positive base for pow, and handle edge cases if logScale makes it undefined
+                if (tNormalized > 0) { 
+                    tNormalized = Math.pow(tNormalized, logScale);
+                } else if (logScale < 1 && tNormalized === 0) {
+                     tNormalized = 0; // Avoid NaN for 0^positive
+                } else if (logScale > 1 && tNormalized === 0) {
+                     tNormalized = 0;
+                }
+                 // Clamp tNormalized to [0,1] after log operation if it goes out of bounds
+                tNormalized = Math.max(0, Math.min(1, tNormalized));
+            }
+
+            const angle = (tNormalized * 2 * Math.PI) + phaseRad;
+            let yValue = 0; // Waveform value from -1 to 1
+
+            switch (type) {
+                case 'sine': yValue = Math.sin(angle); break;
+                case 'square': yValue = Math.sin(angle) >= 0 ? 0.8 : -0.8; break; // Keep amplitude for square
+                case 'sawtooth': yValue = 2 * ( ( (angle / (2 * Math.PI)) % 1 + 1) % 1) - 1; break;
+                case 'reverse-sawtooth': yValue = 1 - 2 * ( ( (angle / (2 * Math.PI)) % 1 + 1) % 1); break;
+                case 'triangle': 
+                    const triNormalized = ( ( (angle / (2*Math.PI)) % 1 + 1) % 1 );
+                    yValue = triNormalized < 0.5 ? (4 * triNormalized - 1) : (-4 * triNormalized + 3); 
+                    break;
+                case 'reverse-triangle':
+                    const rtriNormalized = ( ( (angle / (2*Math.PI)) % 1 + 1) % 1 );
+                    yValue = rtriNormalized < 0.5 ? (1 - 4 * rtriNormalized) : (4 * rtriNormalized - 3);
+                    break;
+                default: yValue = 0;
+            }
+            
+            const canvasY = midY - (yValue * midY * 0.9); // Scale to fit, 0.9 to avoid hitting exact top/bottom
+
+            if (i === 0) {
+                canvasCtx.moveTo(i, canvasY);
+            } else {
+                canvasCtx.lineTo(i, canvasY);
+            }
+        }
+        canvasCtx.stroke();
+      }
+
       setSpeed(newLogSpeed) {
         // Ensure newLogSpeed is a number
         newLogSpeed = parseFloat(newLogSpeed);
@@ -444,20 +772,14 @@
 
         p.waveType.value = s.waveType || 'sine';
         this.customPoints = s.customPoints || [];
-        p.customContainer.style.display = p.waveType.value === 'custom' ? 'block' : 'none';
-        this.redrawDrawCanvas();
+        p.clearDraw.style.display = p.waveType.value === 'custom' ? 'inline-block' : 'none';
 
-        // Restore speedMin and speedMax for module 0 if they exist on prefs
         if (p.speedMin) {
             p.speedMin.value = s.speedMin !== undefined ? s.speedMin : -7;
         }
         if (p.speedMax) {
             p.speedMax.value = s.speedMax !== undefined ? s.speedMax : 1;
         }
-
-        // The actual speed slider value (p.speed.value) will be set by setSpeed via modulationLoop
-        // For initial load, if not playing, we can set it here or rely on setSpeed being called.
-        // However, setSpeed itself will be called in modulationLoop based on these min/max and testSlider.
 
         p.depth.value = s.depth !== undefined ? s.depth : 0.5;
         p.depthDisplay.textContent = parseFloat(p.depth.value).toFixed(2);
@@ -474,34 +796,16 @@
         p.enable.checked = s.enabled || false;
         this.isPlaying = p.enable.checked;
         if (this.isPlaying) {
-            this.startTime = Date.now(); // Reset start time on enable
+            this.startTime = Date.now(); 
             this.history = [];
             this.update(); 
         } else {
-            // Clear output display if not playing
             this.outputValue.textContent = (0).toFixed(3);
             const c = this.outputCtx;
             c.fillStyle = '#282c34';
             c.fillRect(0, 0, this.outputCanvas.width, this.outputCanvas.height);
         }
-      }
-      
-      redrawDrawCanvas() {
-        if (this.prefs.waveType.value === 'custom' && this.prefs.drawCtx) {
-            const ctx = this.prefs.drawCtx;
-            const canvas = this.prefs.drawCanvas;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            if (this.customPoints && this.customPoints.length > 1) {
-                ctx.beginPath();
-                ctx.moveTo(this.customPoints[0].x, this.customPoints[0].y);
-                for (let i = 1; i < this.customPoints.length; i++) {
-                    ctx.lineTo(this.customPoints[i].x, this.customPoints[i].y);
-                }
-                ctx.strokeStyle = '#61dafb';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            }
-        }
+        this.updateDrawCanvasVisualization(); // Update visualization after all settings applied
       }
     }
   </script>
