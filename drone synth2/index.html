@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drone Synth</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Drone Synth</h1>
+
+    <div class="controls-container">
+        <div class="global-controls">
+            <label for="masterFrequency">Master Frequency:</label>
+            <div class="input-group">
+                <input type="range" id="masterFrequency" name="masterFrequency" min="20" max="2000" value="440" step="1">
+                <input type="number" id="masterFrequencyNumber" name="masterFrequencyNumber" value="440" step="1" class="number-input-small">
+            </div>
+            <span id="masterFrequencyValue">440 Hz</span>
+        </div>
+
+        <hr class="global-hr">
+
+        <div class="oscillator-row-container">
+            <div class="oscillator-column">
+                <h2>Oscillator 1</h2>
+                <div class="oscillator-controls">
+                    <div>
+                        <label for="osc1Waveform">Waveform:</label>
+                        <select id="osc1Waveform" name="osc1Waveform">
+                            <option value="sine">Sine</option>
+                            <option value="square">Square</option>
+                            <option value="sawtooth">Sawtooth</option>
+                            <option value="triangle">Triangle</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="osc1Detune">Detune (cents):</label>
+                        <input type="range" id="osc1Detune" name="osc1Detune" min="-1200" max="1200" value="0" step="1">
+                        <span id="osc1DetuneValue">0</span>
+                    </div>
+
+                    <div class="lfo-controls">
+                        <h4>Detune LFO</h4>
+                        <div>
+                            <label for="osc1DetuneLfoWaveform">LFO Waveform:</label>
+                            <select id="osc1DetuneLfoWaveform" name="osc1DetuneLfoWaveform">
+                                <option value="sine">Sine</option>
+                                <option value="square">Square</option>
+                                <option value="sawtooth">Sawtooth</option>
+                                <option value="triangle">Triangle</option>
+                                <option value="custom">Custom (Draw)</option>
+                            </select>
+                        </div>
+                        <div id="osc1DetuneLfoCustomWaveContainer" class="custom-wave-container" style="display: none;">
+                            <canvas id="osc1DetuneLfoCanvas" width="200" height="100"></canvas>
+                            <button id="osc1DetuneLfoApplyCustomWave" class="apply-custom-wave-button">Apply Wave</button>
+                        </div>
+                        <div>
+                            <label for="osc1DetuneLfoSpeed">LFO Speed (Hz):</label>
+                            <div class="input-group">
+                                <input type="range" id="osc1DetuneLfoSpeed" name="osc1DetuneLfoSpeed" min="0.001" max="10" value="1" step="0.001">
+                                <input type="number" id="osc1DetuneLfoSpeedNumber" name="osc1DetuneLfoSpeedNumber" min="0.00000001" max="100" value="1" step="0.00000001" class="number-input-small">
+                            </div>
+                            <span id="osc1DetuneLfoSpeedValue">1 Hz</span>
+                        </div>
+                        <div>
+                            <label for="osc1DetuneLfoDepth">LFO Depth (cents):</label>
+                            <input type="range" id="osc1DetuneLfoDepth" name="osc1DetuneLfoDepth" min="0" max="1200" value="0" step="1">
+                            <span id="osc1DetuneLfoDepthValue">0</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="osc1Volume">Volume:</label>
+                        <input type="range" id="osc1Volume" name="osc1Volume" min="0" max="1" value="0.5" step="0.01">
+                        <span id="osc1VolumeValue">0.5</span>
+                    </div>
+
+                    <div class="lfo-controls">
+                        <h4>Volume LFO</h4>
+                        <div>
+                            <label for="osc1VolumeLfoWaveform">LFO Waveform:</label>
+                            <select id="osc1VolumeLfoWaveform" name="osc1VolumeLfoWaveform">
+                                <option value="sine">Sine</option>
+                                <option value="square">Square</option>
+                                <option value="sawtooth">Sawtooth</option>
+                                <option value="triangle">Triangle</option>
+                                <option value="custom">Custom (Draw)</option>
+                            </select>
+                        </div>
+                        <div id="osc1VolumeLfoCustomWaveContainer" class="custom-wave-container" style="display: none;">
+                            <canvas id="osc1VolumeLfoCanvas" width="200" height="100"></canvas>
+                            <button id="osc1VolumeLfoApplyCustomWave" class="apply-custom-wave-button">Apply Wave</button>
+                        </div>
+                        <div>
+                            <label for="osc1VolumeLfoSpeed">LFO Speed (Hz):</label>
+                            <div class="input-group">
+                                <input type="range" id="osc1VolumeLfoSpeed" name="osc1VolumeLfoSpeed" min="0.001" max="10" value="1" step="0.001">
+                                <input type="number" id="osc1VolumeLfoSpeedNumber" name="osc1VolumeLfoSpeedNumber" min="0.00000001" max="100" value="1" step="0.00000001" class="number-input-small">
+                            </div>
+                            <span id="osc1VolumeLfoSpeedValue">1 Hz</span>
+                        </div>
+                        <div>
+                            <label for="osc1VolumeLfoDepth">LFO Depth (0-1):</label>
+                            <input type="range" id="osc1VolumeLfoDepth" name="osc1VolumeLfoDepth" min="0" max="1" value="0" step="0.01">
+                            <span id="osc1VolumeLfoDepthValue">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="oscillator-column">
+                <h2>Oscillator 2</h2>
+                <div class="oscillator-controls">
+                    <div>
+                        <label for="osc2Waveform">Waveform:</label>
+                        <select id="osc2Waveform" name="osc2Waveform">
+                            <option value="sine">Sine</option>
+                            <option value="square">Square</option>
+                            <option value="sawtooth">Sawtooth</option>
+                            <option value="triangle">Triangle</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="osc2Detune">Detune (cents):</label>
+                        <input type="range" id="osc2Detune" name="osc2Detune" min="-1200" max="1200" value="0" step="1">
+                        <span id="osc2DetuneValue">0</span>
+                    </div>
+                    <div class="lfo-controls">
+                        <h4>Detune LFO</h4>
+                        <div>
+                            <label for="osc2DetuneLfoWaveform">LFO Waveform:</label>
+                            <select id="osc2DetuneLfoWaveform" name="osc2DetuneLfoWaveform">
+                                <option value="sine">Sine</option>
+                                <option value="square">Square</option>
+                                <option value="sawtooth">Sawtooth</option>
+                                <option value="triangle">Triangle</option>
+                                <option value="custom">Custom (Draw)</option>
+                            </select>
+                        </div>
+                        <div id="osc2DetuneLfoCustomWaveContainer" class="custom-wave-container" style="display: none;">
+                            <canvas id="osc2DetuneLfoCanvas" width="200" height="100"></canvas>
+                            <button id="osc2DetuneLfoApplyCustomWave" class="apply-custom-wave-button">Apply Wave</button>
+                        </div>
+                        <div>
+                            <label for="osc2DetuneLfoSpeed">LFO Speed (Hz):</label>
+                            <div class="input-group">
+                                <input type="range" id="osc2DetuneLfoSpeed" name="osc2DetuneLfoSpeed" min="0.001" max="10" value="1" step="0.001">
+                                <input type="number" id="osc2DetuneLfoSpeedNumber" name="osc2DetuneLfoSpeedNumber" min="0.00000001" max="100" value="1" step="0.00000001" class="number-input-small">
+                            </div>
+                            <span id="osc2DetuneLfoSpeedValue">1 Hz</span>
+                        </div>
+                        <div>
+                            <label for="osc2DetuneLfoDepth">LFO Depth (cents):</label>
+                            <input type="range" id="osc2DetuneLfoDepth" name="osc2DetuneLfoDepth" min="0" max="1200" value="0" step="1">
+                            <span id="osc2DetuneLfoDepthValue">0</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="osc2Volume">Volume:</label>
+                        <input type="range" id="osc2Volume" name="osc2Volume" min="0" max="1" value="0.5" step="0.01">
+                        <span id="osc2VolumeValue">0.5</span>
+                    </div>
+                    <div class="lfo-controls">
+                        <h4>Volume LFO</h4>
+                        <div>
+                            <label for="osc2VolumeLfoWaveform">LFO Waveform:</label>
+                            <select id="osc2VolumeLfoWaveform" name="osc2VolumeLfoWaveform">
+                                <option value="sine">Sine</option>
+                                <option value="square">Square</option>
+                                <option value="sawtooth">Sawtooth</option>
+                                <option value="triangle">Triangle</option>
+                                <option value="custom">Custom (Draw)</option>
+                            </select>
+                        </div>
+                        <div id="osc2VolumeLfoCustomWaveContainer" class="custom-wave-container" style="display: none;">
+                            <canvas id="osc2VolumeLfoCanvas" width="200" height="100"></canvas>
+                            <button id="osc2VolumeLfoApplyCustomWave" class="apply-custom-wave-button">Apply Wave</button>
+                        </div>
+                        <div>
+                            <label for="osc2VolumeLfoSpeed">LFO Speed (Hz):</label>
+                            <div class="input-group">
+                                <input type="range" id="osc2VolumeLfoSpeed" name="osc2VolumeLfoSpeed" min="0.001" max="10" value="1" step="0.001">
+                                <input type="number" id="osc2VolumeLfoSpeedNumber" name="osc2VolumeLfoSpeedNumber" min="0.00000001" max="100" value="1" step="0.00000001" class="number-input-small">
+                            </div>
+                            <span id="osc2VolumeLfoSpeedValue">1 Hz</span>
+                        </div>
+                        <div>
+                            <label for="osc2VolumeLfoDepth">LFO Depth (0-1):</label>
+                            <input type="range" id="osc2VolumeLfoDepth" name="osc2VolumeLfoDepth" min="0" max="1" value="0" step="0.01">
+                            <span id="osc2VolumeLfoDepthValue">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="oscillator-column">
+                <h2>Oscillator 3</h2>
+                <div class="oscillator-controls">
+                    <div>
+                        <label for="osc3Waveform">Waveform:</label>
+                        <select id="osc3Waveform" name="osc3Waveform">
+                            <option value="sine">Sine</option>
+                            <option value="square">Square</option>
+                            <option value="sawtooth">Sawtooth</option>
+                            <option value="triangle">Triangle</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="osc3Detune">Detune (cents):</label>
+                        <input type="range" id="osc3Detune" name="osc3Detune" min="-1200" max="1200" value="0" step="1">
+                        <span id="osc3DetuneValue">0</span>
+                    </div>
+                    <div class="lfo-controls">
+                        <h4>Detune LFO</h4>
+                        <div>
+                            <label for="osc3DetuneLfoWaveform">LFO Waveform:</label>
+                            <select id="osc3DetuneLfoWaveform" name="osc3DetuneLfoWaveform">
+                                <option value="sine">Sine</option>
+                                <option value="square">Square</option>
+                                <option value="sawtooth">Sawtooth</option>
+                                <option value="triangle">Triangle</option>
+                                <option value="custom">Custom (Draw)</option>
+                            </select>
+                        </div>
+                        <div id="osc3DetuneLfoCustomWaveContainer" class="custom-wave-container" style="display: none;">
+                            <canvas id="osc3DetuneLfoCanvas" width="200" height="100"></canvas>
+                            <button id="osc3DetuneLfoApplyCustomWave" class="apply-custom-wave-button">Apply Wave</button>
+                        </div>
+                        <div>
+                            <label for="osc3DetuneLfoSpeed">LFO Speed (Hz):</label>
+                            <div class="input-group">
+                                <input type="range" id="osc3DetuneLfoSpeed" name="osc3DetuneLfoSpeed" min="0.001" max="10" value="1" step="0.001">
+                                <input type="number" id="osc3DetuneLfoSpeedNumber" name="osc3DetuneLfoSpeedNumber" min="0.00000001" max="100" value="1" step="0.00000001" class="number-input-small">
+                            </div>
+                            <span id="osc3DetuneLfoSpeedValue">1 Hz</span>
+                        </div>
+                        <div>
+                            <label for="osc3DetuneLfoDepth">LFO Depth (cents):</label>
+                            <input type="range" id="osc3DetuneLfoDepth" name="osc3DetuneLfoDepth" min="0" max="1200" value="0" step="1">
+                            <span id="osc3DetuneLfoDepthValue">0</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="osc3Volume">Volume:</label>
+                        <input type="range" id="osc3Volume" name="osc3Volume" min="0" max="1" value="0.5" step="0.01">
+                        <span id="osc3VolumeValue">0.5</span>
+                    </div>
+                    <div class="lfo-controls">
+                        <h4>Volume LFO</h4>
+                        <div>
+                            <label for="osc3VolumeLfoWaveform">LFO Waveform:</label>
+                            <select id="osc3VolumeLfoWaveform" name="osc3VolumeLfoWaveform">
+                                <option value="sine">Sine</option>
+                                <option value="square">Square</option>
+                                <option value="sawtooth">Sawtooth</option>
+                                <option value="triangle">Triangle</option>
+                                <option value="custom">Custom (Draw)</option>
+                            </select>
+                        </div>
+                        <div id="osc3VolumeLfoCustomWaveContainer" class="custom-wave-container" style="display: none;">
+                            <canvas id="osc3VolumeLfoCanvas" width="200" height="100"></canvas>
+                            <button id="osc3VolumeLfoApplyCustomWave" class="apply-custom-wave-button">Apply Wave</button>
+                        </div>
+                        <div>
+                            <label for="osc3VolumeLfoSpeed">LFO Speed (Hz):</label>
+                            <div class="input-group">
+                                <input type="range" id="osc3VolumeLfoSpeed" name="osc3VolumeLfoSpeed" min="0.001" max="10" value="1" step="0.001">
+                                <input type="number" id="osc3VolumeLfoSpeedNumber" name="osc3VolumeLfoSpeedNumber" min="0.00000001" max="100" value="1" step="0.00000001" class="number-input-small">
+                            </div>
+                            <span id="osc3VolumeLfoSpeedValue">1 Hz</span>
+                        </div>
+                        <div>
+                            <label for="osc3VolumeLfoDepth">LFO Depth (0-1):</label>
+                            <input type="range" id="osc3VolumeLfoDepth" name="osc3VolumeLfoDepth" min="0" max="1" value="0" step="0.01">
+                            <span id="osc3VolumeLfoDepthValue">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr class="global-hr">
+
+        <h2>Global Effects</h2>
+
+        <div class="effects-column-container">
+            <div class="effects-column">
+                <h3>Filter</h3>
+                <div class="control-group">
+                    <label for="filterType">Filter Type:</label>
+                    <select id="filterType">
+                        <option value="lowpass">Low-pass</option>
+                        <option value="highpass">High-pass</option>
+                        <option value="bandpass">Band-pass</option>
+                        <option value="lowshelf">Low-shelf</option>
+                        <option value="highshelf">High-shelf</option>
+                        <option value="peaking">Peaking</option>
+                        <option value="notch">Notch</option>
+                        <option value="allpass">All-pass</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="filterFrequency">Frequency (Hz):</label>
+                    <input type="range" id="filterFrequency" min="0" max="100" step="1" value="50">
+                    <span id="filterFreqValue">1000</span>
+                </div>
+                <div class="control-group">
+                    <label for="filterQ">Resonance (Q):</label>
+                    <input type="range" id="filterQ" min="0.0001" max="30" step="0.0001" value="1">
+                    <span id="filterQValue">1</span>
+                </div>
+                <div class="control-group" id="filterGainGroup" style="display: none;">
+                    <label for="filterGain">Gain (dB):</label>
+                    <input type="range" id="filterGain" min="-40" max="40" step="0.1" value="0">
+                    <span id="filterGainValue">0</span>
+                </div>
+            </div>
+
+            <div class="effects-column">
+                <h3>Reverb (Plate)</h3>
+                <div class="control-group">
+                    <label for="reverbMix">Reverb Mix (Dry/Wet):</label>
+                    <input type="range" id="reverbMix" min="0" max="1" step="0.01" value="0.3">
+                    <span id="reverbMixValue">0.30</span>
+                </div>
+                <div class="control-group">
+                    <label for="reverbPreDelay">Pre-Delay (ms):</label>
+                    <input type="range" id="reverbPreDelay" min="0" max="1000" step="10" value="20">
+                    <span id="reverbPreDelayValue">20</span>
+                </div>
+                <div class="control-group">
+                    <label for="reverbDecay">Reverb Decay:</label>
+                    <input type="range" id="reverbDecay" min="0.1" max="5" step="0.1" value="2">
+                    <span id="reverbDecayValue">2.0</span>
+                </div>
+                <div class="control-group">
+                    <label for="reverbFeedbackGain">Feedback:</label>
+                    <input type="range" id="reverbFeedbackGain" min="0" max="0.95" step="0.01" value="0.5">
+                    <span id="reverbFeedbackGainValue">0.50</span>
+                </div>
+            </div>
+        </div>
+
+        <hr class="global-hr">
+
+        <div class="global-controls">
+            <label for="masterVolume">Master Output Volume:</label>
+            <input type="range" id="masterVolume" min="0" max="1" step="0.01" value="0.8">
+            <span id="masterVolumeValue">0.80</span>
+        </div>
+
+    </div>
+
+    <button id="startStopButton">Start</button>
+    <script src="script.js"></script>
+</body>
+</html> 

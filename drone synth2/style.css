@@ -1,0 +1,209 @@
+/* Basic styles */
+body {
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    background-color: #f0f0f0;
+}
+
+button {
+    padding: 10px 20px;
+    font-size: 1em;
+    cursor: pointer;
+    margin-top: 20px;
+}
+
+.controls-container {
+    border: 1px solid #ccc;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    background-color: #fff;
+    min-width: 350px;
+}
+
+.global-controls,
+.oscillator-controls > div {
+    margin-bottom: 15px;
+    display: flex;
+    flex-direction: column;
+}
+
+.oscillator-controls h2 {
+    margin-top: 0;
+}
+
+label {
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+input[type="range"],
+select {
+    width: 100%;
+    padding: 5px;
+    box-sizing: border-box;
+}
+
+.input-group {
+    display: flex;
+    align-items: center;
+}
+
+.input-group input[type="range"] {
+    flex-grow: 1;
+    margin-right: 10px;
+}
+
+.input-group input[type="number"].number-input-small {
+    width: 100px; /* Adjust width as needed */
+}
+
+span {
+    font-size: 0.9em;
+    color: #555;
+    margin-top: 3px;
+}
+
+.oscillator-controls > div {
+    margin-bottom: 15px;
+    display: flex;
+    flex-direction: column; /* Stack label and input vertically */
+}
+
+.lfo-controls {
+    border: 1px dashed #ddd;
+    padding: 10px;
+    margin-top: 10px;
+    border-radius: 4px;
+}
+
+.lfo-controls h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+    color: #333;
+}
+
+.custom-wave-container {
+    margin-top: 10px;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    background-color: #f9f9f9;
+}
+
+.custom-wave-container canvas {
+    border: 1px solid #ccc;
+    cursor: crosshair;
+    margin-bottom: 10px;
+    display: block; /* To allow margin bottom to take effect easily */
+}
+
+.apply-custom-wave-button {
+    padding: 5px 10px;
+    font-size: 0.9em;
+}
+
+.global-controls {
+    margin-bottom: 15px;
+}
+
+.global-hr {
+    width: 90%; /* Make the global separator a bit wider */
+    margin-top: 10px;
+    margin-bottom: 20px;
+    border: 0;
+    border-top: 1px solid #ccc;
+}
+
+.oscillator-row-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around; /* Distribute space */
+    gap: 20px; /* Space between columns */
+    width: 100%; /* Take full available width */
+    max-width: 1200px; /* Optional: max width for very wide screens */
+    margin: 0 auto; /* Center if max-width is used */
+}
+
+.oscillator-column {
+    flex: 1; /* Each column takes equal width */
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 8px;
+    background-color: #f9f9f9;
+    min-width: 320px; /* Minimum width for each oscillator column */
+}
+
+.oscillator-column h2 {
+    text-align: center;
+    margin-top: 0;
+}
+
+.effects-column-container {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 20px;
+    width: 100%;
+    max-width: 1000px; /* Adjust as needed, effects might not need as much width as 3 oscs */
+    margin: 20px auto; /* Add some vertical margin */
+}
+
+.effects-column {
+    flex: 1;
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 8px;
+    background-color: #f9f9f9;
+    min-width: 300px; /* Adjust as needed */
+}
+
+.effects-column h3 {
+    text-align: center;
+    margin-top: 0;
+    color: #444;
+}
+
+.control-group {
+    margin-bottom: 15px;
+}
+
+.control-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: normal; /* Override if a global bold is set for labels */
+}
+
+.oscillator-controls > div:not(.lfo-controls):not(.input-group) {
+    margin-bottom: 15px;
+    display: flex;
+    flex-direction: column; /* Stack label and input vertically */
+}
+
+/* Specifically target the master frequency's input group for row layout */
+.global-controls .input-group {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.global-controls .input-group input[type="range"] {
+    flex-grow: 1;
+    margin-right: 10px;
+}
+
+.global-controls .input-group input[type="number"].number-input-small {
+    width: 100px; /* Adjust width as needed for master frequency */
+}
+
+.global-controls span {
+    margin-top: 5px; /* Adjust spacing for the Hz display */
+    align-self: flex-start; /* Align with the start of the input group */
+} 
