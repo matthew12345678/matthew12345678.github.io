@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Sound Wave Generator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <video id="videoFeed" autoplay playsinline></video>
+        <canvas id="overlayCanvas"></canvas>
+    </div>
+    <div class="controls">
+        <label for="volumeSlider">Volume:</label>
+        <input type="range" id="volumeSlider" min="0" max="1" value="0.5" step="0.01">
+
+        <fieldset id="axisChooser">
+            <legend>Scan Axis:</legend>
+            <input type="radio" id="scanY" name="scanAxis" value="y" checked>
+            <label for="scanY">Y-axis (Horizontal Line)</label>
+            <input type="radio" id="scanX" name="scanAxis" value="x">
+            <label for="scanX">X-axis (Vertical Line)</label>
+        </fieldset>
+
+        <label for="waveformColorPicker">Wave Color:</label>
+        <input type="color" id="waveformColorPicker" value="#0000FF">
+
+        <input type="checkbox" id="liveUpdateCheckbox">
+        <label for="liveUpdateCheckbox">Live Update</label>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html> 
