@@ -176,62 +176,95 @@ waveformColorPicker.addEventListener('input', (e) => {
 liveUpdateCheckbox.addEventListener('change', (e) => {
     isLiveUpdateEnabled = e.target.checked;
     console.log("Live update enabled:", isLiveUpdateEnabled);
-    if (!isLiveUpdateEnabled && currentAudioSource) { // Stop sound if turning off live update
-        // currentAudioSource.stop(); // This might be too abrupt, or desired.
-        // currentAudioSource.disconnect();
-        // currentAudioSource = null;
-    }
     if (isLiveUpdateEnabled && (video.paused || video.ended)) {
         console.warn("Live update enabled, but video is not playing.");
     }
 });
 
-canvas.addEventListener('mousedown', (e) => {
+// Shared drag start logic for mouse and touch
+function startDrag(clientX, clientY) {
     if (!audioCtx) initAudioContext();
     const rect = canvas.getBoundingClientRect();
     let clickOnPlayhead = false;
+    let cursorStyle = 'crosshair'; // Default
+
     if (scanAxis === 'x') {
-        const mouseX = e.clientX - rect.left;
-        if (mouseX >= playheadX - playheadWidth * 4 && mouseX <= playheadX + playheadWidth * 4) { // Wider hit area
-            clickOnPlayhead = true; canvas.style.cursor = 'ew-resize';
+        const inputX = clientX - rect.left;
+        if (inputX >= playheadX - playheadWidth * 4 && inputX <= playheadX + playheadWidth * 4) {
+            clickOnPlayhead = true; cursorStyle = 'ew-resize';
         }
     } else {
-        const mouseY = e.clientY - rect.top;
-        if (mouseY >= playheadY - playheadWidth * 4 && mouseY <= playheadY + playheadWidth * 4) { // Wider hit area
-            clickOnPlayhead = true; canvas.style.cursor = 'ns-resize';
+        const inputY = clientY - rect.top;
+        if (inputY >= playheadY - playheadWidth * 4 && inputY <= playheadY + playheadWidth * 4) {
+            clickOnPlayhead = true; cursorStyle = 'ns-resize';
         }
     }
+
     if (clickOnPlayhead) {
         isDragging = true;
-        wasLiveUpdateEnabledBeforeDrag = isLiveUpdateEnabled; // Store current state
-        isLiveUpdateEnabled = false; // Temporarily disable live updates during drag
-        processFrameAndPlaySound(); // Process once on click
+        canvas.style.cursor = cursorStyle;
+        wasLiveUpdateEnabledBeforeDrag = isLiveUpdateEnabled;
+        isLiveUpdateEnabled = false;
+        processFrameAndPlaySound();
     }
-});
+}
 
-canvas.addEventListener('mousemove', (e) => {
+// Shared drag move logic for mouse and touch
+function dragMove(clientX, clientY) {
     if (isDragging) {
         const rect = canvas.getBoundingClientRect();
         if (scanAxis === 'x') {
-            playheadX = Math.max(0, Math.min(e.clientX - rect.left, canvas.width));
+            playheadX = Math.max(0, Math.min(clientX - rect.left, canvas.width));
         } else {
-            playheadY = Math.max(0, Math.min(e.clientY - rect.top, canvas.height));
+            playheadY = Math.max(0, Math.min(clientY - rect.top, canvas.height));
         }
-        processFrameAndPlaySound(); // Continuously process while dragging
+        processFrameAndPlaySound();
     }
-});
+}
 
+// endDrag remains the same, used by mouseup, mouseleave, touchend, touchcancel
 function endDrag() {
     if (isDragging) {
         isDragging = false;
         canvas.style.cursor = 'crosshair';
-        isLiveUpdateEnabled = liveUpdateCheckbox.checked; // Restore based on checkbox state
-        // If it was re-enabled, the liveUpdateLoop will pick it up.
-        // If not, and we want sound to stop, we'd need specific logic here.
+        isLiveUpdateEnabled = liveUpdateCheckbox.checked;
     }
 }
 
+// Mouse Events
+canvas.addEventListener('mousedown', (e) => {
+    startDrag(e.clientX, e.clientY);
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    dragMove(e.clientX, e.clientY);
+});
+
 canvas.addEventListener('mouseup', endDrag);
 canvas.addEventListener('mouseleave', endDrag);
+
+// Touch Events
+canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+        startDrag(e.touches[0].clientX, e.touches[0].clientY);
+        // e.preventDefault(); // Prevent mouse event emulation if not needed, but can sometimes interfere with other desired defaults. Test behavior.
+    }
+}, { passive: false }); // passive: false allows preventDefault if used
+
+canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 1) {
+        dragMove(e.touches[0].clientX, e.touches[0].clientY);
+        e.preventDefault(); // Crucial to prevent page scrolling during drag
+    }
+}, { passive: false }); // Required for preventDefault
+
+canvas.addEventListener('touchend', (e) => {
+    // No need to check e.touches.length, endDrag handles isDragging state
+    endDrag();
+});
+
+canvas.addEventListener('touchcancel', (e) => {
+    endDrag();
+});
 
 setupCamera(); 
