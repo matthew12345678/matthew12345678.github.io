@@ -21,6 +21,15 @@
 
         <hr class="global-hr">
 
+        <div class="global-controls">
+            <label for="midiInput">MIDI Input:</label>
+            <select id="midiInput" name="midiInput">
+                <option value="">-- Select MIDI Input --</option>
+            </select>
+        </div>
+
+        <hr class="global-hr">
+
         <div class="oscillator-row-container">
             <div class="oscillator-column">
                 <h2>Oscillator 1</h2>
@@ -283,12 +292,17 @@
 
         <hr class="global-hr">
 
-        <h2>Global Effects</h2>
-
-        <div class="effects-column-container">
-            <div class="effects-column">
-                <h3>Filter</h3>
-                <div class="control-group">
+        <div class="main-column global-effects-column">
+            <h2>Global Effects</h2>
+            <div class="global-effects-controls">
+                <div>
+                    <label for="masterVolume">Master Volume:</label>
+                    <input type="range" id="masterVolume" name="masterVolume" min="0" max="1" value="0.75" step="0.01">
+                    <span id="masterVolumeValue">0.75</span>
+                    <button id="masterVolumeMidiLearn" class="midi-learn-button">Learn</button>
+                </div>
+                <hr>
+                <div>
                     <label for="filterType">Filter Type:</label>
                     <select id="filterType">
                         <option value="lowpass">Low-pass</option>
@@ -341,14 +355,6 @@
                     <span id="reverbFeedbackGainValue">0.50</span>
                 </div>
             </div>
-        </div>
-
-        <hr class="global-hr">
-
-        <div class="global-controls">
-            <label for="masterVolume">Master Output Volume:</label>
-            <input type="range" id="masterVolume" min="0" max="1" step="0.01" value="0.8">
-            <span id="masterVolumeValue">0.80</span>
         </div>
 
     </div>
