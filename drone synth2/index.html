@@ -30,6 +30,19 @@
 
         <hr class="global-hr">
 
+        <div class="global-controls preset-controls">
+            <button id="exportPresetButton">Export Preset</button>
+            <button id="importPresetButton">Import Preset</button>
+            <div>
+                <label for="presetSelector">Load Preset:</label>
+                <select id="presetSelector" name="presetSelector">
+                    <option value="">-- Select Preset --</option>
+                </select>
+            </div>
+        </div>
+
+        <hr class="global-hr">
+
         <div class="oscillator-row-container">
             <div class="oscillator-column">
                 <h2>Oscillator 1</h2>
@@ -319,16 +332,19 @@
                     <label for="filterFrequency">Frequency (Hz):</label>
                     <input type="range" id="filterFrequency" min="0" max="100" step="1" value="50">
                     <span id="filterFreqValue">1000</span>
+                    <button id="filterFrequencyMidiLearn" class="midi-learn-button">Learn</button>
                 </div>
                 <div class="control-group">
                     <label for="filterQ">Resonance (Q):</label>
                     <input type="range" id="filterQ" min="0.0001" max="30" step="0.0001" value="1">
                     <span id="filterQValue">1</span>
+                    <button id="filterQMidiLearn" class="midi-learn-button">Learn</button>
                 </div>
                 <div class="control-group" id="filterGainGroup" style="display: none;">
                     <label for="filterGain">Gain (dB):</label>
                     <input type="range" id="filterGain" min="-40" max="40" step="0.1" value="0">
                     <span id="filterGainValue">0</span>
+                    <button id="filterGainMidiLearn" class="midi-learn-button">Learn</button>
                 </div>
             </div>
 
