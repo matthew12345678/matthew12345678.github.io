@@ -1,0 +1,70 @@
+{
+  "masterFrequency": 440,
+  "masterVolume": 0.11,
+  "osc1": {
+    "waveform": "sine",
+    "detune": -253,
+    "volume": 0.22,
+    "detuneLfo": {
+      "waveform": "sine",
+      "speed": 1,
+      "depth": 1004,
+      "customCurve": null
+    },
+    "volumeLfo": {
+      "waveform": "sine",
+      "speed": 2.673,
+      "depth": 1,
+      "customCurve": null
+    }
+  },
+  "osc2": {
+    "waveform": "sine",
+    "detune": 0,
+    "volume": 0,
+    "detuneLfo": {
+      "waveform": "sine",
+      "speed": 1,
+      "depth": 0,
+      "customCurve": null
+    },
+    "volumeLfo": {
+      "waveform": "sine",
+      "speed": 1,
+      "depth": 0,
+      "customCurve": null
+    }
+  },
+  "osc3": {
+    "waveform": "sine",
+    "detune": 0,
+    "volume": 0,
+    "detuneLfo": {
+      "waveform": "sine",
+      "speed": 1,
+      "depth": 0,
+      "customCurve": null
+    },
+    "volumeLfo": {
+      "waveform": "sine",
+      "speed": 1,
+      "depth": 0,
+      "customCurve": null
+    }
+  },
+  "filter": {
+    "type": "lowpass",
+    "frequency": 50,
+    "q": 1,
+    "gain": 0
+  },
+  "reverb": {
+    "mix": 0.3,
+    "preDelay": 20,
+    "decay": 2,
+    "feedbackGain": 0.5
+  },
+  "midi": {
+    "masterVolumeMap": null
+  }
+}
