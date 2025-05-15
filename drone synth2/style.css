@@ -206,4 +206,19 @@ span {
 .global-controls span {
     margin-top: 5px; /* Adjust spacing for the Hz display */
     align-self: flex-start; /* Align with the start of the input group */
+}
+
+.midi-learn-button {
+    margin-left: 10px;
+    padding: 5px 10px;
+    background-color: #5cb85c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.midi-learn-button.learning {
+    background-color: #f0ad4e;
 } 
+
