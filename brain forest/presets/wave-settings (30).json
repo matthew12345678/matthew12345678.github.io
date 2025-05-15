@@ -1,0 +1,133 @@
+{
+  "carrier": {
+    "type": "sine",
+    "freq": 577,
+    "vol": 0.5,
+    "detune": 0,
+    "pan": 0
+  },
+  "modules": [
+    {
+      "id": "0",
+      "waveType": "sawtooth",
+      "customPoints": [],
+      "speed": -0.5,
+      "speedMin": -7,
+      "speedMax": 1,
+      "depth": 0.5,
+      "low": -1,
+      "high": 242,
+      "phase": 0,
+      "logScale": 0.22,
+      "enabled": true
+    },
+    {
+      "id": "1",
+      "waveType": "sawtooth",
+      "customPoints": [],
+      "speed": 2.16,
+      "speedMin": -7.75,
+      "speedMax": 2.86,
+      "depth": 0.5,
+      "low": -1,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": true
+    },
+    {
+      "id": "2",
+      "waveType": "sine",
+      "customPoints": [],
+      "speed": 0.03,
+      "speedMin": -7,
+      "speedMax": 1,
+      "depth": 1,
+      "low": -1,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": true
+    },
+    {
+      "id": "3",
+      "waveType": "sine",
+      "customPoints": [],
+      "speed": -2.56,
+      "speedMin": -7,
+      "speedMax": 1,
+      "depth": 0.5,
+      "low": -1,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": true
+    },
+    {
+      "id": "4",
+      "waveType": "sine",
+      "customPoints": [],
+      "speed": 0,
+      "speedMin": -7,
+      "speedMax": 1,
+      "depth": 0.5,
+      "low": -1,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": false
+    },
+    {
+      "id": "5",
+      "waveType": "sine",
+      "customPoints": [],
+      "speed": 0,
+      "speedMin": -7,
+      "speedMax": 1,
+      "depth": 0.5,
+      "low": -1,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": false
+    },
+    {
+      "id": "6",
+      "waveType": "sine",
+      "customPoints": [],
+      "speed": 0,
+      "speedMin": -7,
+      "speedMax": 1,
+      "depth": 0.5,
+      "low": -1,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": false
+    },
+    {
+      "id": "7",
+      "waveType": "sine",
+      "customPoints": [],
+      "speed": 0,
+      "speedMin": -7,
+      "speedMax": 1,
+      "depth": 0.5,
+      "low": -1,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": false
+    }
+  ],
+  "effects": {
+    "filterType": "lowpass",
+    "filterFrequency": "48",
+    "filterQ": "16.8674",
+    "filterGain": "0",
+    "reverbMix": "0.27",
+    "reverbPreDelay": "20",
+    "reverbDecay": "0.5",
+    "outputVolume": "0.8"
+  }
+}
