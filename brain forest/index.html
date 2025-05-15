@@ -24,6 +24,12 @@
     <button id="exportBtn">Export All</button>
     <button id="importBtn">Import</button>
     <input type="file" id="importFile" accept="application/json" style="display:none;">
+    <div style="margin-left: 10px;">
+      <label for="presetSelector">Load Preset:</label>
+      <select id="presetSelector" style="padding: 4px; font-size: 12px;">
+        <option value="">-- Select a Preset --</option>
+      </select>
+    </div>
     <label>Wave:</label>
     <select id="carrierType">
       <option value="sine">Sine</option>
@@ -34,7 +40,15 @@
       <option value="reverse-triangle">Reverse Triangle</option>
     </select>
     <label>Freq:</label><input type="range" id="carrierFreq" min="20" max="2000" value="440" step="1" style="width:120px;"><span id="carrierFreqDisplay" style="width:40px; display:inline-block; text-align:right;">440</span><span>Hz</span>
-    <label>Vol:</label><input type="range" id="masterVol" min="0" max="1" step="0.01" value="0.5">
+    <label>Vol:</label><input type="range" id="masterVol" min="0" max="1" step="0.01" value="0.5" style="width:120px;"><span id="masterVolDisplay" style="width:40px; display:inline-block; text-align:right;">0.50</span>
+    <span style="margin-left: 5px; border: 1px solid #444; padding: 5px; border-radius: 4px; display: inline-flex; flex-direction: column; align-items: flex-start; vertical-align: middle;">
+      <label for="midiInSelectMasterVol" style="font-size:12px; margin-bottom:2px;">MIDI In:</label>
+      <select id="midiInSelectMasterVol" style="width: auto; margin-bottom: 5px; font-size:12px; padding: 2px;">
+        <option value="">-- no device --</option>
+      </select>
+      <button id="learnBtnMasterVol" style="padding: 4px 8px; font-size: 12px; margin-top: 2px;">MIDI Learn</button>
+      <div id="statusMasterVol" style="margin-top: 3px; font-size: 11px; color: #aaa;">CC: -- | Value: 0.50</div>
+    </span>
     <label>Detune:</label><input type="range" id="detune" min="-100" max="100" step="1" value="0">
     <label>Pan:</label><input type="range" id="pan" min="-1" max="1" step="0.01" value="0">
     <label>Test:</label><input type="range" id="testSlider" min="-7" max="1" step="0.01" value="0" style="width:120px;"><span id="testSliderDisplay" style="width:50px; display:inline-block; text-align:right;">0.00</span>
@@ -98,8 +112,16 @@
     <div>
       <h3>Effects Output</h3>
       <div class="control-group">
+        <label for="midiInSelectEffectsOutput">MIDI Input:</label>
+        <select id="midiInSelectEffectsOutput" style="width: auto; margin-bottom: 10px;">
+          <option value="">-- no device --</option>
+        </select>
+      </div>
+      <div class="control-group">
         <label for="effectsOutputVolume">Effects Output Volume: <span id="effectsVolValue">0.80</span></label>
         <input type="range" id="effectsOutputVolume" min="0" max="1" step="0.01" value="0.8">
+        <button id="learnBtnEffectsOutput" style="margin-top: 5px; padding: 4px 8px; font-size: 12px;">MIDI Learn</button>
+        <div id="statusEffectsOutput" style="margin-top: 5px; font-size: 11px; color: #aaa;">CC: -- | Value: 0.80</div>
       </div>
     </div>
   </div>
@@ -124,10 +146,10 @@
             <option value="custom">Custom</option>
           </select>
         </div>
-        <div class="control-group waveform-display-area"> 
-          <label class="waveform-display-label">Waveform Shape</label> 
+        <div class="control-group custom-container" style="display:none;">
+          <label>Draw Custom Wave</label>
           <canvas class="draw-canvas" width="200" height="80" style="border:1px solid #444; background:#fff;"></canvas>
-          <button class="clear-draw" style="font-size:12px;margin-top:4px; display:none;">Clear</button> 
+          <button class="clear-draw" style="font-size:12px;margin-top:4px;">Clear</button>
         </div>
         <div class="control-group">
           <label>Speed (exp)</label>
@@ -456,54 +478,246 @@
         reader.onload = ev => {
           try {
             const settings = JSON.parse(ev.target.result);
-            // Apply carrier settings
-            const c = settings.carrier;
-            if (c) {
-              document.getElementById('carrierType').value = c.type;
-              document.getElementById('carrierFreq').value = c.freq;
-              document.getElementById('masterVol').value = c.vol;
-              document.getElementById('detune').value = c.detune;
-              document.getElementById('pan').value = c.pan;
-              ['change','input'].forEach(evt=>document.getElementById('carrierType').dispatchEvent(new Event(evt)));
-              ['input'].forEach(evt=>{
-                ['carrierFreq','masterVol','detune','pan'].forEach(id=>document.getElementById(id).dispatchEvent(new Event(evt)));
-              });
-            }
-            // Apply module settings
-            if (Array.isArray(settings.modules)) {
-              settings.modules.forEach((mod, idx) => {
-                if (modules[idx] && typeof modules[idx].applySettings === 'function') {
-                  modules[idx].applySettings(mod);
-                }
-              });
-            }
-            // Apply effects settings
-            const fx = settings.effects;
-            if (fx) {
-              effectElems.effectFilterType.value = fx.filterType || 'lowpass';
-              effectElems.effectFilterFrequency.value = fx.filterFrequency !== undefined ? fx.filterFrequency : 50;
-              effectElems.effectFilterQ.value = fx.filterQ !== undefined ? fx.filterQ : 1;
-              effectElems.effectFilterGain.value = fx.filterGain !== undefined ? fx.filterGain : 0;
-              effectElems.effectReverbMix.value = fx.reverbMix !== undefined ? fx.reverbMix : 0.5;
-              effectElems.effectReverbPreDelay.value = fx.reverbPreDelay !== undefined ? fx.reverbPreDelay : 20;
-              effectElems.effectReverbDecay.value = fx.reverbDecay !== undefined ? fx.reverbDecay : 0.5;
-              effectElems.effectsOutputVolume.value = fx.outputVolume !== undefined ? fx.outputVolume : 0.8;
-              
-              // Trigger input events to update displays and audio params via updateEffectsParams
-              ['effectFilterType', 'effectFilterFrequency', 'effectFilterQ', 'effectFilterGain', 'effectReverbMix', 'effectReverbPreDelay', 'effectReverbDecay', 'effectsOutputVolume']
-                .forEach(id => {
-                  if (effectElems[id]) {
-                      effectElems[id].dispatchEvent(new Event('input'));
-                  }
-              });
-              // updateEffectsParams(); // Call directly after setting all values, or rely on dispatched events.
-            }
+            applyImportedSettings(settings); // Use a new function to apply settings
           } catch (err) {
             console.error('Failed to import settings:', err);
           }
         };
         reader.readAsText(file);
       });
+
+      // Function to apply settings (used by both import and preset loading)
+      function applyImportedSettings(settings) {
+        // Apply carrier settings
+        const c = settings.carrier;
+        if (c) {
+          document.getElementById('carrierType').value = c.type || "sine";
+          document.getElementById('carrierFreq').value = c.freq !== undefined ? c.freq : 440;
+          document.getElementById('masterVol').value = c.vol !== undefined ? c.vol : 0.5;
+          document.getElementById('detune').value = c.detune !== undefined ? c.detune : 0;
+          document.getElementById('pan').value = c.pan !== undefined ? c.pan : 0;
+          
+          // Trigger events to update displays and audio params
+          ['carrierType'].forEach(id => document.getElementById(id).dispatchEvent(new Event('change')));
+          ['carrierFreq', 'masterVol', 'detune', 'pan'].forEach(id => {
+              document.getElementById(id).dispatchEvent(new Event('input'));
+          });
+          // Update displays linked to sliders not directly in updateEffectsParams or modulationLoop
+          if (document.getElementById('carrierFreqDisplay')) {
+            document.getElementById('carrierFreqDisplay').textContent = document.getElementById('carrierFreq').value;
+          }
+          if (document.getElementById('masterVolDisplay')) { // If masterVolDisplay exists
+             document.getElementById('masterVolDisplay').dispatchEvent(new Event('input')); // Trigger its own input if it has specific logic
+          }
+        }
+        // Apply module settings
+        if (Array.isArray(settings.modules)) {
+          settings.modules.forEach((mod, idx) => {
+            if (modules[idx] && typeof modules[idx].applySettings === 'function') {
+              modules[idx].applySettings(mod);
+            }
+          });
+        }
+        // Apply effects settings
+        const fx = settings.effects;
+        if (fx) {
+          effectElems.effectFilterType.value = fx.filterType || 'lowpass';
+          effectElems.effectFilterFrequency.value = fx.filterFrequency !== undefined ? fx.filterFrequency : 50;
+          effectElems.effectFilterQ.value = fx.filterQ !== undefined ? fx.filterQ : 1;
+          effectElems.effectFilterGain.value = fx.filterGain !== undefined ? fx.filterGain : 0;
+          effectElems.effectReverbMix.value = fx.reverbMix !== undefined ? fx.reverbMix : 0.5;
+          effectElems.effectReverbPreDelay.value = fx.reverbPreDelay !== undefined ? fx.reverbPreDelay : 20;
+          effectElems.effectReverbDecay.value = fx.reverbDecay !== undefined ? fx.reverbDecay : 0.5;
+          effectElems.effectsOutputVolume.value = fx.outputVolume !== undefined ? fx.outputVolume : 0.8;
+          
+          // Trigger input events to update displays and audio params via updateEffectsParams
+          ['effectFilterType', 'effectFilterFrequency', 'effectFilterQ', 'effectFilterGain', 'effectReverbMix', 'effectReverbPreDelay', 'effectReverbDecay', 'effectsOutputVolume']
+            .forEach(id => {
+              if (effectElems[id]) {
+                  effectElems[id].dispatchEvent(new Event('input'));
+              }
+          });
+          // updateEffectsParams(); // Call directly after setting all values, or rely on dispatched events.
+        }
+        // Update MIDI control statuses if they exist and have bound CCs
+        if (typeof updateEffectsOutputStatus === 'function') updateEffectsOutputStatus();
+        if (typeof updateMasterVolStatus === 'function') updateMasterVolStatus();
+      }
+
+      // --- BEGIN PRESET LOADING ---
+      const presetSelector = document.getElementById('presetSelector');
+      const presetFiles = [
+        "presets/wave-settings (1).json",
+        "presets/wave-settings (2).json",
+        "presets/wave-settings (3).json",
+        "presets/wave-settings (4).json",
+        "presets/wave-settings (5).json",
+        "presets/wave-settings (6).json",
+        "presets/wave-settings (7).json",
+        "presets/wave-settings (8).json",
+        "presets/wave-settings (9).json",
+        "presets/wave-settings (10).json",
+        "presets/wave-settings (11).json",
+        "presets/wave-settings (12).json",
+        "presets/wave-settings (13).json",
+        "presets/wave-settings (14).json",
+        "presets/wave-settings (15).json",
+        "presets/wave-settings (16).json",
+        "presets/wave-settings (17).json",
+        "presets/wave-settings (18).json",
+        "presets/wave-settings (19).json",
+        "presets/wave-settings (20).json",
+        "presets/wave-settings (21).json",
+        "presets/wave-settings (22).json",
+        "presets/wave-settings (23).json",
+        "presets/wave-settings (24).json",
+        "presets/wave-settings (25).json",
+        "presets/wave-settings (26).json",
+        "presets/wave-settings (27).json",
+        "presets/wave-settings (28).json",
+        "presets/wave-settings (29).json",
+        "presets/wave-settings (30).json",
+        "presets/wave-settings.json"
+      ];
+
+      function populatePresetDropdown() {
+        if (!presetSelector) return;
+        presetFiles.forEach(filePath => {
+          const option = document.createElement('option');
+          option.value = filePath;
+          option.text = filePath.split('/').pop(); // Show only filename
+          presetSelector.appendChild(option);
+        });
+      }
+
+      presetSelector.addEventListener('change', async (event) => {
+        const filePath = event.target.value;
+        if (!filePath) return;
+
+        try {
+          const response = await fetch(filePath);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status} while fetching ${filePath}`);
+          }
+          const settings = await response.json();
+          applyImportedSettings(settings);
+          console.log(`Loaded preset: ${filePath}`);
+        } catch (error) {
+          console.error('Error loading preset:', error);
+          alert(`Failed to load preset: ${filePath}\nError: ${error.message}`);
+        }
+      });
+      
+      populatePresetDropdown(); // Populate on script load
+      // --- END PRESET LOADING ---
+
+      // --- BEGIN MIDI LEARN FOR MASTER VOLUME ---
+      let midiAccess = null;
+      let learnModeMasterVol = false;
+      let boundCCMasterVol = null;
+      let currentMidiInput = null;
+
+      const masterVolSlider = document.getElementById('masterVol');
+      const learnBtnMasterVol = document.getElementById('learnBtnMasterVol');
+      const statusMasterVol = document.getElementById('statusMasterVol');
+      const midiInSelectMasterVol = document.getElementById('midiInSelectMasterVol');
+      const masterVolValueDisplay = document.getElementById('masterVolDisplay'); // Get the span for value display
+
+      function updateMasterVolStatus() {
+        const sliderVal = parseFloat(masterVolSlider.value).toFixed(2);
+        statusMasterVol.textContent = `CC: ${boundCCMasterVol !== null ? boundCCMasterVol : '--'} | Value: ${sliderVal}`;
+        masterVolValueDisplay.textContent = sliderVal; // Also update the main display span
+      }
+
+      if (navigator.requestMIDIAccess) {
+        navigator.requestMIDIAccess().then(onMIDISuccess, onMIDIFailure);
+      } else {
+        console.warn('Web MIDI API not supported in this browser.');
+        if(learnBtnMasterVol) learnBtnMasterVol.disabled = true;
+        if(midiInSelectMasterVol) midiInSelectMasterVol.disabled = true;
+      }
+
+      function onMIDISuccess(access) {
+        midiAccess = access;
+        if (!midiInSelectMasterVol) return;
+        // Populate input selector
+        midiInSelectMasterVol.innerHTML = '<option value="">-- no device --</option>'; // Clear previous options
+        for (let input of midiAccess.inputs.values()) {
+          const option = document.createElement('option');
+          option.value = input.id;
+          option.text = input.name || input.manufacturer || input.id;
+          midiInSelectMasterVol.appendChild(option);
+        }
+        // Change handler for MIDI input selection
+        midiInSelectMasterVol.addEventListener('change', () => {
+          if (currentMidiInput) currentMidiInput.onmidimessage = null;
+          currentMidiInput = midiAccess.inputs.get(midiInSelectMasterVol.value) || null;
+          if (currentMidiInput) currentMidiInput.onmidimessage = handleMIDIMessageMasterVol;
+          console.log(currentMidiInput ? `Selected MIDI Input: ${currentMidiInput.name}` : 'No MIDI Input selected');
+        });
+      }
+
+      function onMIDIFailure() {
+        console.error('Could not access your MIDI devices.');
+        if(learnBtnMasterVol) learnBtnMasterVol.disabled = true;
+        if(midiInSelectMasterVol) midiInSelectMasterVol.disabled = true;
+      }
+
+      function handleMIDIMessageMasterVol(event) {
+        const [statusByte, data1, data2] = event.data;
+        const type = statusByte & 0xf0; // MIDI message type (e.g., 0xB0 for CC)
+        // const channel = statusByte & 0x0f; // MIDI channel
+
+        if (type === 0xB0) { // Control Change message
+          const cc = data1;    // CC number
+          const value = data2; // CC value (0-127)
+
+          if (learnModeMasterVol) {
+            boundCCMasterVol = cc;
+            learnModeMasterVol = false;
+            learnBtnMasterVol.textContent = 'MIDI Learned!';
+            learnBtnMasterVol.style.backgroundColor = '#77dd77'; // Greenish feedback
+            updateMasterVolStatus();
+            setTimeout(() => {
+                learnBtnMasterVol.textContent = 'MIDI Learn';
+                learnBtnMasterVol.style.backgroundColor = ''; // Reset background
+            }, 1500);
+          }
+
+          if (cc === boundCCMasterVol) {
+            const normalizedValue = value / 127; // Normalize to 0-1 range for the slider
+            masterVolSlider.value = normalizedValue.toFixed(2);
+            // Dispatch an input event to trigger existing audio updates and UI changes
+            masterVolSlider.dispatchEvent(new Event('input')); 
+            updateMasterVolStatus(); // update status after dispatching event
+          }
+        }
+      }
+
+      if (learnBtnMasterVol) {
+          learnBtnMasterVol.addEventListener('click', () => {
+            if (!midiAccess) {
+                alert('MIDI not initialized. Please select a MIDI input if available, or check browser permissions.');
+                return;
+            }
+            if (!currentMidiInput && midiInSelectMasterVol.value === ""){
+                alert('Please select a MIDI input device first.');
+                return;
+            }
+            learnModeMasterVol = true;
+            learnBtnMasterVol.textContent = 'Listening...';
+            learnBtnMasterVol.style.backgroundColor = '#ffcc00'; // Yellowish feedback
+        });
+      }
+
+      // Update status display when slider is changed manually
+      if (masterVolSlider) {
+          masterVolSlider.addEventListener('input', updateMasterVolStatus);
+      }
+      // Initialize status on load
+      updateMasterVolStatus(); 
+      // --- END MIDI LEARN FOR MASTER VOLUME ---
+
     });
 
     class WaveModule {
@@ -522,8 +736,7 @@
         this.settings = root.querySelector('.settings');
         this.prefs = {
           waveType: root.querySelector('.wave-type'),
-          waveformDisplayArea: root.querySelector('.waveform-display-area'),
-          waveformDisplayLabel: root.querySelector('.waveform-display-label'),
+          customContainer: root.querySelector('.custom-container'),
           drawCanvas: root.querySelector('.draw-canvas'),
           drawCtx: root.querySelector('.draw-canvas') ? root.querySelector('.draw-canvas').getContext('2d') : null,
           clearDraw: root.querySelector('.clear-draw'),
@@ -538,170 +751,31 @@
           enable: root.querySelector('.enable')
         };
         this.bind();
+        // Hide speed range controls if not module 0 or module 1
         if (this.root.dataset.id !== '0' && this.root.dataset.id !== '1' && this.prefs.speedRangeControls) {
             this.prefs.speedRangeControls.style.display = 'none';
         }
-        this.updateDrawCanvasVisualization(); // Initial draw
       }
-
       bind() {
         const p = this.prefs;
         this.trigger.addEventListener('click', () => this.settings.style.display = this.settings.style.display === 'block' ? 'none' : 'block');
         p.enable.addEventListener('change', () => { this.isPlaying = p.enable.checked; this.audioCtx.resume(); if (this.isPlaying) { this.startTime = Date.now(); this.history = []; this.update(); }});
-        
         p.waveType.addEventListener('change', () => {
-            p.clearDraw.style.display = p.waveType.value === 'custom' ? 'inline-block' : 'none';
-            this.updateDrawCanvasVisualization();
+            p.customContainer.style.display = p.waveType.value === 'custom' ? 'block' : 'none';
+            this.redrawDrawCanvas(); // Redraw when type changes, might be to/from custom
         });
-
         if (p.drawCanvas) {
           let drawing = false;
-          p.drawCanvas.addEventListener('mousedown', e => { 
-            if (p.waveType.value !=='custom') return;
-            drawing=true; this.customPoints=[]; 
-            this.updateDrawCanvasVisualization(); 
-            const r=p.drawCanvas.getBoundingClientRect(); 
-            const pt={x:e.clientX-r.left, y:e.clientY-r.top}; 
-            this.customPoints.push(pt);
-            p.drawCtx.beginPath();
-            p.drawCtx.moveTo(pt.x, pt.y);
-          });
-          p.drawCanvas.addEventListener('mousemove', e => { 
-            if (!drawing || p.waveType.value !=='custom') return; 
-            const r=p.drawCanvas.getBoundingClientRect(); 
-            const pt={x:e.clientX-r.left, y:e.clientY-r.top};
-            this.customPoints.push(pt); 
-            p.drawCtx.lineTo(pt.x,pt.y); 
-            p.drawCtx.strokeStyle='#007bff';
-            p.drawCtx.lineWidth=2; p.drawCtx.stroke(); 
-          });
-          p.drawCanvas.addEventListener('mouseup',() => {
-            if (p.waveType.value === 'custom') drawing = false;
-          });
-          p.drawCanvas.addEventListener('mouseleave',()=> {
-            if (p.waveType.value === 'custom') drawing = false;
-          });
-          p.clearDraw.addEventListener('click',()=>{
-            if (p.waveType.value === 'custom') {
-              this.customPoints=[];
-              this.updateDrawCanvasVisualization();
-            }
-          });
+          p.drawCanvas.addEventListener('mousedown', e => { if (p.waveType.value!=='custom') return; drawing=true; this.customPoints=[]; p.drawCtx.clearRect(0,0,p.drawCanvas.width,p.drawCanvas.height); p.drawCtx.beginPath(); const r=p.drawCanvas.getBoundingClientRect(); const pt={x:e.clientX-r.left, y:e.clientY-r.top}; p.drawCtx.moveTo(pt.x,pt.y); this.customPoints.push(pt); });
+          p.drawCanvas.addEventListener('mousemove', e => { if (!drawing) return; const r=p.drawCanvas.getBoundingClientRect(); const pt={x:e.clientX-r.left, y:e.clientY-r.top}; this.customPoints.push(pt); p.drawCtx.lineTo(pt.x,pt.y); p.drawCtx.strokeStyle='#61dafb';p.drawCtx.lineWidth=2;p.drawCtx.stroke(); });
+          ['mouseup','mouseleave'].forEach(evt=>p.drawCanvas.addEventListener(evt,()=>drawing=false));
+          p.clearDraw.addEventListener('click',()=>{p.drawCtx.clearRect(0,0,p.drawCanvas.width,p.drawCanvas.height); this.customPoints=[];});
         }
         p.speed.addEventListener('input', () => this.setSpeed(this.prefs.speed.value));
         p.depth.addEventListener('input',()=>p.depthDisplay.textContent=parseFloat(p.depth.value).toFixed(2));
-        
-        p.phase.addEventListener('input',()=>{
-            p.phaseDisplay.textContent=p.phase.value+'°';
-            this.updateDrawCanvasVisualization();
-        });
-        p.log.addEventListener('input',()=>{
-            p.logDisplay.textContent=parseFloat(p.log.value).toFixed(2);
-            this.updateDrawCanvasVisualization();
-        });
+        p.phase.addEventListener('input',()=>p.phaseDisplay.textContent=p.phase.value+'°');
+        p.log.addEventListener('input',()=>p.logDisplay.textContent=parseFloat(p.log.value).toFixed(2));
       }
-
-      updateDrawCanvasVisualization() {
-        if (!this.prefs.drawCtx || !this.prefs.drawCanvas) return;
-        const ctx = this.prefs.drawCtx;
-        const canvas = this.prefs.drawCanvas;
-        const type = this.prefs.waveType.value;
-        const phaseDeg = parseFloat(this.prefs.phase.value);
-        const logScale = parseFloat(this.prefs.log.value);
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // Draw center line
-        ctx.beginPath();
-        ctx.moveTo(0, canvas.height / 2);
-        ctx.lineTo(canvas.width, canvas.height / 2);
-        ctx.strokeStyle = '#ccc';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        if (type === 'custom') {
-            this.redrawCustomWave();
-        } else {
-            this.drawStandardWave(type, phaseDeg * Math.PI / 180, logScale, ctx, canvas);
-        }
-      }
-
-      redrawCustomWave() {
-        if (!this.prefs.drawCtx || !this.prefs.drawCanvas || !this.customPoints) return;
-        const ctx = this.prefs.drawCtx;
-        // Clear and center line are handled by updateDrawCanvasVisualization before this is called
-        // if (this.customPoints.length === 0) return; // No points to draw
-
-        if (this.customPoints.length > 0) {
-            ctx.beginPath();
-            ctx.moveTo(this.customPoints[0].x, this.customPoints[0].y);
-            for (let i = 1; i < this.customPoints.length; i++) {
-                ctx.lineTo(this.customPoints[i].x, this.customPoints[i].y);
-            }
-            ctx.strokeStyle = '#61dafb';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-        }
-      }
-
-      drawStandardWave(type, phaseRad, logScale, canvasCtx, canvas) {
-        const width = canvas.width;
-        const height = canvas.height;
-        const midY = height / 2;
-        const numPoints = width; // One point per horizontal pixel for smoothness
-
-        canvasCtx.beginPath();
-        canvasCtx.strokeStyle = '#61dafb';
-        canvasCtx.lineWidth = 2;
-
-        for (let i = 0; i < numPoints; i++) {
-            let xNormalized = i / (numPoints -1); // Normalized x from 0 to 1
-            
-            // Apply log scale to the normalized x-coordinate (time axis)
-            let tNormalized = xNormalized;
-            if (logScale !== 1) {
-                // Ensure positive base for pow, and handle edge cases if logScale makes it undefined
-                if (tNormalized > 0) { 
-                    tNormalized = Math.pow(tNormalized, logScale);
-                } else if (logScale < 1 && tNormalized === 0) {
-                     tNormalized = 0; // Avoid NaN for 0^positive
-                } else if (logScale > 1 && tNormalized === 0) {
-                     tNormalized = 0;
-                }
-                 // Clamp tNormalized to [0,1] after log operation if it goes out of bounds
-                tNormalized = Math.max(0, Math.min(1, tNormalized));
-            }
-
-            const angle = (tNormalized * 2 * Math.PI) + phaseRad;
-            let yValue = 0; // Waveform value from -1 to 1
-
-            switch (type) {
-                case 'sine': yValue = Math.sin(angle); break;
-                case 'square': yValue = Math.sin(angle) >= 0 ? 0.8 : -0.8; break; // Keep amplitude for square
-                case 'sawtooth': yValue = 2 * ( ( (angle / (2 * Math.PI)) % 1 + 1) % 1) - 1; break;
-                case 'reverse-sawtooth': yValue = 1 - 2 * ( ( (angle / (2 * Math.PI)) % 1 + 1) % 1); break;
-                case 'triangle': 
-                    const triNormalized = ( ( (angle / (2*Math.PI)) % 1 + 1) % 1 );
-                    yValue = triNormalized < 0.5 ? (4 * triNormalized - 1) : (-4 * triNormalized + 3); 
-                    break;
-                case 'reverse-triangle':
-                    const rtriNormalized = ( ( (angle / (2*Math.PI)) % 1 + 1) % 1 );
-                    yValue = rtriNormalized < 0.5 ? (1 - 4 * rtriNormalized) : (4 * rtriNormalized - 3);
-                    break;
-                default: yValue = 0;
-            }
-            
-            const canvasY = midY - (yValue * midY * 0.9); // Scale to fit, 0.9 to avoid hitting exact top/bottom
-
-            if (i === 0) {
-                canvasCtx.moveTo(i, canvasY);
-            } else {
-                canvasCtx.lineTo(i, canvasY);
-            }
-        }
-        canvasCtx.stroke();
-      }
-
       setSpeed(newLogSpeed) {
         // Ensure newLogSpeed is a number
         newLogSpeed = parseFloat(newLogSpeed);
@@ -772,14 +846,20 @@
 
         p.waveType.value = s.waveType || 'sine';
         this.customPoints = s.customPoints || [];
-        p.clearDraw.style.display = p.waveType.value === 'custom' ? 'inline-block' : 'none';
+        p.customContainer.style.display = p.waveType.value === 'custom' ? 'block' : 'none';
+        this.redrawDrawCanvas();
 
+        // Restore speedMin and speedMax for module 0 if they exist on prefs
         if (p.speedMin) {
             p.speedMin.value = s.speedMin !== undefined ? s.speedMin : -7;
         }
         if (p.speedMax) {
             p.speedMax.value = s.speedMax !== undefined ? s.speedMax : 1;
         }
+
+        // The actual speed slider value (p.speed.value) will be set by setSpeed via modulationLoop
+        // For initial load, if not playing, we can set it here or rely on setSpeed being called.
+        // However, setSpeed itself will be called in modulationLoop based on these min/max and testSlider.
 
         p.depth.value = s.depth !== undefined ? s.depth : 0.5;
         p.depthDisplay.textContent = parseFloat(p.depth.value).toFixed(2);
@@ -796,16 +876,34 @@
         p.enable.checked = s.enabled || false;
         this.isPlaying = p.enable.checked;
         if (this.isPlaying) {
-            this.startTime = Date.now(); 
+            this.startTime = Date.now(); // Reset start time on enable
             this.history = [];
             this.update(); 
         } else {
+            // Clear output display if not playing
             this.outputValue.textContent = (0).toFixed(3);
             const c = this.outputCtx;
             c.fillStyle = '#282c34';
             c.fillRect(0, 0, this.outputCanvas.width, this.outputCanvas.height);
         }
-        this.updateDrawCanvasVisualization(); // Update visualization after all settings applied
+      }
+      
+      redrawDrawCanvas() {
+        if (this.prefs.waveType.value === 'custom' && this.prefs.drawCtx) {
+            const ctx = this.prefs.drawCtx;
+            const canvas = this.prefs.drawCanvas;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (this.customPoints && this.customPoints.length > 1) {
+                ctx.beginPath();
+                ctx.moveTo(this.customPoints[0].x, this.customPoints[0].y);
+                for (let i = 1; i < this.customPoints.length; i++) {
+                    ctx.lineTo(this.customPoints[i].x, this.customPoints[i].y);
+                }
+                ctx.strokeStyle = '#61dafb';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
       }
     }
   </script>
