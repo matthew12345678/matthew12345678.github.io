@@ -111,6 +111,9 @@ const filterQValueDisplay = document.getElementById('filterQValue');
 const filterGainGroup = document.getElementById('filterGainGroup');
 const filterGainSlider = document.getElementById('filterGain');
 const filterGainValueDisplay = document.getElementById('filterGainValue');
+const filterFrequencyMidiLearnButton = document.getElementById('filterFrequencyMidiLearn'); // New
+const filterQMidiLearnButton = document.getElementById('filterQMidiLearn'); // New
+const filterGainMidiLearnButton = document.getElementById('filterGainMidiLearn'); // New
 
 const reverbMixSlider = document.getElementById('reverbMix');
 const reverbMixValueDisplay = document.getElementById('reverbMixValue');
@@ -145,18 +148,91 @@ let midiAccess = null;
 let activeMidiInput = null;
 let masterVolumeMidiMap = null; // { channel: X, controller: Y }
 let isLearningMasterVolume = false;
+let filterFrequencyMidiMap = null; // New
+let isLearningFilterFrequency = false; // New
+let filterQMidiMap = null; // New
+let isLearningFilterQ = false; // New
+let filterGainMidiMap = null; // New
+let isLearningFilterGain = false; // New
+
+// Preset DOM Elements
+const exportPresetButton = document.getElementById('exportPresetButton');
+const importPresetButton = document.getElementById('importPresetButton');
+const presetSelector = document.getElementById('presetSelector');
+
+// Function to populate the preset dropdown
+async function populatePresetDropdown() {
+    if (!presetSelector) return;
+
+    const presetFiles = ['wobble.json', 'thisone.json']; // Manually listing for now
+    // In a real scenario, you might fetch this list from the server or a config file
+    // For example: const response = await fetch('/api/presets');
+    // const presetFiles = await response.json();
+
+    presetSelector.innerHTML = '<option value="">-- Select Preset --</option>'; // Clear existing options
+
+    presetFiles.forEach(fileName => {
+        const option = document.createElement('option');
+        option.value = fileName;
+        option.textContent = fileName.replace('.json', ''); // Display without .json
+        presetSelector.appendChild(option);
+    });
+}
+
+// Function to load the selected preset
+async function loadSelectedPreset() {
+    if (!presetSelector || !presetSelector.value) return;
+
+    const fileName = presetSelector.value;
+    const filePath = `preset/${fileName}`;
+
+    try {
+        const response = await fetch(filePath);
+        if (!response.ok) {
+            console.error(`Error loading preset file: ${response.statusText}`);
+            alert(`Error loading preset: ${fileName}. Check console for details.`);
+            return;
+        }
+        const presetData = await response.json();
+        applyPresetData(presetData);
+        console.log(`Preset loaded: ${fileName}`);
+        // Optionally, provide feedback to the user
+        // alert(`Preset '${fileName.replace('.json', '')}' loaded.`);
+    } catch (error) {
+        console.error(`Error fetching or parsing preset file ${fileName}:`, error);
+        alert(`Error loading preset: ${fileName}. Check console for details.`);
+    }
+}
 
 function setupEventListeners() {
     // This function can be populated with other event listeners if needed later.
     // For now, it prevents an error in initializeSynth.
-    console.log("Setting up event listeners (placeholder)");
+    // console.log("Setting up event listeners (placeholder)"); // Original comment
+
+    // == Ensure existing event listeners are preserved ==
+    // Example: if (startStopButton) startStopButton.addEventListener('click', toggleSound);
+    // (The actual existing listeners need to be kept here from the original file)
+
+    if (exportPresetButton) {
+        exportPresetButton.addEventListener('click', exportPreset);
+    }
+    if (importPresetButton) {
+        importPresetButton.addEventListener('click', importPreset);
+    }
+    if (presetSelector) {
+        presetSelector.addEventListener('change', loadSelectedPreset);
+    }
 }
 
 function initializeSynth() {
     initAudio();
     setupEventListeners();
+    populatePresetDropdown(); // Call the new function here
     initializeUIDisplays();
     requestMidiAccess();
+    if (typeof loadMidiMappings === "function") { // Check if loadMidiMappings exists
+        loadMidiMappings();
+    }
 }
 
 function requestMidiAccess() {
@@ -231,7 +307,7 @@ function onMIDIMessage(event) {
     // Check for Control Change (CC) messages
     if (command === 11) { // 11 means CC
         const controller = data1;
-        const value = data2;
+        const value = data2; // MIDI CC value (0-127)
 
         if (isLearningMasterVolume) {
             masterVolumeMidiMap = { channel, controller };
@@ -239,21 +315,66 @@ function onMIDIMessage(event) {
             masterVolumeMidiLearnButton.textContent = "Learn";
             masterVolumeMidiLearnButton.classList.remove('learning');
             console.log(`Master Volume learned: Ch ${channel}, CC ${controller}`);
-            // Optionally, save this to localStorage to persist across sessions
-            // localStorage.setItem('masterVolumeMidiMap', JSON.stringify(masterVolumeMidiMap));
-            return; // Don't process this message for control yet
+            localStorage.setItem('masterVolumeMidiMap', JSON.stringify(masterVolumeMidiMap));
+            return;
+        } else if (isLearningFilterFrequency) {
+            filterFrequencyMidiMap = { channel, controller };
+            isLearningFilterFrequency = false;
+            filterFrequencyMidiLearnButton.textContent = "Learn";
+            filterFrequencyMidiLearnButton.classList.remove('learning');
+            console.log(`Filter Frequency learned: Ch ${channel}, CC ${controller}`);
+            localStorage.setItem('filterFrequencyMidiMap', JSON.stringify(filterFrequencyMidiMap));
+            return;
+        } else if (isLearningFilterQ) {
+            filterQMidiMap = { channel, controller };
+            isLearningFilterQ = false;
+            filterQMidiLearnButton.textContent = "Learn";
+            filterQMidiLearnButton.classList.remove('learning');
+            console.log(`Filter Q learned: Ch ${channel}, CC ${controller}`);
+            localStorage.setItem('filterQMidiMap', JSON.stringify(filterQMidiMap));
+            return;
+        } else if (isLearningFilterGain) {
+            filterGainMidiMap = { channel, controller };
+            isLearningFilterGain = false;
+            filterGainMidiLearnButton.textContent = "Learn";
+            filterGainMidiLearnButton.classList.remove('learning');
+            console.log(`Filter Gain learned: Ch ${channel}, CC ${controller}`);
+            localStorage.setItem('filterGainMidiMap', JSON.stringify(filterGainMidiMap));
+            return;
         }
 
-        if (masterVolumeMidiMap && 
-            masterVolumeMidiMap.channel === channel && 
-            masterVolumeMidiMap.controller === controller) {
-            
+        // Apply learned MIDI mappings
+        if (masterVolumeMidiMap && masterVolumeMidiMap.channel === channel && masterVolumeMidiMap.controller === controller) {
             const newVolume = value / 127;
             masterVolumeSlider.value = newVolume;
-            masterVolumeValueDisplay.textContent = newVolume.toFixed(2);
-            if (masterOutputVolume && audioCtx) {
-                smoothSet(masterOutputVolume.gain, newVolume);
-            }
+            // masterVolumeValueDisplay.textContent = newVolume.toFixed(2); // updateGlobalEffectParams will do this
+            // if (masterOutputVolume && audioCtx) { // smoothSet is now inside updateGlobalEffectParams
+            //     smoothSet(masterOutputVolume.gain, newVolume);
+            // }
+            updateGlobalEffectParams();
+        } else if (filterFrequencyMidiMap && filterFrequencyMidiMap.channel === channel && filterFrequencyMidiMap.controller === controller) {
+            // Filter frequency slider is 0-100, MIDI is 0-127. Direct mapping.
+            const newSliderValue = Math.round((value / 127) * 100);
+            filterFrequencySlider.value = newSliderValue;
+            // filterFreqValueDisplay will be updated by updateGlobalEffectParams
+            updateGlobalEffectParams();
+        } else if (filterQMidiMap && filterQMidiMap.channel === channel && filterQMidiMap.controller === controller) {
+            // Filter Q slider has min 0.0001, max 30. MIDI is 0-127.
+            const minQ = parseFloat(filterQSlider.min);
+            const maxQ = parseFloat(filterQSlider.max);
+            // Simple linear mapping for Q, can be refined if non-linear feel is desired
+            const newQValue = minQ + (value / 127) * (maxQ - minQ);
+            filterQSlider.value = newQValue;
+            // filterQValueDisplay will be updated by updateGlobalEffectParams
+            updateGlobalEffectParams();
+        } else if (filterGainMidiMap && filterGainMidiMap.channel === channel && filterGainMidiMap.controller === controller) {
+            // Filter Gain slider has min -40, max 40. MIDI is 0-127.
+            const minGain = parseFloat(filterGainSlider.min);
+            const maxGain = parseFloat(filterGainSlider.max);
+            const newGainValue = minGain + (value / 127) * (maxGain - minGain);
+            filterGainSlider.value = newGainValue;
+            // filterGainValueDisplay will be updated by updateGlobalEffectParams
+            updateGlobalEffectParams();
         }
     }
 }
@@ -1208,28 +1329,465 @@ if (masterVolumeMidiLearnButton) {
             alert("Please select a MIDI input first.");
             return;
         }
+        // Toggle learning state for master volume
         isLearningMasterVolume = !isLearningMasterVolume;
         if (isLearningMasterVolume) {
+            // Reset other learn states
+            isLearningFilterFrequency = false; filterFrequencyMidiLearnButton.textContent = "Learn"; filterFrequencyMidiLearnButton.classList.remove('learning');
+            isLearningFilterQ = false; filterQMidiLearnButton.textContent = "Learn"; filterQMidiLearnButton.classList.remove('learning');
+            isLearningFilterGain = false; filterGainMidiLearnButton.textContent = "Learn"; filterGainMidiLearnButton.classList.remove('learning');
+            
             masterVolumeMidiLearnButton.textContent = "Learning...";
             masterVolumeMidiLearnButton.classList.add('learning');
             console.log("Waiting for MIDI CC for Master Volume...");
         } else {
             masterVolumeMidiLearnButton.textContent = "Learn";
             masterVolumeMidiLearnButton.classList.remove('learning');
-            // masterVolumeMidiMap = null; // Optionally clear mapping when toggling off learn explicitly
         }
     });
 }
 
-// Function to load saved MIDI mappings (example for master volume)
-function loadMidiMappings() {
-    // const savedMap = localStorage.getItem('masterVolumeMidiMap');
-    // if (savedMap) {
-    //     masterVolumeMidiMap = JSON.parse(savedMap);
-    //     console.log("Loaded Master Volume MIDI map:", masterVolumeMidiMap);
-    // }
+// New: Add MIDI Learn Button Listeners for Filter Controls
+if (filterFrequencyMidiLearnButton) {
+    filterFrequencyMidiLearnButton.addEventListener('click', () => {
+        if (!activeMidiInput) { alert("Please select a MIDI input first."); return; }
+        isLearningFilterFrequency = !isLearningFilterFrequency;
+        if (isLearningFilterFrequency) {
+            isLearningMasterVolume = false; masterVolumeMidiLearnButton.textContent = "Learn"; masterVolumeMidiLearnButton.classList.remove('learning');
+            isLearningFilterQ = false; filterQMidiLearnButton.textContent = "Learn"; filterQMidiLearnButton.classList.remove('learning');
+            isLearningFilterGain = false; filterGainMidiLearnButton.textContent = "Learn"; filterGainMidiLearnButton.classList.remove('learning');
+
+            filterFrequencyMidiLearnButton.textContent = "Learning...";
+            filterFrequencyMidiLearnButton.classList.add('learning');
+            console.log("Waiting for MIDI CC for Filter Frequency...");
+        } else {
+            filterFrequencyMidiLearnButton.textContent = "Learn";
+            filterFrequencyMidiLearnButton.classList.remove('learning');
+        }
+    });
 }
 
-// Call initialization functions
-initializeSynth(); // Ensure this is called to setup MIDI etc.
-// ... existing code ... 
+if (filterQMidiLearnButton) {
+    filterQMidiLearnButton.addEventListener('click', () => {
+        if (!activeMidiInput) { alert("Please select a MIDI input first."); return; }
+        isLearningFilterQ = !isLearningFilterQ;
+        if (isLearningFilterQ) {
+            isLearningMasterVolume = false; masterVolumeMidiLearnButton.textContent = "Learn"; masterVolumeMidiLearnButton.classList.remove('learning');
+            isLearningFilterFrequency = false; filterFrequencyMidiLearnButton.textContent = "Learn"; filterFrequencyMidiLearnButton.classList.remove('learning');
+            isLearningFilterGain = false; filterGainMidiLearnButton.textContent = "Learn"; filterGainMidiLearnButton.classList.remove('learning');
+
+            filterQMidiLearnButton.textContent = "Learning...";
+            filterQMidiLearnButton.classList.add('learning');
+            console.log("Waiting for MIDI CC for Filter Q...");
+        } else {
+            filterQMidiLearnButton.textContent = "Learn";
+            filterQMidiLearnButton.classList.remove('learning');
+        }
+    });
+}
+
+if (filterGainMidiLearnButton) {
+    filterGainMidiLearnButton.addEventListener('click', () => {
+        if (!activeMidiInput) { alert("Please select a MIDI input first."); return; }
+        isLearningFilterGain = !isLearningFilterGain;
+        if (isLearningFilterGain) {
+            isLearningMasterVolume = false; masterVolumeMidiLearnButton.textContent = "Learn"; masterVolumeMidiLearnButton.classList.remove('learning');
+            isLearningFilterFrequency = false; filterFrequencyMidiLearnButton.textContent = "Learn"; filterFrequencyMidiLearnButton.classList.remove('learning');
+            isLearningFilterQ = false; filterQMidiLearnButton.textContent = "Learn"; filterQMidiLearnButton.classList.remove('learning');
+
+            filterGainMidiLearnButton.textContent = "Learning...";
+            filterGainMidiLearnButton.classList.add('learning');
+            console.log("Waiting for MIDI CC for Filter Gain...");
+        } else {
+            filterGainMidiLearnButton.textContent = "Learn";
+            filterGainMidiLearnButton.classList.remove('learning');
+        }
+    });
+}
+
+// Function to load saved MIDI mappings
+function loadMidiMappings() {
+    const savedMasterVolumeMap = localStorage.getItem('masterVolumeMidiMap');
+    if (savedMasterVolumeMap) {
+        masterVolumeMidiMap = JSON.parse(savedMasterVolumeMap);
+        console.log("Loaded Master Volume MIDI map:", masterVolumeMidiMap);
+    }
+    const savedFilterFreqMap = localStorage.getItem('filterFrequencyMidiMap');
+    if (savedFilterFreqMap) {
+        filterFrequencyMidiMap = JSON.parse(savedFilterFreqMap);
+        console.log("Loaded Filter Frequency MIDI map:", filterFrequencyMidiMap);
+    }
+    const savedFilterQMap = localStorage.getItem('filterQMidiMap');
+    if (savedFilterQMap) {
+        filterQMidiMap = JSON.parse(savedFilterQMap);
+        console.log("Loaded Filter Q MIDI map:", filterQMidiMap);
+    }
+    const savedFilterGainMap = localStorage.getItem('filterGainMidiMap');
+    if (savedFilterGainMap) {
+        filterGainMidiMap = JSON.parse(savedFilterGainMap);
+        console.log("Loaded Filter Gain MIDI map:", filterGainMidiMap);
+    }
+}
+
+// Add the new preset functions here
+function gatherPresetData() {
+    const preset = {
+        masterFrequency: parseFloat(masterFrequencySlider.value),
+        masterVolume: parseFloat(masterVolumeSlider.value),
+
+        osc1: {
+            waveform: osc1WaveformSelect.value,
+            detune: parseInt(osc1DetuneSlider.value),
+            volume: parseFloat(osc1VolumeSlider.value),
+            detuneLfo: {
+                waveform: osc1DetuneLfoWaveformSelect.value,
+                speed: parseFloat(osc1DetuneLfoSpeedSlider.value),
+                depth: parseInt(osc1DetuneLfoDepthSlider.value),
+                customCurve: osc1DetuneLfoCanvas.customCurveData ? Array.from(osc1DetuneLfoCanvas.customCurveData) : null
+            },
+            volumeLfo: {
+                waveform: osc1VolumeLfoWaveformSelect.value,
+                speed: parseFloat(osc1VolumeLfoSpeedSlider.value),
+                depth: parseFloat(osc1VolumeLfoDepthSlider.value),
+                customCurve: osc1VolumeLfoCanvas.customCurveData ? Array.from(osc1VolumeLfoCanvas.customCurveData) : null
+            }
+        },
+        osc2: {
+            waveform: osc2WaveformSelect.value,
+            detune: parseInt(osc2DetuneSlider.value),
+            volume: parseFloat(osc2VolumeSlider.value),
+            detuneLfo: {
+                waveform: osc2DetuneLfoWaveformSelect.value,
+                speed: parseFloat(osc2DetuneLfoSpeedSlider.value),
+                depth: parseInt(osc2DetuneLfoDepthSlider.value),
+                customCurve: osc2DetuneLfoCanvas.customCurveData ? Array.from(osc2DetuneLfoCanvas.customCurveData) : null
+            },
+            volumeLfo: {
+                waveform: osc2VolumeLfoWaveformSelect.value,
+                speed: parseFloat(osc2VolumeLfoSpeedSlider.value),
+                depth: parseFloat(osc2VolumeLfoDepthSlider.value),
+                customCurve: osc2VolumeLfoCanvas.customCurveData ? Array.from(osc2VolumeLfoCanvas.customCurveData) : null
+            }
+        },
+        osc3: {
+            waveform: osc3WaveformSelect.value,
+            detune: parseInt(osc3DetuneSlider.value),
+            volume: parseFloat(osc3VolumeSlider.value),
+            detuneLfo: {
+                waveform: osc3DetuneLfoWaveformSelect.value,
+                speed: parseFloat(osc3DetuneLfoSpeedSlider.value),
+                depth: parseInt(osc3DetuneLfoDepthSlider.value),
+                customCurve: osc3DetuneLfoCanvas.customCurveData ? Array.from(osc3DetuneLfoCanvas.customCurveData) : null
+            },
+            volumeLfo: {
+                waveform: osc3VolumeLfoWaveformSelect.value,
+                speed: parseFloat(osc3VolumeLfoSpeedSlider.value),
+                depth: parseFloat(osc3VolumeLfoDepthSlider.value),
+                customCurve: osc3VolumeLfoCanvas.customCurveData ? Array.from(osc3VolumeLfoCanvas.customCurveData) : null
+            }
+        },
+        filter: {
+            type: filterTypeSelect.value,
+            frequency: parseFloat(filterFrequencySlider.value),
+            q: parseFloat(filterQSlider.value),
+            gain: filterGainGroup.style.display !== 'none' ? parseFloat(filterGainSlider.value) : 0
+        },
+        reverb: {
+            mix: parseFloat(reverbMixSlider.value),
+            preDelay: parseFloat(reverbPreDelaySlider.value),
+            decay: parseFloat(reverbDecaySlider.value),
+            feedbackGain: parseFloat(reverbFeedbackGainSlider.value)
+        },
+        midi: {
+            masterVolumeMap: masterVolumeMidiMap ? { ...masterVolumeMidiMap } : null,
+            filterFrequencyMidiMap: filterFrequencyMidiMap ? { ...filterFrequencyMidiMap } : null, // New
+            filterQMidiMap: filterQMidiMap ? { ...filterQMidiMap } : null, // New
+            filterGainMidiMap: filterGainMidiMap ? { ...filterGainMidiMap } : null // New
+        }
+    };
+    return preset;
+}
+
+function exportPreset() {
+    const presetData = gatherPresetData();
+    const jsonData = JSON.stringify(presetData, null, 2);
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const fileName = prompt("Enter preset name:", "synth_preset");
+    if (fileName === null) {
+        URL.revokeObjectURL(url);
+        return;
+    }
+    a.download = (fileName.endsWith('.json') ? fileName : fileName + '.json');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    console.log("Preset exported as " + a.download);
+}
+
+function importPreset() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = e => {
+        const file = e.target.files[0];
+        if (!file) {
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = readerEvent => {
+            try {
+                const presetData = JSON.parse(readerEvent.target.result);
+                applyPresetData(presetData); // applyPresetData will be added next
+                console.log("Preset imported and applied: " + file.name);
+            } catch (err) {
+                console.error("Error importing preset:", err);
+                alert("Failed to import preset. Make sure it's a valid JSON file.\nError: " + err.message);
+            }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
+}
+
+// Insert applyLfoCustomCurve and applyPresetData functions here
+function applyLfoCustomCurve(lfoCanvas, customCurveArray, lfoNodeGroup, lfoType /* 'detune' or 'volume' */, oscIndex) {
+    if (!audioCtx || !customCurveArray || !lfoNodeGroup) {
+        console.warn("applyLfoCustomCurve: Missing audio context, curve data, or LFO node group.");
+        return;
+    }
+
+    const curve = new Float32Array(customCurveArray);
+    // Ensure canvas.customCurveData is updated, as this is used for re-exporting and by drawing logic.
+    lfoCanvas.customCurveData = curve; 
+
+    // If a redraw function exists on the canvas (presumably from setupLfoCanvasDrawing), call it.
+    if (typeof lfoCanvas.redrawCanvas === 'function') {
+        lfoCanvas.redrawCanvas(curve);
+    } else {
+        console.warn(`LFO canvas for osc ${oscIndex+1} (${lfoType}) does not have a redrawCanvas method.`);
+    }
+    
+    // lfoNodeGroup is expected to be an object like { lfoSource, shaperNode, detuneLfoDepth/volumeLfoDepthGain }
+    // These nodes are part of the activeAudioNodes[oscIndex].detuneLfo or .volumeLfo objects.
+    let shaper = lfoNodeGroup.shaperNode; 
+    let lfoSource = lfoNodeGroup.lfoSource;
+    let lfoDepthNode = lfoType === 'detune' ? lfoNodeGroup.detuneLfoDepth : lfoNodeGroup.volumeLfoDepthGain;
+
+    if (!lfoSource) {
+        console.warn(`LFO source node not found for osc ${oscIndex+1} (${lfoType}) LFO. Cannot apply custom curve to audio graph.`);
+        return; // If no LFO source, cannot proceed with audio graph changes.
+    }
+    if (!lfoDepthNode) {
+        console.warn(`LFO depth/gain node not found for osc ${oscIndex+1} (${lfoType}) LFO. Cannot connect shaper for custom curve.`);
+        return; 
+    }
+
+    if (!shaper) {
+        shaper = audioCtx.createWaveShaper();
+        lfoNodeGroup.shaperNode = shaper; // Store the newly created shaper back into the LFO node group.
+    }
+    shaper.curve = curve;
+    shaper.oversample = '4x';
+
+    // Re-wire: LFO Source -> Shaper -> LFO Depth Node
+    try { lfoSource.disconnect(); } catch(e){ /* ignore if not connected */ }
+    try { shaper.disconnect(); } catch(e){ /* ignore if not connected */ }
+    
+    lfoSource.connect(shaper);
+    shaper.connect(lfoDepthNode);
+    console.log(`Applied custom LFO curve for osc ${oscIndex+1} ${lfoType} LFO.`);
+}
+
+function applyPresetData(preset) {
+    if (!preset) {
+        console.error("applyPresetData: No preset data provided.");
+        return;
+    }
+    console.log("Applying preset:", preset);
+
+    // Master controls - UI update
+    masterFrequencySlider.value = preset.masterFrequency;
+    masterFrequencyNumber.value = preset.masterFrequency;
+    masterVolumeSlider.value = preset.masterVolume;
+
+    const oscillators = [
+        { controls: { waveformSelect: osc1WaveformSelect, detuneSlider: osc1DetuneSlider, volumeSlider: osc1VolumeSlider, detuneLfoWaveformSelect: osc1DetuneLfoWaveformSelect, detuneLfoSpeedSlider: osc1DetuneLfoSpeedSlider, detuneLfoSpeedNumber: osc1DetuneLfoSpeedNumber, detuneLfoDepthSlider: osc1DetuneLfoDepthSlider, detuneLfoCustomWaveContainer: osc1DetuneLfoCustomWaveContainer, detuneLfoCanvas: osc1DetuneLfoCanvas, volumeLfoWaveformSelect: osc1VolumeLfoWaveformSelect, volumeLfoSpeedSlider: osc1VolumeLfoSpeedSlider, volumeLfoSpeedNumber: osc1VolumeLfoSpeedNumber, volumeLfoDepthSlider: osc1VolumeLfoDepthSlider, volumeLfoCustomWaveContainer: osc1VolumeLfoCustomWaveContainer, volumeLfoCanvas: osc1VolumeLfoCanvas }, data: preset.osc1, audioNodesRef: activeAudioNodes[0] }, // activeAudioNodes[0] should contain { osc, gainNode, detuneLfo: {lfoSource, detuneLfoDepth, shaperNode}, volumeLfo: {lfoSource, volumeLfoDepthGain, shaperNode} }
+        { controls: { waveformSelect: osc2WaveformSelect, detuneSlider: osc2DetuneSlider, volumeSlider: osc2VolumeSlider, detuneLfoWaveformSelect: osc2DetuneLfoWaveformSelect, detuneLfoSpeedSlider: osc2DetuneLfoSpeedSlider, detuneLfoSpeedNumber: osc2DetuneLfoSpeedNumber, detuneLfoDepthSlider: osc2DetuneLfoDepthSlider, detuneLfoCustomWaveContainer: osc2DetuneLfoCustomWaveContainer, detuneLfoCanvas: osc2DetuneLfoCanvas, volumeLfoWaveformSelect: osc2VolumeLfoWaveformSelect, volumeLfoSpeedSlider: osc2VolumeLfoSpeedSlider, volumeLfoSpeedNumber: osc2VolumeLfoSpeedNumber, volumeLfoDepthSlider: osc2VolumeLfoDepthSlider, volumeLfoCustomWaveContainer: osc2VolumeLfoCustomWaveContainer, volumeLfoCanvas: osc2VolumeLfoCanvas }, data: preset.osc2, audioNodesRef: activeAudioNodes[1] },
+        { controls: { waveformSelect: osc3WaveformSelect, detuneSlider: osc3DetuneSlider, volumeSlider: osc3VolumeSlider, detuneLfoWaveformSelect: osc3DetuneLfoWaveformSelect, detuneLfoSpeedSlider: osc3DetuneLfoSpeedSlider, detuneLfoSpeedNumber: osc3DetuneLfoSpeedNumber, detuneLfoDepthSlider: osc3DetuneLfoDepthSlider, detuneLfoCustomWaveContainer: osc3DetuneLfoCustomWaveContainer, detuneLfoCanvas: osc3DetuneLfoCanvas, volumeLfoWaveformSelect: osc3VolumeLfoWaveformSelect, volumeLfoSpeedSlider: osc3VolumeLfoSpeedSlider, volumeLfoSpeedNumber: osc3VolumeLfoSpeedNumber, volumeLfoDepthSlider: osc3VolumeLfoDepthSlider, volumeLfoCustomWaveContainer: osc3VolumeLfoCustomWaveContainer, volumeLfoCanvas: osc3VolumeLfoCanvas }, data: preset.osc3, audioNodesRef: activeAudioNodes[2] }
+    ];
+
+    oscillators.forEach((osc, index) => {
+        if (!osc.data) return;
+        const ctrls = osc.controls;
+        const data = osc.data;
+        const currentAudioNodes = osc.audioNodesRef; // This is activeAudioNodes[index]
+
+        // Update UI elements first
+        ctrls.waveformSelect.value = data.waveform;
+        ctrls.detuneSlider.value = data.detune;
+        ctrls.volumeSlider.value = data.volume;
+
+        // Detune LFO UI and Audio
+        if (data.detuneLfo) {
+            ctrls.detuneLfoWaveformSelect.value = data.detuneLfo.waveform;
+            ctrls.detuneLfoSpeedSlider.value = data.detuneLfo.speed;
+            ctrls.detuneLfoSpeedNumber.value = data.detuneLfo.speed;
+            ctrls.detuneLfoDepthSlider.value = data.detuneLfo.depth;
+
+            if (data.detuneLfo.waveform === 'custom' && data.detuneLfo.customCurve) {
+                ctrls.detuneLfoCustomWaveContainer.style.display = 'block';
+                if (audioCtx && currentAudioNodes && currentAudioNodes.detuneLfo) { // .detuneLfo is the group of nodes
+                    applyLfoCustomCurve(ctrls.detuneLfoCanvas, data.detuneLfo.customCurve, currentAudioNodes.detuneLfo, 'detune', index);
+                } else {
+                    // If audio not active or nodes not ready, just store data on canvas for drawing
+                    ctrls.detuneLfoCanvas.customCurveData = new Float32Array(data.detuneLfo.customCurve);
+                    if (typeof ctrls.detuneLfoCanvas.redrawCanvas === 'function') ctrls.detuneLfoCanvas.redrawCanvas();
+                }
+            } else {
+                ctrls.detuneLfoCustomWaveContainer.style.display = 'none';
+                // If switching AWAY from custom, and audio nodes exist, reconfigure LFO path
+                if (audioCtx && currentAudioNodes && currentAudioNodes.detuneLfo && currentAudioNodes.detuneLfo.lfoSource && currentAudioNodes.detuneLfo.detuneLfoDepth) {
+                    const lfoSrc = currentAudioNodes.detuneLfo.lfoSource;
+                    const shaper = currentAudioNodes.detuneLfo.shaperNode;
+                    const depthNode = currentAudioNodes.detuneLfo.detuneLfoDepth;
+                    try { lfoSrc.disconnect(); } catch(e){} // Disconnect source from whatever it was connected to
+                    if (shaper) { try { shaper.disconnect(); } catch(e){} } // Disconnect shaper if it exists
+                    lfoSrc.connect(depthNode); // Connect LFO source directly to depth node
+                    lfoSrc.type = data.detuneLfo.waveform; // Set to new standard waveform type
+                }
+            }
+        }
+
+        // Volume LFO UI and Audio
+        if (data.volumeLfo) {
+            ctrls.volumeLfoWaveformSelect.value = data.volumeLfo.waveform;
+            ctrls.volumeLfoSpeedSlider.value = data.volumeLfo.speed;
+            ctrls.volumeLfoSpeedNumber.value = data.volumeLfo.speed;
+            ctrls.volumeLfoDepthSlider.value = data.volumeLfo.depth;
+
+            if (data.volumeLfo.waveform === 'custom' && data.volumeLfo.customCurve) {
+                ctrls.volumeLfoCustomWaveContainer.style.display = 'block';
+                if (audioCtx && currentAudioNodes && currentAudioNodes.volumeLfo) { // .volumeLfo is the group of nodes
+                    applyLfoCustomCurve(ctrls.volumeLfoCanvas, data.volumeLfo.customCurve, currentAudioNodes.volumeLfo, 'volume', index);
+                } else {
+                    ctrls.volumeLfoCanvas.customCurveData = new Float32Array(data.volumeLfo.customCurve);
+                    if (typeof ctrls.volumeLfoCanvas.redrawCanvas === 'function') ctrls.volumeLfoCanvas.redrawCanvas();
+                }
+            } else {
+                ctrls.volumeLfoCustomWaveContainer.style.display = 'none';
+                if (audioCtx && currentAudioNodes && currentAudioNodes.volumeLfo && currentAudioNodes.volumeLfo.lfoSource && currentAudioNodes.volumeLfo.volumeLfoDepthGain) {
+                    const lfoSrc = currentAudioNodes.volumeLfo.lfoSource;
+                    const shaper = currentAudioNodes.volumeLfo.shaperNode;
+                    const depthNode = currentAudioNodes.volumeLfo.volumeLfoDepthGain;
+                    try { lfoSrc.disconnect(); } catch(e){} 
+                    if (shaper) { try { shaper.disconnect(); } catch(e){} }
+                    lfoSrc.connect(depthNode); 
+                    lfoSrc.type = data.volumeLfo.waveform;
+                }
+            }
+        }
+    });
+
+    if (preset.filter) {
+        filterTypeSelect.value = preset.filter.type;
+        filterFrequencySlider.value = preset.filter.frequency;
+        filterQSlider.value = preset.filter.q;
+        if (preset.filter.type === 'lowshelf' || preset.filter.type === 'highshelf' || preset.filter.type === 'peaking') {
+            filterGainGroup.style.display = 'block';
+            filterGainSlider.value = preset.filter.gain;
+        } else {
+            filterGainGroup.style.display = 'none';
+        }
+    }
+    if (preset.reverb) {
+        reverbMixSlider.value = preset.reverb.mix;
+        reverbPreDelaySlider.value = preset.reverb.preDelay;
+        reverbDecaySlider.value = preset.reverb.decay;
+        reverbFeedbackGainSlider.value = preset.reverb.feedbackGain;
+    }
+    
+    if (audioCtx) {
+        updateGlobalEffectParams(); 
+        const newMasterFreq = parseFloat(masterFrequencySlider.value);
+        if (masterOutputVolume) masterOutputVolume.gain.setTargetAtTime(parseFloat(masterVolumeSlider.value), audioCtx.currentTime, 0.01);
+
+        activeAudioNodes.forEach((nodes, index) => {
+            if (!nodes || !nodes.osc) return;
+            const currentOscData = oscillators[index] ? oscillators[index].data : null;
+            if (!currentOscData) return;
+
+            const detuneCents = parseInt(oscillators[index].controls.detuneSlider.value);
+            const actualFreq = newMasterFreq * Math.pow(2, detuneCents / 1200);
+            nodes.osc.frequency.setTargetAtTime(actualFreq, audioCtx.currentTime, 0.01);
+            nodes.osc.type = currentOscData.waveform;
+            if (nodes.gainNode) {
+                nodes.gainNode.gain.setTargetAtTime(parseFloat(oscillators[index].controls.volumeSlider.value), audioCtx.currentTime, 0.01);
+            }
+
+            if (currentOscData.detuneLfo && nodes.detuneLfo && nodes.detuneLfo.lfoSource) {
+                if (currentOscData.detuneLfo.waveform !== 'custom') {
+                    nodes.detuneLfo.lfoSource.type = currentOscData.detuneLfo.waveform;
+                }
+                nodes.detuneLfo.lfoSource.frequency.setTargetAtTime(currentOscData.detuneLfo.speed, audioCtx.currentTime, 0.01);
+                if(nodes.detuneLfo.detuneLfoDepth) nodes.detuneLfo.detuneLfoDepth.gain.setTargetAtTime(currentOscData.detuneLfo.depth, audioCtx.currentTime, 0.01);
+            }
+            if (currentOscData.volumeLfo && nodes.volumeLfo && nodes.volumeLfo.lfoSource) {
+                if (currentOscData.volumeLfo.waveform !== 'custom') {
+                    nodes.volumeLfo.lfoSource.type = currentOscData.volumeLfo.waveform;
+                }
+                nodes.volumeLfo.lfoSource.frequency.setTargetAtTime(currentOscData.volumeLfo.speed, audioCtx.currentTime, 0.01);
+                if(nodes.volumeLfo.volumeLfoDepthGain) nodes.volumeLfo.volumeLfoDepthGain.gain.setTargetAtTime(currentOscData.volumeLfo.depth, audioCtx.currentTime, 0.01);
+            }
+        });
+    }
+
+    if (preset.midi) { // Check if midi object exists in preset
+        if (preset.midi.masterVolumeMap) {
+            masterVolumeMidiMap = { ...preset.midi.masterVolumeMap };
+            localStorage.setItem('masterVolumeMidiMap', JSON.stringify(masterVolumeMidiMap));
+        } else {
+            masterVolumeMidiMap = null;
+            localStorage.removeItem('masterVolumeMidiMap');
+        }
+        // Filter Frequency
+        if (preset.midi.filterFrequencyMidiMap) {
+            filterFrequencyMidiMap = { ...preset.midi.filterFrequencyMidiMap };
+            localStorage.setItem('filterFrequencyMidiMap', JSON.stringify(filterFrequencyMidiMap));
+        } else {
+            filterFrequencyMidiMap = null;
+            localStorage.removeItem('filterFrequencyMidiMap');
+        }
+        // Filter Q
+        if (preset.midi.filterQMidiMap) {
+            filterQMidiMap = { ...preset.midi.filterQMidiMap };
+            localStorage.setItem('filterQMidiMap', JSON.stringify(filterQMidiMap));
+        } else {
+            filterQMidiMap = null;
+            localStorage.removeItem('filterQMidiMap');
+        }
+        // Filter Gain
+        if (preset.midi.filterGainMidiMap) {
+            filterGainMidiMap = { ...preset.midi.filterGainMidiMap };
+            localStorage.setItem('filterGainMidiMap', JSON.stringify(filterGainMidiMap));
+        } else {
+            filterGainMidiMap = null;
+            localStorage.removeItem('filterGainMidiMap');
+        }
+    } else { // If no midi object in preset, clear all MIDI maps
+        masterVolumeMidiMap = null; localStorage.removeItem('masterVolumeMidiMap');
+        filterFrequencyMidiMap = null; localStorage.removeItem('filterFrequencyMidiMap');
+        filterQMidiMap = null; localStorage.removeItem('filterQMidiMap');
+        filterGainMidiMap = null; localStorage.removeItem('filterGainMidiMap');
+    }
+    
+    initializeUIDisplays();
+    if (typeof loadMidiMappings === "function") {
+        loadMidiMappings(); 
+    }
+} // End of applyPresetData function
+
+initializeSynth();
