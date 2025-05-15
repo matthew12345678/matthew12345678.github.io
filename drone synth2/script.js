@@ -123,6 +123,8 @@ const reverbFeedbackGainValueDisplay = document.getElementById('reverbFeedbackGa
 
 const masterVolumeSlider = document.getElementById('masterVolume');
 const masterVolumeValueDisplay = document.getElementById('masterVolumeValue');
+const masterVolumeMidiLearnButton = document.getElementById('masterVolumeMidiLearn');
+const midiInputSelector = document.getElementById('midiInput');
 
 // Global Audio Nodes for Effects
 let globalFilter, dryGain, wetGain, reverbPreDelayNode, reverbConvolver, reverbFeedback, masterOutputVolume;
@@ -137,6 +139,124 @@ osc1DetuneLfoDepthValueDisplay.textContent = osc1DetuneLfoDepthSlider.value + " 
 updateLfoSpeedDisplay(osc1VolumeLfoSpeedSlider.value, osc1VolumeLfoSpeedValueDisplay);
 osc1VolumeLfoSpeedNumber.value = osc1VolumeLfoSpeedSlider.value;
 osc1VolumeLfoDepthValueDisplay.textContent = parseFloat(osc1VolumeLfoDepthSlider.value).toFixed(2);
+
+// MIDI Specific Variables
+let midiAccess = null;
+let activeMidiInput = null;
+let masterVolumeMidiMap = null; // { channel: X, controller: Y }
+let isLearningMasterVolume = false;
+
+function setupEventListeners() {
+    // This function can be populated with other event listeners if needed later.
+    // For now, it prevents an error in initializeSynth.
+    console.log("Setting up event listeners (placeholder)");
+}
+
+function initializeSynth() {
+    initAudio();
+    setupEventListeners();
+    initializeUIDisplays();
+    requestMidiAccess();
+}
+
+function requestMidiAccess() {
+    if (navigator.requestMIDIAccess) {
+        navigator.requestMIDIAccess()
+            .then(onMIDISuccess, onMIDIFailure);
+    } else {
+        console.warn("Web MIDI API is not supported in this browser.");
+        midiInputSelector.innerHTML = '<option value="">MIDI not supported</option>';
+        midiInputSelector.disabled = true;
+    }
+}
+
+function onMIDISuccess(ma) {
+    midiAccess = ma;
+    populateMidiInputSelector();
+    midiAccess.onstatechange = populateMidiInputSelector; // Handle connections/disconnections
+    // Initially, select the first available input if any
+    if (midiAccess.inputs.size > 0) {
+        const firstInput = midiAccess.inputs.values().next().value;
+        if (firstInput) {
+            selectMidiInput(firstInput.id);
+            midiInputSelector.value = firstInput.id;
+        }
+    }
+}
+
+function onMIDIFailure(msg) {
+    console.error(`Failed to get MIDI access - ${msg}`);
+    midiInputSelector.innerHTML = '<option value="">MIDI access failed</option>';
+    midiInputSelector.disabled = true;
+}
+
+function populateMidiInputSelector() {
+    if (!midiAccess) return;
+    midiInputSelector.innerHTML = '<option value="">-- Select MIDI Input --</option>';
+    if (midiAccess.inputs.size === 0) {
+        midiInputSelector.innerHTML = '<option value="">No MIDI devices found</option>';
+        if (activeMidiInput) {
+            activeMidiInput.onmidimessage = null; // Clear listener from old input
+            activeMidiInput = null;
+        }
+        return;
+    }
+    midiAccess.inputs.forEach(input => {
+        const option = document.createElement('option');
+        option.value = input.id;
+        option.textContent = input.name;
+        midiInputSelector.appendChild(option);
+    });
+}
+
+function selectMidiInput(inputId) {
+    if (!midiAccess) return;
+    if (activeMidiInput) {
+        activeMidiInput.onmidimessage = null; // Clear listener from previous input
+    }
+    activeMidiInput = midiAccess.inputs.get(inputId);
+    if (activeMidiInput) {
+        console.log(`MIDI Input selected: ${activeMidiInput.name}`);
+        activeMidiInput.onmidimessage = onMIDIMessage;
+    } else {
+        console.log("Selected MIDI input not found or disconnected.");
+    }
+}
+
+function onMIDIMessage(event) {
+    const [status, data1, data2] = event.data;
+    const command = status >> 4;
+    const channel = (status & 0xf) + 1; // MIDI channels 1-16
+
+    // Check for Control Change (CC) messages
+    if (command === 11) { // 11 means CC
+        const controller = data1;
+        const value = data2;
+
+        if (isLearningMasterVolume) {
+            masterVolumeMidiMap = { channel, controller };
+            isLearningMasterVolume = false;
+            masterVolumeMidiLearnButton.textContent = "Learn";
+            masterVolumeMidiLearnButton.classList.remove('learning');
+            console.log(`Master Volume learned: Ch ${channel}, CC ${controller}`);
+            // Optionally, save this to localStorage to persist across sessions
+            // localStorage.setItem('masterVolumeMidiMap', JSON.stringify(masterVolumeMidiMap));
+            return; // Don't process this message for control yet
+        }
+
+        if (masterVolumeMidiMap && 
+            masterVolumeMidiMap.channel === channel && 
+            masterVolumeMidiMap.controller === controller) {
+            
+            const newVolume = value / 127;
+            masterVolumeSlider.value = newVolume;
+            masterVolumeValueDisplay.textContent = newVolume.toFixed(2);
+            if (masterOutputVolume && audioCtx) {
+                smoothSet(masterOutputVolume.gain, newVolume);
+            }
+        }
+    }
+}
 
 function updateLfoSpeedDisplay(value, displayElement) {
     const numValue = parseFloat(value);
@@ -1068,4 +1188,48 @@ if (reverbDecaySlider) {
     });
 }
 
-// ... (Event Listeners for Osc1, 2, 3 as before) ... 
+// Add MIDI Input Selector Listener
+if (midiInputSelector) {
+    midiInputSelector.addEventListener('change', (event) => {
+        if (event.target.value) {
+            selectMidiInput(event.target.value);
+        } else if (activeMidiInput) { // "-- Select --" chosen
+            activeMidiInput.onmidimessage = null;
+            activeMidiInput = null;
+            console.log("MIDI Input deselected.");
+        }
+    });
+}
+
+// Add MIDI Learn Button Listener for Master Volume
+if (masterVolumeMidiLearnButton) {
+    masterVolumeMidiLearnButton.addEventListener('click', () => {
+        if (!activeMidiInput) {
+            alert("Please select a MIDI input first.");
+            return;
+        }
+        isLearningMasterVolume = !isLearningMasterVolume;
+        if (isLearningMasterVolume) {
+            masterVolumeMidiLearnButton.textContent = "Learning...";
+            masterVolumeMidiLearnButton.classList.add('learning');
+            console.log("Waiting for MIDI CC for Master Volume...");
+        } else {
+            masterVolumeMidiLearnButton.textContent = "Learn";
+            masterVolumeMidiLearnButton.classList.remove('learning');
+            // masterVolumeMidiMap = null; // Optionally clear mapping when toggling off learn explicitly
+        }
+    });
+}
+
+// Function to load saved MIDI mappings (example for master volume)
+function loadMidiMappings() {
+    // const savedMap = localStorage.getItem('masterVolumeMidiMap');
+    // if (savedMap) {
+    //     masterVolumeMidiMap = JSON.parse(savedMap);
+    //     console.log("Loaded Master Volume MIDI map:", masterVolumeMidiMap);
+    // }
+}
+
+// Call initialization functions
+initializeSynth(); // Ensure this is called to setup MIDI etc.
+// ... existing code ... 
