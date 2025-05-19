@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Live Spectrogram with Speed, Gain & FFT Controls</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      color: #fff;
+      font-family: sans-serif;
+    }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.6);
+      padding: 10px 15px;
+      border-radius: 8px;
+      z-index: 10;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    #controls label {
+      font-size: 14px;
+      white-space: nowrap;
+    }
+    #controls input,
+    #controls select {
+      cursor: pointer;
+    }
+    #spectrogram {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <label for="gain">Mic Gain:</label>
+    <input type="range" id="gain" min="0" max="10" step="0.1" value="1">
+    <span id="gainValue">1.0×</span>
+
+    <label for="fftSize">FFT Size:</label>
+    <select id="fftSize">
+      <option value="512">512</option>
+      <option value="1024">1024</option>
+      <option value="2048" selected>2048</option>
+      <option value="4096">4096</option>
+      <option value="8192">8192</option>
+    </select>
+
+    <label for="speed">Scroll Speed:</label>
+    <input type="range" id="speed" min="1" max="10" step="1" value="1">
+    <span id="speedValue">1 px/f</span>
+  </div>
+  <canvas id="spectrogram"></canvas>
+
+  <script>
+    (async function() {
+      // UI elements
+      const gainSlider = document.getElementById('gain');
+      const gainValueDisplay = document.getElementById('gainValue');
+      const fftSelect = document.getElementById('fftSize');
+      const speedSlider = document.getElementById('speed');
+      const speedValueDisplay = document.getElementById('speedValue');
+
+      // Canvas setup
+      const canvas = document.getElementById('spectrogram');
+      const ctx = canvas.getContext('2d');
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+
+      // Audio setup
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+
+      // Gain node
+      const micGain = audioCtx.createGain();
+      micGain.gain.value = parseFloat(gainSlider.value);
+      gainSlider.addEventListener('input', () => {
+        const g = parseFloat(gainSlider.value);
+        micGain.gain.value = g;
+        gainValueDisplay.textContent = g.toFixed(1) + '×';
+      });
+
+      // Analyser node
+      let analyser = audioCtx.createAnalyser();
+      analyser.fftSize = parseInt(fftSelect.value);
+      analyser.smoothingTimeConstant = 0.0;
+
+      // Connect graph
+      source.connect(micGain);
+      micGain.connect(analyser);
+
+      // Buffer
+      let bufferLength = analyser.frequencyBinCount;
+      let dataArray = new Uint8Array(bufferLength);
+
+      // FFT size change
+      fftSelect.addEventListener('change', () => {
+        analyser.fftSize = parseInt(fftSelect.value);
+        bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+      });
+
+      // Speed display
+      speedSlider.addEventListener('input', () => {
+        speedValueDisplay.textContent = speedSlider.value + ' px/f';
+      });
+
+      // Draw loop
+      function draw() {
+        requestAnimationFrame(draw);
+
+        const { width, height } = canvas;
+        const speed = parseInt(speedSlider.value);
+
+        // Scroll left by `speed` pixels
+        ctx.drawImage(
+          canvas,
+          speed, 0, width - speed, height,
+          0, 0, width - speed, height
+        );
+
+        // Draw `speed` new spectral slices
+        for (let s = 0; s < speed; s++) {
+          analyser.getByteFrequencyData(dataArray);
+          const x = width - speed + s;
+          for (let i = 0; i < bufferLength; i++) {
+            const value = dataArray[i] / 255;
+            const y = height - Math.floor((i / bufferLength) * height);
+            const hue = (1 - value) * 240;
+            const light = Math.floor(value * 50 + 25);
+            ctx.fillStyle = `hsl(${hue},100%,${light}%)`;
+            ctx.fillRect(x, y, 1, 1);
+          }
+        }
+      }
+
+      draw();
+
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+    })();
+  </script>
+</body>
+</html>
