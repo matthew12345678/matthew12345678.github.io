@@ -14,8 +14,8 @@
 </head>
 <body>
   <h1>Japanese-Accent TTS Reader</h1>
-  <p>Paste your text below (no length limit), select a Japanese voice, adjust voice settings, then click “Speak”.</p>
-  <textarea id="textInput" placeholder="Type or paste your text here…"></textarea>
+  <p>Paste your English text below (no length limit), select a Japanese voice to apply a Japanese accent, adjust voice settings, then click “Speak”.</p>
+  <textarea id="textInput" placeholder="Type or paste your English text here…"></textarea>
   <div id="controls">
     <label for="voiceSelect">Voice:</label>
     <select id="voiceSelect"></select>
@@ -44,13 +44,12 @@
     let voices = [];
 
     function loadVoices() {
-      voices = synth.getVoices().filter(v => v.lang.startsWith('ja'));
-      if (!voices.length) {
-        voices = synth.getVoices().filter(v => /japanese/i.test(v.name));
-      }
-      voiceSelect.innerHTML = voices.map((v,i) =>
-        `<option value="${i}">${v.name} (${v.lang})</option>`
-      ).join('');
+      // Load all available voices
+      voices = synth.getVoices();
+      // Populate the dropdown
+      voiceSelect.innerHTML = voices
+        .map((v, i) => `<option value="${i}">${v.name} (${v.lang})</option>`)
+        .join('');
     }
     synth.addEventListener('voiceschanged', loadVoices);
     loadVoices();
@@ -76,7 +75,8 @@
       chunks.forEach(chunk => {
         const utter = new SpeechSynthesisUtterance(chunk);
         utter.voice = voice;
-        utter.lang = voice.lang;
+        // Force English language for pronunciation, but use the Japanese voice accent
+        utter.lang = 'en-US';
         utter.rate = rate;
         utter.pitch = pitch;
         utter.volume = volume;
@@ -94,12 +94,9 @@
         return;
       }
       try {
-        // Request both video and audio to enable tab-audio capture
         const fullStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        // Extract only the audio tracks for recording
         const audioTracks = fullStream.getAudioTracks();
         const audioStream = new MediaStream(audioTracks);
-
         mediaRecorder = new MediaRecorder(audioStream);
         recordedChunks = [];
         mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
