@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Japanese Accent TTS Reader</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+    textarea { width: 100%; height: 200px; font-size: 1rem; }
+    select, button, input { font-size: 1rem; margin-top: 10px; }
+    label { display: block; margin-top: 10px; }
+    #controls { margin-top: 10px; }
+    #errorMsg { color: red; margin-top: 10px; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Japanese-Accent TTS Reader</h1>
+  <p>Paste your text below (no length limit), select a Japanese voice, adjust voice settings, then click “Speak”.</p>
+  <textarea id="textInput" placeholder="Type or paste your text here…"></textarea>
+  <div id="controls">
+    <label for="voiceSelect">Voice:</label>
+    <select id="voiceSelect"></select>
+
+    <label for="rate">Rate: <span id="rateValue">1</span></label>
+    <input type="range" id="rate" min="0.5" max="2" step="0.1" value="1">
+
+    <label for="pitch">Pitch: <span id="pitchValue">1</span></label>
+    <input type="range" id="pitch" min="0" max="2" step="0.1" value="1">
+
+    <label for="volume">Volume: <span id="volumeValue">1</span></label>
+    <input type="range" id="volume" min="0" max="1" step="0.1" value="1">
+
+    <button id="speakBtn">Speak</button>
+    <button id="startRecBtn">Start Recording</button>
+    <button id="stopRecBtn" disabled>Stop Recording</button>
+    <a id="downloadLink" style="display:none; margin-left:10px;"></a>
+    <p style="font-size:0.9rem; color:#555;">Note: When sharing to record, choose this tab and enable “Share audio” to capture the speech.</p>
+    <div id="errorMsg"></div>
+  </div>
+
+  <script>
+    const synth = window.speechSynthesis;
+    const voiceSelect = document.getElementById('voiceSelect');
+    const errorMsg = document.getElementById('errorMsg');
+    let voices = [];
+
+    function loadVoices() {
+      voices = synth.getVoices().filter(v => v.lang.startsWith('ja'));
+      if (!voices.length) {
+        voices = synth.getVoices().filter(v => /japanese/i.test(v.name));
+      }
+      voiceSelect.innerHTML = voices.map((v,i) =>
+        `<option value="${i}">${v.name} (${v.lang})</option>`
+      ).join('');
+    }
+    synth.addEventListener('voiceschanged', loadVoices);
+    loadVoices();
+
+    ['rate','pitch','volume'].forEach(id => {
+      const input = document.getElementById(id);
+      const display = document.getElementById(id + 'Value');
+      input.addEventListener('input', e => display.textContent = e.target.value);
+    });
+
+    document.getElementById('speakBtn').addEventListener('click', () => {
+      errorMsg.textContent = '';
+      const text = document.getElementById('textInput').value.trim();
+      if (!text) return alert('Please enter some text!');
+      const voice = voices[voiceSelect.value];
+      const rate = parseFloat(document.getElementById('rate').value);
+      const pitch = parseFloat(document.getElementById('pitch').value);
+      const volume = parseFloat(document.getElementById('volume').value);
+
+      const chunkSize = 200;
+      const chunks = text.match(new RegExp('.{1,' + chunkSize + '}(?:\\s|$)', 'g'));
+      synth.cancel();
+      chunks.forEach(chunk => {
+        const utter = new SpeechSynthesisUtterance(chunk);
+        utter.voice = voice;
+        utter.lang = voice.lang;
+        utter.rate = rate;
+        utter.pitch = pitch;
+        utter.volume = volume;
+        synth.speak(utter);
+      });
+    });
+
+    // Recording setup using getDisplayMedia to capture tab audio
+    let mediaRecorder;
+    let recordedChunks = [];
+    document.getElementById('startRecBtn').addEventListener('click', async () => {
+      errorMsg.textContent = '';
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        errorMsg.textContent = 'Recording requires a secure context (HTTPS or localhost) and a compatible browser.';
+        return;
+      }
+      try {
+        // Request both video and audio to enable tab-audio capture
+        const fullStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        // Extract only the audio tracks for recording
+        const audioTracks = fullStream.getAudioTracks();
+        const audioStream = new MediaStream(audioTracks);
+
+        mediaRecorder = new MediaRecorder(audioStream);
+        recordedChunks = [];
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+          const url = URL.createObjectURL(blob);
+          const dl = document.getElementById('downloadLink');
+          dl.href = url;
+          dl.download = 'tts_recording.webm';
+          dl.style.display = 'inline';
+          dl.textContent = 'Download Recording';
+          fullStream.getTracks().forEach(t => t.stop());
+        };
+        mediaRecorder.start();
+        document.getElementById('startRecBtn').disabled = true;
+        document.getElementById('stopRecBtn').disabled = false;
+      } catch (err) {
+        console.error(err);
+        errorMsg.textContent = `Could not start recording: ${err.name}. Ensure you run this on HTTPS or localhost and share tab audio.`;
+      }
+    });
+
+    document.getElementById('stopRecBtn').addEventListener('click', () => {
+      errorMsg.textContent = '';
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+      document.getElementById('startRecBtn').disabled = false;
+      document.getElementById('stopRecBtn').disabled = true;
+    });
+  </script>
+</body>
+</html>
