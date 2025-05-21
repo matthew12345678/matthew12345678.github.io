@@ -1,0 +1,107 @@
+{
+  "carrier": {
+    "type": "sine",
+    "freq": 440,
+    "vol": 0.5,
+    "detune": 0,
+    "pan": 0
+  },
+  "modules": [
+    {
+      "id": "0",
+      "waveType": "sine",
+      "customPoints": [],
+      "speed": 0.11,
+      "depth": 1,
+      "low": 300,
+      "high": 200,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": true
+    },
+    {
+      "id": "1",
+      "waveType": "square",
+      "customPoints": [],
+      "speed": -0.34,
+      "depth": 0.99,
+      "low": 0,
+      "high": 1,
+      "phase": 0,
+      "logScale": 0.1,
+      "enabled": true
+    },
+    {
+      "id": "2",
+      "waveType": "sine",
+      "customPoints": [],
+      "speed": -1.32,
+      "depth": 1,
+      "low": 0.2,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": true
+    },
+    {
+      "id": "3",
+      "waveType": "square",
+      "customPoints": [],
+      "speed": 0,
+      "depth": 0.51,
+      "low": -1,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": true
+    },
+    {
+      "id": "4",
+      "waveType": "sine",
+      "customPoints": [],
+      "speed": 0,
+      "depth": 0.5,
+      "low": -1,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": false
+    },
+    {
+      "id": "5",
+      "waveType": "sine",
+      "customPoints": [],
+      "speed": 0,
+      "depth": 0.5,
+      "low": -1,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": false
+    },
+    {
+      "id": "6",
+      "waveType": "sine",
+      "customPoints": [],
+      "speed": 0,
+      "depth": 0.5,
+      "low": -1,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": false
+    },
+    {
+      "id": "7",
+      "waveType": "sine",
+      "customPoints": [],
+      "speed": 0,
+      "depth": 0.5,
+      "low": -1,
+      "high": 1,
+      "phase": 0,
+      "logScale": 1,
+      "enabled": false
+    }
+  ]
+}
