@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brain Forest & Water Data Visualizer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        :root {
+            --primary-bg: #282c34;
+            --secondary-bg: #1a1d23;
+            --accent-color: #61dafb;
+            --text-color: #eee;
+            --border-color: #444;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--primary-bg);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .app-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 2000px;
+            margin: 0 auto;
+        }
+
+        .section {
+            background: var(--secondary-bg);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        h1 {
+            color: var(--accent-color);
+            margin-top: 0;
+            text-align: center;
+            font-size: 24px;
+        }
+
+        /* Water Data Visualizer Styles */
+        .water-controls {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: rgba(255,255,255,0.05);
+            border-radius: 8px;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .number-input {
+            width: 80px;
+            padding: 4px;
+            background: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-color);
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--accent-color);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        button {
+            padding: 8px 16px;
+            background-color: var(--accent-color);
+            color: var(--primary-bg);
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        select {
+            padding: 8px;
+            background: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-color);
+            width: 300px;
+        }
+
+        #numberDisplay {
+            font-size: 24px;
+            padding: 10px;
+            margin: 10px 0;
+            background-color: rgba(255,255,255,0.05);
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        canvas {
+            margin: 20px 0;
+            width: 100% !important;
+            height: 400px !important;
+        }
+
+        /* Brain Forest Styles */
+        .global-controls {
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .modules-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .wave-module {
+            background: rgba(255,255,255,0.05);
+            padding: 10px;
+            border-radius: 8px;
+            position: relative;
+        }
+
+        .wave-trigger {
+            cursor: pointer;
+            color: var(--accent-color);
+            font-size: 18px;
+        }
+
+        .settings {
+            display: none;
+            margin-top: 10px;
+            background: rgba(255,255,255,0.05);
+            padding: 8px;
+            border-radius: 6px;
+        }
+
+        .control-group label {
+            color: var(--accent-color);
+            font-size: 12px;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .control-group select,
+        .control-group input {
+            width: 100%;
+            padding: 4px;
+            background: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-color);
+            font-size: 12px;
+        }
+
+        .external-output {
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        .external-output canvas {
+            width: 100%;
+            height: 50px;
+            background: var(--primary-bg);
+            display: block;
+        }
+
+        .value {
+            color: var(--accent-color);
+            font-family: monospace;
+            margin-top: 4px;
+        }
+
+        @media (max-width: 1200px) {
+            .app-container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Water Data Visualizer Section -->
+        <div class="section">
+            <h1>Water Level Data Visualizer</h1>
+            <select id="csvSelect">
+                <option value="">Select a CSV file</option>
+                <option value="data/NW14_WaterLevel_Daily_2024.csv">NW14 Water Level Daily 2024</option>
+                <option value="data/NW14_WaterLevel_Daily_2022.csv">NW14 Water Level Daily 2022</option>
+                <option value="data/NW14_WL_20130518-20250110.csv">NW14 Water Level 2013-2025</option>
+            </select>
+            
+            <div class="water-controls">
+                <div class="control-group">
+                    <label class="switch">
+                        <input type="checkbox" id="playbackToggle">
+                        <span class="slider"></span>
+                    </label>
+                    <span>Playback</span>
+                </div>
+                
+                <div class="control-group">
+                    <label for="speedControl">Speed:</label>
+                    <input type="range" id="speedControl" min="0.1" max="20" step="0.1" value="1">
+                    <span id="speedValue">1x</span>
+                </div>
+                
+                <div class="control-group">
+                    <label for="minValue">Min Value:</label>
+                    <input type="number" id="minValue" step="0.01">
+                    <span id="minValueDisplay">0.00</span>
+                </div>
+                <div class="control-group">
+                    <label for="maxValue">Max Value:</label>
+                    <input type="number" id="maxValue" step="0.01">
+                    <span id="maxValueDisplay">1.00</span>
+                </div>
+                
+                <button id="resetButton">Reset</button>
+            </div>
+            
+            <div class="control-group">
+                <label for="numberDisplay">Output Value:</label>
+                <div class="number-display" id="numberDisplay">0.00</div>
+            </div>
+            <div class="control-group">
+                <label for="rawValueDisplay">Raw Value:</label>
+                <div class="number-display" id="rawValueDisplay">0.00</div>
+            </div>
+            <canvas id="dataChart"></canvas>
+        </div>
+
+        <!-- Brain Forest Section -->
+        <div class="section">
+            <h1>Brain Forest 2</h1>
+            <div class="global-controls">
+                <button id="exportBtn">Export All</button>
+                <button id="importBtn">Import</button>
+                <input type="file" id="importFile" accept="application/json" style="display:none;">
+                <div style="margin-left: 10px;">
+                    <label for="presetSelector">Load Preset:</label>
+                    <select id="presetSelector" style="padding: 4px; font-size: 12px;">
+                        <option value="">-- Select a Preset --</option>
+                    </select>
+                </div>
+                <label>Wave:</label>
+                <select id="carrierType">
+                    <option value="sine">Sine</option>
+                    <option value="square">Square</option>
+                    <option value="sawtooth">Sawtooth</option>
+                    <option value="reverse-sawtooth">Reverse Saw</option>
+                    <option value="triangle">Triangle</option>
+                    <option value="reverse-triangle">Reverse Triangle</option>
+                </select>
+                <label>Freq:</label>
+                <input type="range" id="carrierFreq" min="20" max="2000" value="440" step="1" style="width:120px;">
+                <span id="carrierFreqDisplay" style="width:40px; display:inline-block; text-align:right;">440</span>
+                <span>Hz</span>
+                <div class="control-group">
+                    <label for="masterVol">Master Volume:</label>
+                    <input type="range" id="masterVol" min="0" max="1" step="0.01" value="0.5">
+                    <span id="masterVolDisplay">0.50</span>
+                </div>
+                <label>Pan:</label>
+                <input type="range" id="pan" min="-1" max="1" step="0.01" value="0">
+                <label>Test:</label>
+                <input type="range" id="testSlider" min="-7" max="1" step="0.01" value="0" style="width:120px;">
+                <span id="testSliderDisplay" style="width:50px; display:inline-block; text-align:right;">0.00</span>
+                <label>Test2:</label>
+                <input type="range" id="test2Slider" min="-7" max="1" step="0.01" value="0" style="width:120px;">
+                <span id="test2SliderDisplay" style="width:50px; display:inline-block; text-align:right;">0.00</span>
+            </div>
+
+            <div class="modules-container" id="modulesContainer"></div>
+
+            <!-- Effects Section -->
+            <div class="control-group" style="margin-top: 30px; padding: 15px; border: 1px solid var(--border-color); border-radius: 8px;">
+                <h2>Effects Section</h2>
+                
+                <!-- Filter Controls -->
+                <div style="margin-bottom: 20px; padding-bottom:15px; border-bottom: 1px solid var(--border-color);">
+                    <h3>Filter</h3>
+                    <div class="control-group">
+                        <label for="effectFilterType">Filter Type:</label>
+                        <select id="effectFilterType">
+                            <option value="lowpass">Lowpass</option>
+                            <option value="highpass">Highpass</option>
+                            <option value="bandpass">Bandpass</option>
+                            <option value="notch">Notch</option>
+                            <option value="peaking">Peaking</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="effectFilterFrequency">Frequency (Hz): <span id="effectFreqValue">1000</span></label>
+                        <input type="range" id="effectFilterFrequency" min="0" max="100" step="1" value="50">
+                    </div>
+                    <div class="control-group">
+                        <label for="effectFilterQ">Resonance (Q): <span id="effectQValue">1</span></label>
+                        <input type="range" id="effectFilterQ" min="0.0001" max="30" step="0.0001" value="1">
+                    </div>
+                    <div class="control-group" id="effectFilterGainGroup">
+                        <label for="effectFilterGain">Gain (dB): <span id="effectGainValue">0</span></label>
+                        <input type="range" id="effectFilterGain" min="-40" max="40" step="0.1" value="0">
+                    </div>
+                </div>
+
+                <!-- Reverb Controls -->
+                <div style="margin-bottom: 20px; padding-bottom:15px; border-bottom: 1px solid var(--border-color);">
+                    <h3>Plate Reverb</h3>
+                    <div class="control-group">
+                        <label for="effectReverbMix">Reverb Mix (Dry/Wet): <span id="effectRevValue">0.50</span></label>
+                        <input type="range" id="effectReverbMix" min="0" max="1" step="0.01" value="0.5">
+                    </div>
+                    <div class="control-group">
+                        <label for="effectReverbPreDelay">Pre-Delay (ms): <span id="effectPDValue">20</span></label>
+                        <input type="range" id="effectReverbPreDelay" min="0" max="1000" step="10" value="20">
+                    </div>
+                    <div class="control-group">
+                        <label for="effectReverbDecay">Reverb Decay: <span id="effectDecayValue">0.50</span></label>
+                        <input type="range" id="effectReverbDecay" min="0" max="0.95" step="0.01" value="0.5">
+                    </div>
+                </div>
+
+                <!-- Effects Output Control -->
+                <div>
+                    <h3>Effects Output</h3>
+                    <div class="control-group">
+                        <label for="effectsOutputVolume">Effects Output Volume: <span id="effectsVolValue">0.80</span></label>
+                        <input type="range" id="effectsOutputVolume" min="0" max="1" step="0.01" value="0.8">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <template id="waveModuleTemplate">
+        <div class="wave-module" data-id="__id__">
+            <div class="wave-trigger">☰ Settings</div>
+            <div class="external-output">
+                <canvas class="output-canvas"></canvas>
+                <div class="value output-value">0.000</div>
+            </div>
+            <div class="settings">
+                <div class="control-group">
+                    <label>Type</label>
+                    <select class="wave-type">
+                        <option value="sine">Sine</option>
+                        <option value="square">Square</option>
+                        <option value="sawtooth">Sawtooth</option>
+                        <option value="reverse-sawtooth">Reverse Saw</option>
+                        <option value="triangle">Triangle</option>
+                        <option value="reverse-triangle">Reverse Triangle</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div class="control-group custom-container" style="display:none;">
+                    <label>Draw Custom Wave</label>
+                    <canvas class="draw-canvas" width="200" height="80" style="border:1px solid var(--border-color); background:#fff;"></canvas>
+                    <button class="clear-draw" style="font-size:12px;margin-top:4px;">Clear</button>
+                </div>
+                <div class="control-group">
+                    <label>Speed (exp)</label>
+                    <input type="range" class="speed" min="-7" max="1" step="0.01" value="0">
+                    <div class="speed-display">1.0000000 Hz</div>
+                </div>
+                <div class="control-group speed-range-controls">
+                    <label>Speed Min (log)</label>
+                    <input type="number" class="speed-min" value="-7" step="0.01">
+                    <label>Speed Max (log)</label>
+                    <input type="number" class="speed-max" value="1" step="0.01">
+                </div>
+                <div class="control-group">
+                    <label>Depth</label>
+                    <input type="range" class="depth" min="0" max="1" step="0.01" value="0.5">
+                    <div class="depth-display">0.50</div>
+                </div>
+                <div class="control-group">
+                    <label>Range</label>
+                    <input type="number" class="low" value="-1" step="any">
+                    <input type="number" class="high" value="1" step="any">
+                </div>
+                <div class="control-group">
+                    <label>Phase</label>
+                    <input type="range" class="phase" min="0" max="360" step="1" value="0">
+                    <div class="phase-display">0°</div>
+                </div>
+                <div class="control-group">
+                    <label>Log</label>
+                    <input type="range" class="log-scale" min="0.1" max="2" step="0.01" value="1">
+                    <div class="log-display">1.00</div>
+                </div>
+                <div class="control-group">
+                    <label>Enable</label>
+                    <input type="checkbox" class="enable">
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script src="script.js"></script>
+</body>
+</html> 
