@@ -21,7 +21,7 @@
     label {
       margin-right: 0.5rem;
     }
-    input[type="range"] {
+    input[type="range"], select {
       width: 200px;
     }
     button {
@@ -36,9 +36,15 @@
   <h1>Risset Rising Tone Demo</h1>
 
   <div class="control-group">
-    <label for="speed">Speed:</label>
-    <input type="range" id="speed" min="0.1" max="2.0" step="0.01" value="1.0" />
-    <span id="speedValue">1.00×</span>
+    <label for="speedCoarse">Speed (0.1×–2×):</label>
+    <input type="range" id="speedCoarse" min="0.1" max="2.0" step="0.01" value="1.0" />
+    <span id="speedCoarseValue">1.00×</span>
+  </div>
+
+  <div class="control-group">
+    <label for="speedFine">Fine Speed (0.001×–1×):</label>
+    <input type="range" id="speedFine" min="0.001" max="1.0" step="0.001" value="1.0" />
+    <span id="speedFineValue">1.000×</span>
   </div>
 
   <div class="control-group">
@@ -53,14 +59,35 @@
     <span id="baseFreqValue">55 Hz</span>
   </div>
 
+  <div class="control-group">
+    <label for="waveform">Waveform:</label>
+    <select id="waveform">
+      <option value="sine" selected>Sine</option>
+      <option value="square">Square</option>
+      <option value="sawtooth">Sawtooth</option>
+      <option value="triangle">Triangle</option>
+    </select>
+  </div>
+
+  <div class="control-group">
+    <label for="loopDurSec">Loop Duration (seconds):</label>
+    <input type="range" id="loopDurSec" min="0" max="59" step="1" value="10" />
+    <span id="loopDurSecValue">10 s</span>
+  </div>
+
+  <div class="control-group">
+    <label for="loopDurMin">Loop Duration (minutes):</label>
+    <input type="range" id="loopDurMin" min="0" max="60" step="1" value="0" />
+    <span id="loopDurMinValue">0 min</span>
+  </div>
+
   <button id="playStop">Play</button>
 
   <script>
-    // ===== PARAMETERS =====
+    // ===== DEFAULT PARAMETERS =====
     const NUM_OSCILLATORS = 6;       // Number of sine tones, spaced by octaves
-    // BASE_FREQ is now controlled via the slider
-    const LOOP_DURATION = 10.0;      // Seconds it takes for one “cycle” (before wrapping)
-    // ========================
+    // Other parameters controlled via UI
+    // ===============================
 
     let audioCtx = null;
     let gainNode = null;
@@ -72,16 +99,27 @@
 
     // UI elements
     const playStopBtn = document.getElementById('playStop');
-    const speedSlider = document.getElementById('speed');
-    const speedValueLabel = document.getElementById('speedValue');
+    const speedCoarseSlider = document.getElementById('speedCoarse');
+    const speedCoarseValueLabel = document.getElementById('speedCoarseValue');
+    const speedFineSlider = document.getElementById('speedFine');
+    const speedFineValueLabel = document.getElementById('speedFineValue');
     const volumeSlider = document.getElementById('volume');
     const volumeValueLabel = document.getElementById('volumeValue');
     const baseFreqSlider = document.getElementById('baseFreq');
     const baseFreqValueLabel = document.getElementById('baseFreqValue');
+    const waveformSelect = document.getElementById('waveform');
+    const loopDurSecSlider = document.getElementById('loopDurSec');
+    const loopDurSecValueLabel = document.getElementById('loopDurSecValue');
+    const loopDurMinSlider = document.getElementById('loopDurMin');
+    const loopDurMinValueLabel = document.getElementById('loopDurMinValue');
 
-    speedSlider.addEventListener('input', () => {
-      speedValueLabel.textContent = parseFloat(speedSlider.value).toFixed(2) + '×';
-    });
+    function updateSpeedValues() {
+      speedCoarseValueLabel.textContent = parseFloat(speedCoarseSlider.value).toFixed(2) + '×';
+      speedFineValueLabel.textContent = parseFloat(speedFineSlider.value).toFixed(3) + '×';
+    }
+
+    speedCoarseSlider.addEventListener('input', updateSpeedValues);
+    speedFineSlider.addEventListener('input', updateSpeedValues);
 
     volumeSlider.addEventListener('input', () => {
       volumeValueLabel.textContent = parseFloat(volumeSlider.value).toFixed(2);
@@ -92,6 +130,14 @@
 
     baseFreqSlider.addEventListener('input', () => {
       baseFreqValueLabel.textContent = parseInt(baseFreqSlider.value) + ' Hz';
+    });
+
+    loopDurSecSlider.addEventListener('input', () => {
+      loopDurSecValueLabel.textContent = parseInt(loopDurSecSlider.value) + ' s';
+    });
+
+    loopDurMinSlider.addEventListener('input', () => {
+      loopDurMinValueLabel.textContent = parseInt(loopDurMinSlider.value) + ' min';
     });
 
     playStopBtn.addEventListener('click', () => {
@@ -115,25 +161,21 @@
       // For each oscillator: create oscillator + gain envelope
       for (let i = 0; i < NUM_OSCILLATORS; i++) {
         const osc = audioCtx.createOscillator();
-        osc.type = 'sine';
-        osc.connect( gainNode );
-        oscillators.push(osc);
-
-        // Each oscillator has its own gain node (to fade in/out)
+        osc.type = waveformSelect.value;
         const env = audioCtx.createGain();
-        osc.disconnect();
         osc.connect(env);
         env.connect(gainNode);
+        oscillators.push(osc);
         gainEnvelopes.push(env);
       }
 
-      // Record the time we started so we can compute relative phase.
+      // Record the time we started to compute relative phase.
       startTime = audioCtx.currentTime;
 
-      // Start all oscillators (frequency/update happens in the animation loop)
+      // Start all oscillators (updateLoop will set freq+gain)
       oscillators.forEach(osc => osc.start());
 
-      // Kick off the animation loop to update frequencies and envelopes
+      // Kick off the animation loop to update frequencies, envelopes, dynamic waveform, and durations
       updateLoop();
     }
 
@@ -154,28 +196,39 @@
       if (!audioCtx) return;
 
       const now = audioCtx.currentTime;
-      const elapsed = (now - startTime) * parseFloat(speedSlider.value);
-      const cyclePos = (elapsed % LOOP_DURATION) / LOOP_DURATION; // 0..1
+      const coarse = parseFloat(speedCoarseSlider.value);
+      const fine = parseFloat(speedFineSlider.value);
+      const effectiveSpeed = coarse * fine;
 
-      // Read base frequency from slider
+      const elapsed = (now - startTime) * effectiveSpeed;
+
+      const secs = parseFloat(loopDurSecSlider.value);
+      const mins = parseFloat(loopDurMinSlider.value);
+      const loopDur = secs + mins * 60; // total loop duration in seconds
+      // Prevent division by zero if loopDur is 0
+      const cyclePos = loopDur > 0 ? (elapsed % loopDur) / loopDur : 0;
+
       const baseFreq = parseFloat(baseFreqSlider.value);
+      const waveform = waveformSelect.value;
 
       for (let i = 0; i < NUM_OSCILLATORS; i++) {
         const osc = oscillators[i];
         const env = gainEnvelopes[i];
 
-        // 1) Frequency calculation:
+        // Update waveform type on the fly
+        osc.type = waveform;
+
+        // Frequency calculation:
         const freq = (baseFreq * Math.pow(2, i)) * Math.pow(2, cyclePos);
         osc.frequency.setValueAtTime(freq, now);
 
-        // 2) Amplitude envelope:
+        // Amplitude envelope:
         const shift = i / NUM_OSCILLATORS;
         let phase = (cyclePos - shift + 1.0) % 1.0;
         const gainAmp = 0.5 * (1 + Math.cos(2 * Math.PI * (phase - 0.5)));
         env.gain.setValueAtTime(gainAmp, now);
       }
 
-      // Loop
       rafID = requestAnimationFrame(updateLoop);
     }
   </script>
