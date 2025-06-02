@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Risset Rising Tone (Web Audio)</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+      background: #f0f0f0;
+    }
+    h1 {
+      margin-bottom: 1rem;
+    }
+    .control-group {
+      margin: 0.5rem 0;
+    }
+    label {
+      margin-right: 0.5rem;
+    }
+    input[type="range"] {
+      width: 200px;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      margin-top: 1rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>Risset Rising Tone Demo</h1>
+
+  <div class="control-group">
+    <label for="speed">Speed:</label>
+    <input type="range" id="speed" min="0.1" max="2.0" step="0.01" value="1.0" />
+    <span id="speedValue">1.00×</span>
+  </div>
+
+  <div class="control-group">
+    <label for="volume">Volume:</label>
+    <input type="range" id="volume" min="0" max="1" step="0.01" value="0.5" />
+    <span id="volumeValue">0.50</span>
+  </div>
+
+  <div class="control-group">
+    <label for="baseFreq">Base Frequency:</label>
+    <input type="range" id="baseFreq" min="20" max="200" step="1" value="55" />
+    <span id="baseFreqValue">55 Hz</span>
+  </div>
+
+  <button id="playStop">Play</button>
+
+  <script>
+    // ===== PARAMETERS =====
+    const NUM_OSCILLATORS = 6;       // Number of sine tones, spaced by octaves
+    // BASE_FREQ is now controlled via the slider
+    const LOOP_DURATION = 10.0;      // Seconds it takes for one “cycle” (before wrapping)
+    // ========================
+
+    let audioCtx = null;
+    let gainNode = null;
+    let oscillators = [];
+    let gainEnvelopes = [];
+    let isPlaying = false;
+    let startTime = 0;
+    let rafID = null;
+
+    // UI elements
+    const playStopBtn = document.getElementById('playStop');
+    const speedSlider = document.getElementById('speed');
+    const speedValueLabel = document.getElementById('speedValue');
+    const volumeSlider = document.getElementById('volume');
+    const volumeValueLabel = document.getElementById('volumeValue');
+    const baseFreqSlider = document.getElementById('baseFreq');
+    const baseFreqValueLabel = document.getElementById('baseFreqValue');
+
+    speedSlider.addEventListener('input', () => {
+      speedValueLabel.textContent = parseFloat(speedSlider.value).toFixed(2) + '×';
+    });
+
+    volumeSlider.addEventListener('input', () => {
+      volumeValueLabel.textContent = parseFloat(volumeSlider.value).toFixed(2);
+      if (gainNode) {
+        gainNode.gain.setValueAtTime(parseFloat(volumeSlider.value), audioCtx.currentTime);
+      }
+    });
+
+    baseFreqSlider.addEventListener('input', () => {
+      baseFreqValueLabel.textContent = parseInt(baseFreqSlider.value) + ' Hz';
+    });
+
+    playStopBtn.addEventListener('click', () => {
+      if (!isPlaying) {
+        startRisset();
+        playStopBtn.textContent = 'Stop';
+      } else {
+        stopRisset();
+        playStopBtn.textContent = 'Play';
+      }
+      isPlaying = !isPlaying;
+    });
+
+    function startRisset() {
+      // Create AudioContext
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      gainNode = audioCtx.createGain();
+      gainNode.gain.setValueAtTime(parseFloat(volumeSlider.value), audioCtx.currentTime);
+      gainNode.connect(audioCtx.destination);
+
+      // For each oscillator: create oscillator + gain envelope
+      for (let i = 0; i < NUM_OSCILLATORS; i++) {
+        const osc = audioCtx.createOscillator();
+        osc.type = 'sine';
+        osc.connect( gainNode );
+        oscillators.push(osc);
+
+        // Each oscillator has its own gain node (to fade in/out)
+        const env = audioCtx.createGain();
+        osc.disconnect();
+        osc.connect(env);
+        env.connect(gainNode);
+        gainEnvelopes.push(env);
+      }
+
+      // Record the time we started so we can compute relative phase.
+      startTime = audioCtx.currentTime;
+
+      // Start all oscillators (frequency/update happens in the animation loop)
+      oscillators.forEach(osc => osc.start());
+
+      // Kick off the animation loop to update frequencies and envelopes
+      updateLoop();
+    }
+
+    function stopRisset() {
+      cancelAnimationFrame(rafID);
+      if (oscillators.length) {
+        oscillators.forEach((osc) => osc.stop());
+        oscillators = [];
+        gainEnvelopes = [];
+      }
+      if (audioCtx) {
+        audioCtx.close();
+        audioCtx = null;
+      }
+    }
+
+    function updateLoop() {
+      if (!audioCtx) return;
+
+      const now = audioCtx.currentTime;
+      const elapsed = (now - startTime) * parseFloat(speedSlider.value);
+      const cyclePos = (elapsed % LOOP_DURATION) / LOOP_DURATION; // 0..1
+
+      // Read base frequency from slider
+      const baseFreq = parseFloat(baseFreqSlider.value);
+
+      for (let i = 0; i < NUM_OSCILLATORS; i++) {
+        const osc = oscillators[i];
+        const env = gainEnvelopes[i];
+
+        // 1) Frequency calculation:
+        const freq = (baseFreq * Math.pow(2, i)) * Math.pow(2, cyclePos);
+        osc.frequency.setValueAtTime(freq, now);
+
+        // 2) Amplitude envelope:
+        const shift = i / NUM_OSCILLATORS;
+        let phase = (cyclePos - shift + 1.0) % 1.0;
+        const gainAmp = 0.5 * (1 + Math.cos(2 * Math.PI * (phase - 0.5)));
+        env.gain.setValueAtTime(gainAmp, now);
+      }
+
+      // Loop
+      rafID = requestAnimationFrame(updateLoop);
+    }
+  </script>
+</body>
+</html>

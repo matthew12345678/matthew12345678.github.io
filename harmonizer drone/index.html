@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Drone Harmonizer</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 2rem;
+      background: #f5f5f5;
+    }
+    .control-group {
+      margin-bottom: 1rem;
+    }
+    label {
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+    input[type="number"], select {
+      width: 120px;
+      padding: 0.25rem;
+      font-size: 1rem;
+    }
+    button {
+      margin-right: 0.5rem;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Drone Harmonizer</h1>
+
+  <div class="control-group">
+    <label for="freqInput">Base Frequency (Hz):</label>
+    <input type="number" id="freqInput" value="110" step="1" min="20" max="2000" />
+  </div>
+
+  <div class="control-group">
+    <label for="waveformSelect">Waveform:</label>
+    <select id="waveformSelect">
+      <option value="sine" selected>Sine</option>
+      <option value="triangle">Triangle</option>
+      <option value="sawtooth">Sawtooth</option>
+      <option value="square">Square</option>
+    </select>
+  </div>
+
+  <div class="control-group">
+    <label for="harmonyCountInput">Number of Harmonies (1–9):</label>
+    <input type="number" id="harmonyCountInput" value="5" step="1" min="1" max="9" />
+  </div>
+
+  <div class="control-group">
+    <label for="harmonyGainInput">Harmony Gain (0.0–1.0):</label>
+    <input type="number" id="harmonyGainInput" value="0.25" step="0.05" min="0" max="1" />
+  </div>
+
+  <div class="control-group">
+    <label for="fadeMinInput">Fade Time Min (s):</label>
+    <input type="number" id="fadeMinInput" value="2" step="0.5" min="0" />
+    <label for="fadeMaxInput">Fade Time Max (s):</label>
+    <input type="number" id="fadeMaxInput" value="5" step="0.5" min="0" />
+  </div>
+
+  <div class="control-group">
+    <label for="holdMinInput">Hold Time Min (s):</label>
+    <input type="number" id="holdMinInput" value="1" step="0.5" min="0" />
+    <label for="holdMaxInput">Hold Time Max (s):</label>
+    <input type="number" id="holdMaxInput" value="5" step="0.5" min="0" />
+  </div>
+
+  <div class="control-group">
+    <label for="lfoRateMinInput">LFO Rate Min (Hz):</label>
+    <input type="number" id="lfoRateMinInput" value="0.05" step="0.01" min="0" />
+    <label for="lfoRateMaxInput">LFO Rate Max (Hz):</label>
+    <input type="number" id="lfoRateMaxInput" value="0.5" step="0.01" min="0" />
+  </div>
+
+  <div class="control-group">
+    <label for="lfoDepthInput">LFO Depth (Hz):</label>
+    <input type="number" id="lfoDepthInput" value="5" step="0.5" min="0" />
+  </div>
+
+  <button id="startBtn">Start</button>
+  <button id="stopBtn" disabled>Stop</button>
+
+  <script>
+    let audioCtx = null;
+    let baseOsc = null, baseGain = null;
+    let harmonyOscs = [], harmonyGains = [];
+    let lfoOscs = [], lfoGains = [];
+    const harmonyRatiosFull = [1.2, 1.25, 1.3333, 1.4, 1.5, 1.6, 1.6667, 1.7818, 2.0];
+    let currentHarmonyIndex = -1;
+    let changeTimeout = null;
+
+    // Control elements
+    const freqInput = document.getElementById('freqInput');
+    const waveformSelect = document.getElementById('waveformSelect');
+    const harmonyCountInput = document.getElementById('harmonyCountInput');
+    const harmonyGainInput = document.getElementById('harmonyGainInput');
+    const fadeMinInput = document.getElementById('fadeMinInput');
+    const fadeMaxInput = document.getElementById('fadeMaxInput');
+    const holdMinInput = document.getElementById('holdMinInput');
+    const holdMaxInput = document.getElementById('holdMaxInput');
+    const lfoRateMinInput = document.getElementById('lfoRateMinInput');
+    const lfoRateMaxInput = document.getElementById('lfoRateMaxInput');
+    const lfoDepthInput = document.getElementById('lfoDepthInput');
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+
+    startBtn.addEventListener('click', () => {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      createDroneAndHarmonies();
+      startHarmonizer();
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+    });
+
+    stopBtn.addEventListener('click', () => {
+      stopHarmonizer();
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    });
+
+    freqInput.addEventListener('change', () => {
+      const newFreq = parseFloat(freqInput.value);
+      if (audioCtx && !isNaN(newFreq) && newFreq > 0) {
+        updateFrequencies(newFreq);
+      }
+    });
+
+    harmonyCountInput.addEventListener('change', () => {
+      if (audioCtx) {
+        stopHarmonies();
+        createHarmonies();
+      }
+    });
+
+    // Create base drone and harmony voices
+    function createDroneAndHarmonies() {
+      const rootFreq = parseFloat(freqInput.value);
+      const waveform = waveformSelect.value;
+
+      baseOsc = audioCtx.createOscillator();
+      baseOsc.type = waveform;
+      baseOsc.frequency.value = rootFreq;
+      baseGain = audioCtx.createGain();
+      baseGain.gain.value = 0.3;
+      baseOsc.connect(baseGain).connect(audioCtx.destination);
+      baseOsc.start();
+
+      createHarmonies();
+    }
+
+    function createHarmonies() {
+      const rootFreq = parseFloat(freqInput.value);
+      const waveform = waveformSelect.value;
+      const count = Math.min(Math.max(parseInt(harmonyCountInput.value), 1), harmonyRatiosFull.length);
+      const ratios = harmonyRatiosFull.slice(0, count);
+      const lfoRateMin = parseFloat(lfoRateMinInput.value);
+      const lfoRateMax = parseFloat(lfoRateMaxInput.value);
+      const lfoDepth = parseFloat(lfoDepthInput.value);
+
+      ratios.forEach((ratio) => {
+        const osc = audioCtx.createOscillator();
+        osc.type = waveform;
+        osc.frequency.value = rootFreq * ratio;
+
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = 0;
+
+        // LFO for random frequency sweep
+        const lfoOsc = audioCtx.createOscillator();
+        lfoOsc.type = 'sine';
+        const initialRate = randomRange(lfoRateMin, lfoRateMax);
+        lfoOsc.frequency.value = initialRate;
+        const lfoGain = audioCtx.createGain();
+        lfoGain.gain.value = lfoDepth;
+        lfoOsc.connect(lfoGain).connect(osc.frequency);
+        lfoOsc.start();
+        scheduleRandomLfoRateChange(lfoOsc, lfoRateMin, lfoRateMax);
+
+        osc.connect(gainNode).connect(audioCtx.destination);
+        osc.start();
+
+        harmonyOscs.push(osc);
+        harmonyGains.push(gainNode);
+        lfoOscs.push(lfoOsc);
+        lfoGains.push(lfoGain);
+      });
+    }
+
+    function scheduleRandomLfoRateChange(lfoOsc, minRate, maxRate) {
+      const changeInterval = randomRange(5000, 10000); // 5–10 seconds
+      setTimeout(() => {
+        const newRate = randomRange(minRate, maxRate);
+        lfoOsc.frequency.setValueAtTime(newRate, audioCtx.currentTime);
+        scheduleRandomLfoRateChange(lfoOsc, minRate, maxRate);
+      }, changeInterval);
+    }
+
+    function updateFrequencies(newRoot) {
+      baseOsc.frequency.setValueAtTime(newRoot, audioCtx.currentTime);
+      harmonyOscs.forEach((osc, i) => {
+        const ratio = harmonyRatiosFull[i];
+        osc.frequency.setValueAtTime(newRoot * ratio, audioCtx.currentTime);
+      });
+    }
+
+    function startHarmonizer() {
+      crossfadeToNextHarmony();
+    }
+
+    function stopHarmonizer() {
+      clearTimeout(changeTimeout);
+      stopHarmonies();
+      if (baseOsc) {
+        baseOsc.stop();
+        baseOsc.disconnect();
+        baseOsc = null;
+      }
+      if (audioCtx) {
+        audioCtx.close();
+        audioCtx = null;
+      }
+      currentHarmonyIndex = -1;
+    }
+
+    function stopHarmonies() {
+      harmonyOscs.forEach((osc) => {
+        osc.stop();
+        osc.disconnect();
+      });
+      harmonyOscs = [];
+      harmonyGains.forEach((gainNode) => gainNode.disconnect());
+      harmonyGains = [];
+      lfoOscs.forEach((lfo) => {
+        lfo.stop();
+        lfo.disconnect();
+      });
+      lfoOscs = [];
+      lfoGains.forEach((gain) => gain.disconnect());
+      lfoGains = [];
+    }
+
+    function crossfadeToNextHarmony() {
+      if (!audioCtx) return;
+
+      const now = audioCtx.currentTime;
+      const fadeMin = parseFloat(fadeMinInput.value);
+      const fadeMax = parseFloat(fadeMaxInput.value);
+      const holdMin = parseFloat(holdMinInput.value);
+      const holdMax = parseFloat(holdMaxInput.value);
+      const harmonyGain = parseFloat(harmonyGainInput.value);
+
+      const fadeTime = randomRange(fadeMin, fadeMax);
+      const holdTime = randomRange(holdMin, holdMax);
+
+      let nextIndex = Math.floor(Math.random() * harmonyGains.length);
+      while (nextIndex === currentHarmonyIndex && harmonyGains.length > 1) {
+        nextIndex = Math.floor(Math.random() * harmonyGains.length);
+      }
+
+      if (currentHarmonyIndex >= 0) {
+        const oldGain = harmonyGains[currentHarmonyIndex].gain;
+        oldGain.cancelScheduledValues(now);
+        oldGain.setValueAtTime(oldGain.value, now);
+        oldGain.linearRampToValueAtTime(0, now + fadeTime);
+      }
+
+      const newGainNode = harmonyGains[nextIndex].gain;
+      newGainNode.cancelScheduledValues(now);
+      newGainNode.setValueAtTime(0, now);
+      newGainNode.linearRampToValueAtTime(harmonyGain, now + fadeTime);
+      currentHarmonyIndex = nextIndex;
+
+      changeTimeout = setTimeout(() => {
+        crossfadeToNextHarmony();
+      }, (fadeTime + holdTime) * 1000);
+    }
+
+    function randomRange(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Sample Granulizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1e1e2e 0%, #2d1b69 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .file-upload {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px dashed #4ecdc4;
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .file-upload:hover {
+            background: rgba(78, 205, 196, 0.1);
+            transform: translateY(-2px);
+        }
+        
+        .file-upload input {
+            display: none;
+        }
+        
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .control-group {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .control {
+            margin-bottom: 15px;
+        }
+        
+        .control label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #4ecdc4;
+        }
+        
+        .control input[type="range"] {
+            width: 100%;
+            -webkit-appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.2);
+            outline: none;
+        }
+        
+        .control input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+        
+        .control input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+        
+        .value-display {
+            font-size: 0.9em;
+            color: #fff;
+            opacity: 0.8;
+        }
+        
+        .transport {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            color: white;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .waveform {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        canvas {
+            width: 100%;
+            height: 100px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+        
+        .grain-visual {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .grain-counter {
+            font-size: 1.2em;
+            color: #4ecdc4;
+            margin-bottom: 10px;
+        }
+        
+        .grain-dots {
+            display: flex;
+            justify-content: center;
+            gap: 3px;
+            flex-wrap: wrap;
+        }
+        
+        .grain-dot {
+            width: 8px;
+            height: 8px;
+            background: #4ecdc4;
+            border-radius: 50%;
+            animation: pulse 0.5s ease-in-out;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1.5); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Audio Sample Granulizer</h1>
+        
+        <div class="file-upload" onclick="document.getElementById('fileInput').click()">
+            <input type="file" id="fileInput" accept="audio/*">
+            <div>
+                <h3>📁 Load Audio Sample</h3>
+                <p>Click here or drag and drop an audio file</p>
+                <p id="fileName" style="margin-top: 10px; font-style: italic;"></p>
+            </div>
+        </div>
+        
+        <div class="waveform">
+            <h3>Waveform</h3>
+            <canvas id="waveform"></canvas>
+        </div>
+        
+        <div class="controls-grid">
+            <div class="control-group">
+                <h3>Grain Parameters</h3>
+                <div class="control">
+                    <label for="grainSize">Grain Size (ms): <span class="value-display" id="grainSizeValue">50</span></label>
+                    <input type="range" id="grainSize" min="10" max="500" value="50">
+                </div>
+                <div class="control">
+                    <label for="grainDensity">Grain Density (grains/sec): <span class="value-display" id="grainDensityValue">20</span></label>
+                    <input type="range" id="grainDensity" min="1" max="100" value="20">
+                </div>
+                <div class="control">
+                    <label for="grainSpread">Position Spread (%): <span class="value-display" id="grainSpreadValue">10</span></label>
+                    <input type="range" id="grainSpread" min="0" max="100" value="10">
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <h3>Playback</h3>
+                <div class="control">
+                    <label for="playbackRate">Playback Rate: <span class="value-display" id="playbackRateValue">1.0</span></label>
+                    <input type="range" id="playbackRate" min="0.1" max="4.0" step="0.1" value="1.0">
+                </div>
+                <div class="control">
+                    <label for="position">Position (%): <span class="value-display" id="positionValue">0</span></label>
+                    <input type="range" id="position" min="0" max="100" value="0">
+                </div>
+                <div class="control">
+                    <label for="volume">Volume: <span class="value-display" id="volumeValue">0.5</span></label>
+                    <input type="range" id="volume" min="0" max="1" step="0.01" value="0.5">
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <h3>Effects</h3>
+                <div class="control">
+                    <label for="reverb">Reverb: <span class="value-display" id="reverbValue">0.2</span></label>
+                    <input type="range" id="reverb" min="0" max="1" step="0.01" value="0.2">
+                </div>
+                <div class="control">
+                    <label for="filter">Filter Cutoff (Hz): <span class="value-display" id="filterValue">5000</span></label>
+                    <input type="range" id="filter" min="100" max="10000" value="5000">
+                </div>
+                <div class="control">
+                    <label for="pan">Pan: <span class="value-display" id="panValue">0</span></label>
+                    <input type="range" id="pan" min="-1" max="1" step="0.01" value="0">
+                </div>
+            </div>
+        </div>
+        
+        <div class="transport">
+            <button class="btn" id="playBtn" disabled>▶ Play</button>
+            <button class="btn" id="stopBtn" disabled>⏹ Stop</button>
+        </div>
+        
+        <div class="grain-visual">
+            <div class="grain-counter" id="grainCounter">Active Grains: 0</div>
+            <div class="grain-dots" id="grainDots"></div>
+        </div>
+    </div>
+
+    <script>
+        class Granulizer {
+            constructor() {
+                this.audioContext = null;
+                this.audioBuffer = null;
+                this.activeGrains = [];
+                this.isPlaying = false;
+                this.grainInterval = null;
+                this.masterGain = null;
+                this.convolver = null;
+                this.filter = null;
+                this.panner = null;
+                
+                // Parameters
+                this.grainSize = 50;
+                this.grainDensity = 20;
+                this.grainSpread = 10;
+                this.playbackRate = 1.0;
+                this.position = 0;
+                this.volume = 0.5;
+                this.reverbAmount = 0.2;
+                this.filterCutoff = 5000;
+                this.panValue = 0;
+                
+                this.initAudio();
+                this.setupUI();
+                this.createImpulseResponse();
+            }
+            
+            async initAudio() {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Create audio nodes
+                this.masterGain = this.audioContext.createGain();
+                this.filter = this.audioContext.createBiquadFilter();
+                this.convolver = this.audioContext.createConvolver();
+                this.panner = this.audioContext.createStereoPanner();
+                
+                // Configure filter
+                this.filter.type = 'lowpass';
+                this.filter.frequency.value = this.filterCutoff;
+                
+                // Connect effects chain
+                this.filter.connect(this.convolver);
+                this.convolver.connect(this.panner);
+                this.panner.connect(this.masterGain);
+                this.masterGain.connect(this.audioContext.destination);
+                
+                this.masterGain.gain.value = this.volume;
+            }
+            
+            createImpulseResponse() {
+                const length = this.audioContext.sampleRate * 2;
+                const impulse = this.audioContext.createBuffer(2, length, this.audioContext.sampleRate);
+                
+                for (let channel = 0; channel < 2; channel++) {
+                    const channelData = impulse.getChannelData(channel);
+                    for (let i = 0; i < length; i++) {
+                        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2);
+                    }
+                }
+                
+                this.convolver.buffer = impulse;
+            }
+            
+            setupUI() {
+                // File input
+                const fileInput = document.getElementById('fileInput');
+                fileInput.addEventListener('change', (e) => this.loadFile(e.target.files[0]));
+                
+                // Controls
+                this.setupSlider('grainSize', (val) => this.grainSize = val);
+                this.setupSlider('grainDensity', (val) => this.grainDensity = val);
+                this.setupSlider('grainSpread', (val) => this.grainSpread = val);
+                this.setupSlider('playbackRate', (val) => this.playbackRate = val);
+                this.setupSlider('position', (val) => this.position = val);
+                this.setupSlider('volume', (val) => {
+                    this.volume = val;
+                    if (this.masterGain) this.masterGain.gain.value = val;
+                });
+                this.setupSlider('reverb', (val) => this.reverbAmount = val);
+                this.setupSlider('filter', (val) => {
+                    this.filterCutoff = val;
+                    if (this.filter) this.filter.frequency.value = val;
+                });
+                this.setupSlider('pan', (val) => {
+                    this.panValue = val;
+                    if (this.panner) this.panner.pan.value = val;
+                });
+                
+                // Transport controls
+                document.getElementById('playBtn').addEventListener('click', () => this.play());
+                document.getElementById('stopBtn').addEventListener('click', () => this.stop());
+                
+                // Drag and drop
+                const fileUpload = document.querySelector('.file-upload');
+                fileUpload.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    fileUpload.style.background = 'rgba(78, 205, 196, 0.2)';
+                });
+                fileUpload.addEventListener('dragleave', () => {
+                    fileUpload.style.background = 'rgba(255, 255, 255, 0.1)';
+                });
+                fileUpload.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    fileUpload.style.background = 'rgba(255, 255, 255, 0.1)';
+                    if (e.dataTransfer.files.length > 0) {
+                        this.loadFile(e.dataTransfer.files[0]);
+                    }
+                });
+            }
+            
+            setupSlider(id, callback) {
+                const slider = document.getElementById(id);
+                const valueDisplay = document.getElementById(id + 'Value');
+                
+                slider.addEventListener('input', (e) => {
+                    const value = parseFloat(e.target.value);
+                    valueDisplay.textContent = value;
+                    callback(value);
+                });
+            }
+            
+            async loadFile(file) {
+                if (!file) return;
+                
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                    
+                    document.getElementById('fileName').textContent = file.name;
+                    document.getElementById('playBtn').disabled = false;
+                    document.getElementById('stopBtn').disabled = false;
+                    
+                    this.drawWaveform();
+                } catch (error) {
+                    alert('Error loading audio file: ' + error.message);
+                }
+            }
+            
+            drawWaveform() {
+                const canvas = document.getElementById('waveform');
+                const ctx = canvas.getContext('2d');
+                const rect = canvas.getBoundingClientRect();
+                
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+                
+                const data = this.audioBuffer.getChannelData(0);
+                const step = Math.ceil(data.length / canvas.width);
+                const amp = canvas.height / 2;
+                
+                ctx.fillStyle = '#2d1b69';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.strokeStyle = '#4ecdc4';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                
+                for (let i = 0; i < canvas.width; i++) {
+                    let min = 1.0;
+                    let max = -1.0;
+                    
+                    for (let j = 0; j < step; j++) {
+                        const datum = data[(i * step) + j];
+                        if (datum < min) min = datum;
+                        if (datum > max) max = datum;
+                    }
+                    
+                    ctx.moveTo(i, (1 + min) * amp);
+                    ctx.lineTo(i, (1 + max) * amp);
+                }
+                
+                ctx.stroke();
+            }
+            
+            createGrain() {
+                if (!this.audioBuffer || !this.isPlaying) return;
+                
+                const source = this.audioContext.createBufferSource();
+                const grainGain = this.audioContext.createGain();
+                
+                source.buffer = this.audioBuffer;
+                source.playbackRate.value = this.playbackRate;
+                
+                // Calculate grain start position with spread
+                const spreadRange = (this.grainSpread / 100) * this.audioBuffer.duration;
+                const basePosition = (this.position / 100) * this.audioBuffer.duration;
+                const startTime = Math.max(0, Math.min(
+                    this.audioBuffer.duration - (this.grainSize / 1000),
+                    basePosition + (Math.random() - 0.5) * spreadRange
+                ));
+                
+                // Grain envelope
+                const grainDuration = this.grainSize / 1000;
+                const now = this.audioContext.currentTime;
+                
+                grainGain.gain.setValueAtTime(0, now);
+                grainGain.gain.linearRampToValueAtTime(0.3, now + grainDuration * 0.1);
+                grainGain.gain.linearRampToValueAtTime(0.3, now + grainDuration * 0.9);
+                grainGain.gain.linearRampToValueAtTime(0, now + grainDuration);
+                
+                // Connect grain
+                source.connect(grainGain);
+                
+                // Mix dry and wet signals
+                const dryGain = this.audioContext.createGain();
+                const wetGain = this.audioContext.createGain();
+                
+                dryGain.gain.value = 1 - this.reverbAmount;
+                wetGain.gain.value = this.reverbAmount;
+                
+                grainGain.connect(dryGain);
+                grainGain.connect(wetGain);
+                
+                dryGain.connect(this.panner);
+                wetGain.connect(this.filter);
+                
+                // Start and stop grain
+                source.start(now, startTime, grainDuration);
+                source.stop(now + grainDuration);
+                
+                // Track active grain
+                const grain = { source, gain: grainGain, startTime: now, duration: grainDuration };
+                this.activeGrains.push(grain);
+                
+                // Remove grain when finished
+                source.onended = () => {
+                    const index = this.activeGrains.indexOf(grain);
+                    if (index > -1) this.activeGrains.splice(index, 1);
+                };
+                
+                this.updateGrainVisualization();
+            }
+            
+            updateGrainVisualization() {
+                const counter = document.getElementById('grainCounter');
+                const dots = document.getElementById('grainDots');
+                
+                counter.textContent = `Active Grains: ${this.activeGrains.length}`;
+                
+                // Add visual dots for new grains
+                if (this.activeGrains.length > dots.children.length) {
+                    const dot = document.createElement('div');
+                    dot.className = 'grain-dot';
+                    dots.appendChild(dot);
+                }
+                
+                // Remove old dots
+                while (dots.children.length > Math.min(this.activeGrains.length, 50)) {
+                    dots.removeChild(dots.firstChild);
+                }
+            }
+            
+            play() {
+                if (!this.audioBuffer) return;
+                
+                if (this.audioContext.state === 'suspended') {
+                    this.audioContext.resume();
+                }
+                
+                this.isPlaying = true;
+                document.getElementById('playBtn').textContent = '⏸ Pause';
+                
+                const grainInterval = 1000 / this.grainDensity;
+                this.grainInterval = setInterval(() => {
+                    this.createGrain();
+                }, grainInterval);
+                
+                // Update grain interval when density changes
+                const densitySlider = document.getElementById('grainDensity');
+                const updateInterval = () => {
+                    if (this.isPlaying) {
+                        clearInterval(this.grainInterval);
+                        const newInterval = 1000 / this.grainDensity;
+                        this.grainInterval = setInterval(() => {
+                            this.createGrain();
+                        }, newInterval);
+                    }
+                };
+                densitySlider.addEventListener('input', updateInterval);
+            }
+            
+            stop() {
+                this.isPlaying = false;
+                document.getElementById('playBtn').textContent = '▶ Play';
+                
+                if (this.grainInterval) {
+                    clearInterval(this.grainInterval);
+                    this.grainInterval = null;
+                }
+                
+                // Stop all active grains
+                this.activeGrains.forEach(grain => {
+                    try {
+                        grain.source.stop();
+                    } catch (e) {
+                        // Grain might already be stopped
+                    }
+                });
+                this.activeGrains = [];
+                
+                this.updateGrainVisualization();
+            }
+        }
+        
+        // Initialize the granulizer when the page loads
+        window.addEventListener('load', () => {
+            new Granulizer();
+        });
+    </script>
+</body>
+</html>
