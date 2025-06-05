@@ -1,0 +1,1588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Audio-Reactive Text with Psychedelic 3D Kaleidoscope</title>
+  <style>
+    /* Fullscreen setup */
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; position: relative; }
+    #glcanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
+    /* Distinctive text styling: white with black outline and text-shadow */
+    #text-container {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(1);
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 120px;
+      text-align: center;
+      color: #fff;
+      text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000;
+      -webkit-text-stroke: 2px #000;
+      z-index: 1;
+      pointer-events: none;
+      white-space: pre-wrap;
+    }
+    /* Settings button */
+    #settings-btn { position: absolute; top: 20px; left: 20px; z-index: 3; background: rgba(255,255,255,0.2); border: none; color: #fff; padding: 8px 12px; cursor: pointer; font-size: 14px; }
+    #settings-btn:hover { background: rgba(255,255,255,0.3); }
+    /* Settings modal overlay */
+    #settings-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); z-index: 4; align-items: center; justify-content: center; }
+    #settings-content { background: #111; padding: 20px; border-radius: 8px; color: #fff; width: 360px; max-width: 90%; }
+    #settings-content h2 { margin-top: 0; font-size: 18px; }
+    #settings-content label { display: block; margin: 12px 0 4px; font-size: 14px; }
+    #settings-content input[type=range], input[type=number] { width: 100%; }
+    #settings-content button { margin-top: 16px; padding: 8px 12px; background: rgba(255,255,255,0.2); border: none; color: #fff; cursor: pointer; }
+    #settings-content button:hover { background: rgba(255,255,255,0.3); }
+    /* Hidden file input */
+    #audio-file { display: none; }
+    /* Loader label */
+    #loader { position: absolute; top: 20px; right: 20px; z-index: 3; font-size: 14px; color: #ddd; }
+    #loader label { cursor: pointer; text-decoration: underline; margin-right: 10px; }
+    /* Playlist controls */
+    #playlist-controls { position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); z-index: 2; display: none; }
+    #playlist-controls button { background: rgba(255,255,255,0.2); border: none; color: #fff; padding: 8px 12px; cursor: pointer; margin: 0 5px; }
+    #playlist-controls button:hover { background: rgba(255,255,255,0.3); }
+    #playlist-controls span { color: #fff; margin: 0 10px; }
+    /* Audio controls */
+    audio { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 300px; z-index: 2; }
+  </style>
+</head>
+<body>
+  <!-- WebGL canvas -->
+  <canvas id="glcanvas"></canvas>
+  <!-- Text container -->
+  <div id="text-container">Theres something you need to know</div>
+  <!-- Settings button -->
+  <button id="settings-btn">Settings</button>
+  <!-- Loader for file -->
+  <div id="loader">
+    <label for="audio-file">Select MP3</label>
+    <input type="file" id="audio-file" accept=".mp3" />
+    <label for="folder-input">Select Folder</label>
+    <input type="file" id="folder-input" webkitdirectory directory multiple />
+  </div>
+  <!-- Playlist controls -->
+  <div id="playlist-controls">
+    <button id="prev-track">Previous</button>
+    <span id="track-info">No tracks loaded</span>
+    <button id="next-track">Next</button>
+  </div>
+  <!-- Audio controls -->
+  <audio id="audio" controls></audio>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal">
+    <div id="settings-content">
+      <h2>Controls</h2>
+      <!-- Beat threshold -->
+      <label for="beatThreshold">Beat Threshold (<span id="beatThreshold-val">50</span>)</label>
+      <input type="range" id="beatThreshold" min="0" max="255" value="50" />
+      <!-- Minimum interval -->
+      <label for="minInterval">Min Interval (sec) (<span id="minInterval-val">4</span>)</label>
+      <input type="number" id="minInterval" min="0" max="10" step="1" value="4" />
+      <!-- Text size -->
+      <label for="textSize">Text Size (px) (<span id="textSize-val">120</span>)</label>
+      <input type="range" id="textSize" min="10" max="200" step="1" value="120" />
+      <!-- Spin speed range -->
+      <label for="spinSpeedMin">Spin Speed Min (<span id="spinSpeedMin-val">0</span>)</label>
+      <input type="range" id="spinSpeedMin" min="0" max="5.0" step="0.1" value="0" />
+      <label for="spinSpeedMax">Spin Speed Max (<span id="spinSpeedMax-val">0.1</span>)</label>
+      <input type="range" id="spinSpeedMax" min="0" max="5.0" step="0.1" value="0.1" />
+      <!-- Kaleidoscope speed -->
+      <label for="speed">Kaleidoscope Speed (<span id="speed-val">0.1</span>)</label>
+      <input type="range" id="speed" min="0" max="2.0" step="0.1" value="0.1" />
+      <!-- Segments -->
+      <label for="segments">Segments (<span id="segments-val">40</span>)</label>
+      <input type="range" id="segments" min="3" max="48" step="1" value="40" />
+      <!-- Distortion power range -->
+      <label for="distortPowMin">Distortion Power Min (<span id="distortPowMin-val">1.2</span>)</label>
+      <input type="range" id="distortPowMin" min="0.2" max="10.0" step="0.1" value="1.2" />
+      <label for="distortPowMax">Distortion Power Max (<span id="distortPowMax-val">1.4</span>)</label>
+      <input type="range" id="distortPowMax" min="0.2" max="10.0" step="0.1" value="1.4" />
+      <!-- Distortion amplitude -->
+      <label for="distortAmp">Distortion Amp (<span id="distortAmp-val">0</span>)</label>
+      <input type="range" id="distortAmp" min="0" max="1" step="0.05" value="0" />
+      <!-- Psychedelic hue speed -->
+      <label for="hueSpeed">Hue Shift Speed (<span id="hueSpeed-val">0.5</span>)</label>
+      <input type="range" id="hueSpeed" min="0" max="5.0" step="0.1" value="0.5" />
+      <!-- Feedback trail -->
+      <label for="feedbackAlpha">Feedback Trail (<span id="feedbackAlpha-val">0.1</span>)</label>
+      <input type="range" id="feedbackAlpha" min="0" max="1" step="0.01" value="0.1" />
+      <!-- Close button -->
+      <button id="close-settings">Close</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      // DOM
+      const fileInput = document.getElementById('audio-file');
+      const folderInput = document.getElementById('folder-input');
+      const playlistControls = document.getElementById('playlist-controls');
+      const prevTrackBtn = document.getElementById('prev-track');
+      const nextTrackBtn = document.getElementById('next-track');
+      const trackInfo = document.getElementById('track-info');
+      let audioElement = document.getElementById('audio');
+      const textContainer = document.getElementById('text-container');
+      const glCanvas = document.getElementById('glcanvas');
+      const settingsBtn = document.getElementById('settings-btn');
+      const settingsModal = document.getElementById('settings-modal');
+      const closeSettings = document.getElementById('close-settings');
+      // Control elements
+      const beatThresholdSlider = document.getElementById('beatThreshold');
+      const minIntervalInput = document.getElementById('minInterval');
+      const textSizeSlider = document.getElementById('textSize');
+      const spinSpeedMinSlider = document.getElementById('spinSpeedMin');
+      const spinSpeedMaxSlider = document.getElementById('spinSpeedMax');
+      const speedSlider = document.getElementById('speed');
+      const segmentsSlider = document.getElementById('segments');
+      const distortPowMinSlider = document.getElementById('distortPowMin');
+      const distortPowMaxSlider = document.getElementById('distortPowMax');
+      const distortAmpSlider = document.getElementById('distortAmp');
+      const hueSpeedSlider = document.getElementById('hueSpeed');
+      const feedbackAlphaSlider = document.getElementById('feedbackAlpha');
+      // Display values
+      const beatThresholdVal = document.getElementById('beatThreshold-val');
+      const minIntervalVal = document.getElementById('minInterval-val');
+      const textSizeVal = document.getElementById('textSize-val');
+      const spinSpeedMinVal = document.getElementById('spinSpeedMin-val');
+      const spinSpeedMaxVal = document.getElementById('spinSpeedMax-val');
+      const speedVal = document.getElementById('speed-val');
+      const segmentsVal = document.getElementById('segments-val');
+      const distortPowMinVal = document.getElementById('distortPowMin-val');
+      const distortPowMaxVal = document.getElementById('distortPowMax-val');
+      const distortAmpVal = document.getElementById('distortAmp-val');
+      const hueSpeedVal = document.getElementById('hueSpeed-val');
+      const feedbackAlphaVal = document.getElementById('feedbackAlpha-val');
+
+      // Audio analysis vars
+      let audioContext, analyserNode, sourceNode;
+      let dataArray, bufferLength;
+      let animationId;
+      let wasBelowThreshold = true;
+
+      // Default parameters
+      let beatThreshold = 50;
+      let minInterval = 4;
+      let textSize = 120;
+      let spinSpeedMin = 0.2;
+      let spinSpeedMax = 1.0;
+      let speed = 0.2;
+      let segments = 12;
+      let distortPowMin = 0.2;
+      let distortPowMax = 2.0;
+      let distortAmp = 0.2;
+      let hueSpeed = 0.5;
+      let feedbackAlpha = 0.1;
+
+      // Text lines
+      const lines = [
+      "Have Matthew Your Way.",
+"Think Once, Think Twice, Think Matthew.",
+"Only Matthew Can Prevent Forest Fires.",
+"Things go better with Matthew.",
+"I Love What You Do For Matthew.",
+"Think.Feel.Matthew.",
+"Get Matthew or Get Out.",
+"Matthew, you've got it!",
+"Watch Out, There's a Matthew About.",
+"Make Someone Happy with a Matthew.",
+"Splash Matthew All Over.",
+"Just one more Matthew will do.",
+"The spirit of Matthew.",
+"For a fresh change try Matthew.",
+"I'd Like to Buy the World a Matthew.",
+"Matthew is the best forget the rest!",
+"Matthew the only solution.",
+"Yo Quiero Matthew.",
+"Matthew keeps them coming back Matthew, you'll love it!",
+"Where Matthew is a Pleasure.",
+"Matthew just one more helping.",
+"Welcome To Matthew Country.",
+"Tough on Dirt, Gentle on Matthew.",
+"Matthew, you can't live without it.",
+"There's Always Room For Matthew.",
+"Order a Matthew today.",
+"You've Got Questions.",
+"We've Got Matthew.",
+"Hand-Built by Matthew.",
+"Only Matthew Has The Answer.",
+"It all comes back to Matthew.",
+"Which Twin has the Matthew? Behold the Power of Matthew.",
+"Go where the winners go - Matthew!",
+"Review the facts Matthew is the best.",
+"Matthew finishes first.",
+"There is no life without Matthew.",
+"Matthew makes dreams come true.",
+"The secret of Matthew.",
+"It's my Matthew!",
+"I want my Matthew.",
+"Matthew Born and Bred.",
+"Matthew Unscripted.",
+"Where's The Matthew? Matthew is your friend.",
+"Matthew inside you.",
+"Matthew for when it's quitting time.",
+"I Saw Matthew and I Thought of You.",
+"Come One, Come All To Matthew.",
+"Take what you want, but leave Matthew alone!",
+"The Matthew For All Ages.",
+"Sometimes You Feel Like a Matthew, Sometimes You Don't.",
+"How Do You Eat Your Matthew? All You Add Is Matthew.",
+"Four out of Five Dentists Recommend Matthew.",
+"Think positive, think Matthew.",
+"Made In Scotland From Matthew.",
+"Look, Ma, No Matthew!",
+"Matthew it's guaranteed.",
+"Matthew, so what!",
+"Matthew beat.",
+"The Matthew that Smiles Back.",
+"Matthew won't hurt that bad.",
+"If You Want To Get Ahead, Get A Matthew.",
+"Matthew is the best!",
+"Silly Rabbit, Matthew is for Kids.",
+"Make the Most of Matthew.",
+"A Day Without Matthew is Like a Day Without Sunshine.",
+"Gonna Be a While? Grab a Matthew.",
+"It's a New Matthew Every Day.",
+"Matthew - Think different.",
+"Matthew - enjoy the difference.",
+"The age of Matthew.",
+"The president buys Matthew.",
+"The original Matthew.",
+"Now with 50% more Matthew!",
+"Matthew Really Satisfies.",
+"Get the new Matthew.",
+"Once Driven, Forever Matthew.",
+"It must be Matthew.",
+"Matthew - be prepared.",
+"Be alive with Matthew.",
+"Come to Matthew, and Let's Get It Done.",
+"I want more, I want Matthew.",
+"Matthew as sure as the sun shines.",
+"Matthew is forever.",
+"Where is your Matthew? We're with the Matthew.",
+"For The Matthew You Don't Yet Know.",
+"Everything is simple with Matthew.",
+"Saved by Matthew The Matthew people.",
+"Grab Life by the Matthew.",
+"Matthew, since 1845.",
+"The Ultimate Matthew Machine.",
+"See the world with Matthew.",
+"Matthew, in touch with tomorrow.",
+"Wait Till We Get Our Matthew On You.",
+"Matthew the sign of success.",
+"Where's Matthew? The World's Matthew Marketplace.",
+"Matthew eclipses the competition.",
+"Time for a Sharp Matthew.",
+"Nobody does it like Matthew.",
+"Matthew the key to success.",
+"We Want To Be Smiths Matthew.",
+"It's Matthew Time.",
+"Matthew? You bet.",
+"Don't forget your Matthew.",
+"Matthew, i want it all.",
+"Whatever You're Into, Get Into Matthew.",
+"Matthew, fits the bill.",
+"The Matthew That Eats Like A Meal.",
+"Ho Ho Ho, Green Matthew.",
+"A Different Kind Of Company.",
+"A Different Kind Of Matthew.",
+"Matthew is your safe place in an unsafe world!",
+"Moms Like You Choose Matthew.",
+"Matthew one new status symbol.",
+"Matthew is inspiration.",
+"Matthew the cream of the crop.",
+"To Matthew, or not to Matthew.",
+"Does You Does, or Does You Don't Take Matthew? When The Going Gets Tough, The Tough Get Matthew.",
+"Matthew it's a kind of magic.",
+"Nothing is faster than Matthew.",
+"It's How Matthew Is Done.",
+"Matthew will solve all of your troubles.",
+"Be Young, Have Fun, Drink Matthew.",
+"Race for the Matthew.",
+"I Like the Matthew in You.",
+"Matthew strikes back.",
+"Matthew, you know you want it.",
+"Bread Wi' Matthew Taken Out.",
+"Did Somebody Say Matthew? Get your daily dose of Matthew.",
+"You'll Never Put A Better Bit Of Matthew On Your Knife.",
+"Nobody Better Lay a Finger on my Matthew.",
+"Say it with Matthew.",
+"Matthew goes on and on.",
+"Endless possibilities with Matthew.",
+"Matthew, the smart choice.",
+"Pardon Me, Do You Have Any Grey Matthew? Stop!",
+"This Matthew is not Ready Yet!",
+"Matthew for president.",
+"More Matthew Please.",
+"Matthew will do anything for you.",
+"Say It With Matthew.",
+"Let the Matthew Begin.",
+"Matthew is better than chocolate.",
+"Good to know Matthew.",
+"Leggo my Matthew!",
+"I'd Walk a Mile for a Matthew.",
+"Matthew, couldn't be better!",
+"I'm Lovin' Matthew.",
+"Matthew is a winner!",
+"Matthew built to perfection.",
+"They're Yummy For Your Matthew.",
+"Simply Matthew!",
+"You Press the Matthew, We Do the Rest.",
+"A Taste For Matthew.",
+"I'm Not Gonna Pay A Lot For This Matthew.",
+"We'll Leave The Matthew On For You.",
+"Matthew online.",
+"Matthew Is Our Middle Name.",
+"You don't want Matthew as your enemy!",
+"Matthew perfection at its finest.",
+"Matthew. yep, that's it.",
+"Passion for Matthew.",
+"Easy, Breezy, Beautiful Matthew.",
+"Because So Much Is Riding On Your Matthew.",
+"Keep That Matthew Complexion.",
+"Matthew shines through.",
+"Not Just Nearly Matthew, But Really Matthew.",
+"Schhh.You Know Matthew.",
+"Truly Matthew.",
+"It's Slightly Rippled with a Flat Matthew.",
+"Matthew, to hell with the rest.",
+"Good to the Last Matthew.",
+"The art of Matthew.",
+"Do You Have The Matthew Inside? I'm Only Here For The Matthew.",
+"A day with Matthew.",
+"Puts the Matthew in Britain.",
+"Firstclass Matthew!",
+"Matthew always the right choice Be part of Matthew.",
+"Challenge Matthew.",
+"Chocolate Matthew Since 1911.",
+"It Could Be Matthew.",
+"Two Matthew are better than one.",
+"Poppin' Fresh Matthew.",
+"Think Matthew.",
+"Make Room for the Matthew.",
+"Matthew is my world.",
+"There's no Wrong Way to Eat a Matthew.",
+"Would You Give Someone Your Last Matthew? The Matthew Breakfast.",
+"Put A Matthew In Your Tank.",
+"Melts In Your Matthew, Not In Your Hand.",
+"Nobody Does It Like Matthew.",
+".",
+"I'm Cuckoo For Matthew.",
+"Don't Be Vague.",
+"Ask for Matthew.",
+"Matthew will live on forever.",
+"The Matthew of Champions.",
+"Who wouldn't fight for Matthew? Only a Fool Breaks the Matthew.",
+"I wouldn't leave the house without Matthew.",
+"Matthew is a never ending story.",
+"My way is Matthew.",
+"Matthew loves you.",
+"Don't get in the way of Matthew.",
+"Every Kiss Begins With Matthew.",
+"Matthew wonder.",
+"Matthew will brighten your day.",
+"The Matthew community.",
+"Matthew is our middle name.",
+"Making Matthew Taste Better.",
+"You're Never Alone with a Matthew.",
+"Matthew is always the one.",
+"Builds Bonny Matthew.",
+"Matthew.See more Do more.",
+"We Bring The Good Matthew To Life.",
+"Worldclass Matthew!",
+"Get More From Matthew.",
+"Matthew for the masses.",
+"You Can't Top a Matthew.",
+"There's only one true Matthew!",
+"My Matthew and me.",
+"The Matthew Effect.",
+"Matthew - simplified!",
+"Matthew works like magic.",
+"Matthew 100% guaranteed or your money back.",
+"Bet You Can't Eat Matthew.",
+"Good Honest Matthew Since 1896.",
+"Matthew.",
+"Making people sucessful in a changing world.",
+"Matthew for everybody.",
+"What's In Your Matthew? Because Matthew is Complicated Enough.",
+"I Scream, You Scream, We All Scream for Matthew.",
+"Everyone loves Matthew.",
+"Matthew - get ready.",
+"Refreshes the Matthew Other Beers Cannot Reach.",
+"Matthew.",
+"get your Matthew here.",
+"Lightening the Matthew.",
+"Mum's Gone to Matthew.",
+"It's fast, it's furious, it's Matthew Way to go, Matthew!",
+"hhmmmmm. Matthew.",
+"You Can Do It When You Matthew It.",
+"Matthew.",
+"It's What's For Dinner.",
+"I'd do anything for Matthew.",
+"Matthew, where success is at home.",
+"Matthew Dreamteam.",
+"Go Crack a Matthew.",
+"The Matthew of Confidence.",
+"I'm a Secret Matthew Drinker.",
+"Made by Matthew.",
+"Matthew first at the finish line!",
+"I wish i was a Matthew.",
+"Step Into The Matthew.",
+"Where's your Matthew? Matthew - see the light!",
+"Strong and Beautiful, Just Like Matthew.",
+"Matthew, your family will love you.",
+"Matthew, there's no better way.",
+"Matthew: Music to the ears.",
+"Praise Matthew.",
+"Matthew makes your day.",
+"Nothing Sucks Like A Matthew.",
+"Better Living Through Matthew.",
+"Matthew - spice up your life.",
+"Matthew Prevents That Sinking Feeling.",
+"Play Matthew, start living.",
+"Matthew quality you can see.",
+"Tense, Nervous, Matthew? Tastes Great, Less Matthew.",
+"Australians Wouldn't Give A Matthew For Anything Else.",
+"The Matthew That Likes To Say Yes.",
+"Good Matthew Has Danish Written All Over It.",
+"Matthewrific.",
+"Full Of Eastern Matthew.",
+"I fall for Matthew.",
+"Matthew for hire.",
+"Matthew is my passion.",
+"Everyone's Favourite Matthew.",
+"Matthew - It Does a Body Good.",
+"Wouldn't You Rather Be Matthew? Matthew just what you needed.",
+"Matthew Makes Everything Better.",
+"The Matthew man.",
+"I see Matthew in your future.",
+"Just What The Matthew Ordered.",
+"Matthew - be ready.",
+"I love Matthew.",
+"Once You Pop, You Can't Stop Matthew.",
+"Let's Face The Music and Matthew.",
+"The Matthew spirit.",
+"Matthew, fun for the whole family.",
+"I found me Matthew.",
+"Have a Matthew and Smile.",
+"Make Fun of Matthew.",
+"Matthew no one else is better.",
+"Go far with Matthew.",
+"Matthew nonstop.",
+"Have You Had Your Matthew Today? 3-in-1 Protection for your Matthew.",
+"Ring Around the Matthew Gets Your Whole Wash Clean.",
+"All The Matthew That's Fit To Print.",
+"It's your Matthew!",
+"Mamma Mia, That'sa Spicy Matthew!",
+"If You Really Want To Know, Look In The Matthew.",
+"He Who Thinks Matthew Drinks Matthew.",
+"Matthew - One name.",
+"One legend.",
+"Matthew the choice cut.",
+"Funky Matthew.",
+"Matthew - a class of it's own Leave the Matthew to Us.",
+"Matthew wins again.",
+"Budee budee, that's all Matthew.",
+"Dude, You're Getting a Matthew!",
+"Fast Matthew and Good for You.",
+"Thanks Matthew.",
+"There's a bit of Matthew in all of us.",
+"Fill It To The Rim With Matthew.",
+"Matthew - play it!",
+"Matthew gives that warm feeling.",
+"Matthew the time is now.",
+"With Matthew you'll have no more worries!",
+"A Tough Matthew to Follow.",
+"Make Matthew Yours.",
+"The one and only Matthew.",
+"For Mash, Get Matthew.",
+"The Sweet You Can't Eat Without Matthew.",
+"Matthew as far as the eye can see.",
+"From Our Matthew to Yours.",
+"Crunch All You Want.",
+"We'll Make Matthew.",
+"Matthew, when no one else is around.",
+"Get Back Your 'Ooo' With Matthew.",
+"Great Matthew.",
+"Great Times.",
+"Anyone can handle Matthew.",
+"Matthew is there day or night.",
+"Up, up and away with Matthew.",
+"The Matthew of your Life.",
+"You can't beat Matthew.",
+"It Must Be Matthew.",
+"I Feel Like Matthew Tonight.",
+"Don't You Just Love Being In Matthew? Matthew after a long day.",
+"Women love Matthew.",
+"Can you feel it? Matthew.",
+"Every Matthew Helps.",
+"Do You Eat The Matthew Last? Don't Just Book It, Matthew It.",
+"Matthew is my sport.",
+"Matthew when you need results.",
+"Stimulation for Body and Matthew.",
+"The world waits for Matthew.",
+"Aaahh, Matthew!",
+"Our Matthew will give you softer skin.",
+"Wow! I Could Have Had a Matthew!",
+"Matthew, this is it!",
+"The Matthew Drinker's Lighter Matthew.",
+"Any Time, Any Place, Matthew.",
+"Think different, think Matthew.",
+"We're Serious About Matthew.",
+"The Sweet You Can Eat Between Meals Without Ruining Your Matthew.",
+"Get The Matthew Out.",
+"Matthew is crazy good.",
+"Kick ass with Matthew!",
+"Naughty, but Matthew.",
+"Matthewized!",
+"Matthew have another serving.",
+"The Matthew Sign Means Happy Motoring.",
+"Don't be an Amber Matthew.",
+"I Can't Believe I Ate The Whole Matthew.",
+"Matthew, When there's nothing else.",
+"Follow your Matthew.",
+"Matthew, do you need anything else? Is Matthew In You? It's the Bright One, it's the Right One, that's Matthew.",
+"Reach for the Matthew.",
+"Matthew asks for nothing in return.",
+"Buy Matthew now!",
+"Don't mess with Matthew.",
+"We Bring Matthew to Life.",
+"My Matthew.",
+"Matthew on the outside, tasty on the inside.",
+"The Matthew is Mightier than the Sword.",
+"My Doctor Says 'Matthew'.",
+"The wonder has a name: Matthew.",
+"Good To The Last Matthew.",
+"Matthew, how did you live without it? Matthew gets it done on time.",
+"Get Matthew today.",
+"Driven by Matthew.",
+"Me and my Matthew.",
+"It's a Beautiful Matthew.",
+"Matthew, the problem solver.",
+"You Can Be Sure of Matthew.",
+"Matthew will be for you what you want it to be.",
+"Matthew, let the good times roll.",
+"Feel the magic of Matthew.",
+"Go On, Get Your Matthew Out.",
+"Matthew empowers you.",
+"Biting the Hand that Feeds Matthew.",
+"Semper Matthew.",
+"Matthew for everyone.",
+"Matthew opens the flood gates.",
+"Matthew Stays Sharp 'til The Bottom of the Glass.",
+"Matthew for a professional image.",
+"Nothing Comes Between Me And My Matthew.",
+"The Matthew look.",
+"Matthew takes it to the next level.",
+"Top Breeders Recommend Matthew.",
+"Cleans Your Floor Without Matthew.",
+"Hands That Do Dishes Can Be Soft As Your Matthew.",
+"Don't Say Brown, Say 'Matthew'.",
+"Matthew - go for the game.",
+"Matthew never sleeps.",
+"Don't play with fire, play with Matthew.",
+"Matthew Saves Your Soul.",
+"Matthew will get you more girls.",
+"Plop, Plop, Fizz, Fizz, Oh, What a Matthew it is!",
+"What Would You Do For A Matthew? The Matthew Of A New Generation.",
+"Matthew - now!",
+"My Matthew to Yours.",
+"Smart.",
+"Beautiful.",
+"Matthew.",
+"When It Absolutely, Positively Has To Be Matthew Overnight.",
+"Matthew know-how.",
+"Be young, have fun, taste Matthew.",
+"Food or Matthew? I'll have Matthew.",
+"Don't Live a Little, Live a Matthew.",
+"Is It Live, Or Is It Matthew? Who is Matthew? Once Matthew, always Matthew.",
+"Matthew - Xtending service.",
+"The ideal Matthew.",
+"Matthew innovate your world.",
+"Matthew - what more could you want? Make yourself at home with Matthew.",
+"151 Countries, One Matthew.",
+"Get Serious.",
+"Get Matthew.",
+"Matthew can do.",
+"Bridge That Gap with Matthew.",
+"Obey Your Matthew.",
+"Let Your Matthew Do The Walking.",
+"A most excellent Matthew.",
+"Come See the Softer Side of Matthew.",
+"Matthew, stay in touch.",
+"My Matthew, your Matthew, Matthew for all!",
+"Break through with Matthew.",
+"A Matthew Works Wonders.",
+"Matthew, something for everyone.",
+"Matthew is back.",
+"Matthew the highlife.",
+"Moving at the Speed of Matthew.",
+"The Best Matthew Under One Roof.",
+"Matthew - your game.",
+"Nothing Acts Faster Than Matthew.",
+"For That Deep Down Body Matthew.",
+"Sharing the Matthew of your Life.",
+"A Matthew Is Forever.",
+"Discover the world of Matthew.",
+"Matthew to play it safe.",
+"Matthew when 2nd best isn't good enough.",
+"You Can Really Taste The Matthew!",
+"Matthew, your specialist.",
+"Matthew puts the rest to shame.",
+"With A Name Like Matthew, It Has To Be Good.",
+"I wish I had a Matthew.",
+"Don't Leave Home Without Matthew.",
+"Step into the light with Matthew.",
+"I trust Matthew.",
+"Matthew beams with quality.",
+"Matthew knocks out the competition.",
+"Matthew - The Revolution.",
+"Like Matthew.",
+"Like Never Before.",
+"Let your Matthew flow.",
+"I quit smoking with Matthew.",
+"Matthew.",
+".",
+".",
+"the meaning of life.",
+".",
+"Reach Out and Touch Matthew.",
+"Matthew, can't be beat.",
+"Nothin' Says Lovin' Like Matthew from the Oven.",
+"Matthew one size fits all.",
+"Let The Matthew Take The Strain.",
+"Because I'm Worth Matthew.",
+"Matthew - first class!",
+"Come Fly The Friendly Matthew.",
+"Can You Tell Matthew From Butter? ",
+"Matthew. whatever you want.",
+"Life's beautiful with Matthew.",
+"Matthew - living innovation Matthew is what the world was waiting for.",
+"Matthew never die.",
+"Matthew is scrumdelious!",
+"The joy of Matthew.",
+"Matthew Just Feels Right.",
+"Matthew - go for it!",
+"I Liked The Matthew So Much, I Bought The Company!",
+"One Matthew is better than two of something else.",
+"Matthew evolution.",
+"It's Good To Talk Matthew.",
+"Get more from life with Matthew.",
+"Matthew - today and tomorrow.",
+"Something Special In The Matthew.",
+"1 Matthew Matthew 1 Matthew = 2 Matthew Matthew, satisfies the need.",
+"Don't leave your Matthew at home.",
+"It's Not TV. It's Matthew.",
+"Leaves Your Matthew Minty not Mediciney.",
+"Matthew, couldn't ask for more.",
+"Share moments, share Matthew.",
+"The magic of Matthew.",
+"Matthew only if you want the best.",
+"Always After Me Matthew.",
+"Make It A Matthew Night.",
+"Matthew - to feel free!",
+"Does the Hard Matthew, So You Don't Have To.",
+"It's the Matthew Fizz That Does The Bizz.",
+"Life Should Taste As Good As Matthew.",
+"Matthew extra dry.",
+"Pure Matthew.",
+"Matthew, the freshmaker.",
+"Matthew is everything you need.",
+"Two Hours of Matthew in Just Two Calories.",
+"Take Two Bottles into the Matthew? Matthew wanted.",
+"Snap into a Matthew!",
+"You've Always Got Time For Matthew.",
+"Fall Into The Matthew.",
+"Exceedingly Good Matthew.",
+"They Drink Matthew In The Congo.",
+"You'll Look a Little Lovelier Each Day with Fabulous Pink Matthew.",
+"Washing Machines Live Longer With Matthew.",
+"New Thinking. New Matthew.",
+"Matthew food for the soul.",
+"Matthew for a brighter shine.",
+"Matthew new and improved.",
+"Halleluja, it's a Matthew.",
+"The Matthew way of life.",
+"Mama's got the Magic of Matthew.",
+"Maybe She's Born With It, Maybe It's Matthew.",
+"Matthew - reinventing the wheel.",
+"The Matthew That Refreshes.",
+"Matthew kicks ass.",
+"Made in Scotland from Matthew.",
+"Uh-oh, Better Get Matthew.",
+"Matthew leaves the rest behind.",
+"I wish i had a Matthew.",
+"Matthew groove.",
+"Try Matthew you'll like it.",
+"Things Go Better with Matthew.",
+"Matthew. The power on your side.",
+"Matthew enjoy when no-ones around.",
+"Matthew - The Freshmaker!",
+"Matthew reaching for the stars.",
+"Matthew, Take Me Away.",
+"How Refreshing!",
+"How Matthew!",
+"Matthew the top of the heap.",
+"The Future's Bright.",
+"The Future's Matthew.",
+"The Non-Sticky Sticky Matthew.",
+"It's not a dream.",
+"Matthew is real!",
+"Break Me Off a Piece of That Matthew.",
+"I Can't Believe It's Not Matthew.",
+"This Matthew? You bet!",
+"Matthew lifestyle Pure Matthew.",
+"Pure Power.",
+"Matthew a real winner.",
+"Matthew the best service around.",
+"Matthew gives wealth and beauty.",
+"You better get your Matthew out.",
+"A radical new Matthew.",
+"Matthew sees all, knows all.",
+"Matthew for your health.",
+"The Appliance of Matthew.",
+"There's lots of fun in Matthew.",
+"Matthew forever.",
+"Easy Matthew.",
+"Doing It Right Before Your Matthew.",
+"Matthew's got it all!",
+"Savour the Flavour of Matthew.",
+"If there is a will, there is a Matthew.",
+"The king of Matthew.",
+"Next stop, Matthew.",
+"Matthew the only way to go.",
+"Ask the Man From the Matthew.",
+"I Learned It By Watching Matthew!",
+"Matthew = the best.",
+"The Cream of Matthew.",
+"Avez-Vous Un Matthew? Today's Matthew, Since 1903.",
+"See the USA in Your Matthew.",
+"They're Waffly Matthew.",
+"Matthew stands above the rest.",
+"Matthew - it's like heaven!",
+"Have You Forgotten How Good Matthew Tastes? Nothing Works Better Than a Matthew.",
+"Have a Break.",
+"Have a Matthew.",
+"Prepare To Want Matthew.",
+"Get Busy with the Matthew.",
+"Look For The Matthew Label.",
+"An Army of Matthew.",
+"For the love of Matthew.",
+"All Matthew, All The Time.",
+"You Like Matthew.",
+"Matthew Likes You.",
+"The view on Matthew.",
+"The Matthew With The Hole.",
+"The Right Matthew at the Right Time.",
+"Probably The Best Matthew In The World.",
+"Matthew have more fun.",
+"Show Me The Matthew!",
+"Can't Do It In Real Life? Do It On Matthew.",
+"But I'd Rather Have a Bowl of Matthew.",
+"Monsieur, with this Matthew you are really spoiling us.",
+"Choosy Mothers Choose Matthew.",
+"Do You, uh, Matthew? Have a break, have a Matthew.",
+"I am Stuck on Matthew, 'Cause Matthew's Stuck on Me.",
+"Matthew, the secret of women.",
+"Smart people choose Matthew.",
+"Feel the Matthew.",
+"Nobody doesn't like Matthew.",
+"Big Chocolate Matthew.",
+"Stop.Go. Matthew.",
+"Discover the Matthew Difference.",
+"Better Ingredients, Better Matthew.",
+"No Matthew, No Comment.",
+"The Better Way to Start the Matthew.",
+"You Can On a Matthew, Can Do!",
+"Swing your Matthew.",
+"Matthew - forget the rest.",
+"Matthew gets an AMatthew.",
+"Matthew building a better tomorrow.",
+"Matthew keep it coming.",
+"The Joy of Matthew.",
+"Shake the Bottle, Wake the Matthew.",
+"Beware of Expensive Matthew.",
+"Matthew has what it takes.",
+"Matthew, good.",
+"The World's Favourite Matthew.",
+"Feel good with Matthew.",
+"Everyone wants a Matthew.",
+"Just One Matthew - Give It To Me!",
+"The Coolest Matthew on Ice.",
+"Matthewize me.",
+"Connect with Matthew.",
+"Matthew, the original.",
+"Lucky Matthew.",
+"Matthew rocks.",
+"Be Like Dad, Keep Matthew.",
+"the science of Matthew.",
+"Matthew the solution.",
+"Live Matthew.",
+"Only The Crumbliest Flakiest Matthew.",
+"What Can Matthew Do For You? Matthew when you're out of time.",
+"No Matthew, no kiss.",
+"It's a Lot Less Matthew Than a Hover.",
+"Too Orangey for Matthew.",
+"Free Matthew for all.",
+"Time To Make The Matthew.",
+"It's That Matthew Feeling.",
+"Don't worry, Matthew takes care.",
+"Matthew is the sound of the future.",
+"Call a friend, call Matthew.",
+"It Does Exactly What It Says On The Matthew.",
+"No-One Does Chicken Like Matthew.",
+"Matthew gets you goin'.",
+"Matthew Wanted.",
+"Get In My Matthew.",
+"Matthew is the only way to be happy.",
+"The Best Part of Waking Up is Matthew in Your Cup.",
+"That's Handy, Harry!",
+"Stick It In The Matthew.",
+"Matthew never lies.",
+"See you at Matthew.",
+"Wear Matthew.",
+"My Matthew is mine.",
+"Matthew solves your problems.",
+"Don't Forget The Matthew, Mum.",
+"Santa, all I want is Matthew.",
+"The Future of Matthew.",
+"Matthew, the clever way.",
+"Loves the Matthew You Hate.",
+"All you need is Matthew.",
+"Matthew heads above the rest.",
+"For a Hard-Earned Thirst, Matthew.",
+"High life with Matthew.",
+"Try Matthew, You'll Like It.",
+"Matthew, love it or leave it.",
+"Matthew only.",
+"Matthew chews 'em up and spits 'em out.",
+"The best darn Matthew you can get.",
+"Matthew is good for you.",
+"The Incredible, Edible Matthew.",
+"Taste the Matthew.",
+"Ooh la la, Matthew.",
+"Matthew for me!",
+"Matthew is the word.",
+"Matthew, and on, and on.",
+"Matthew, does the job.",
+"Matthew Not Included.",
+"Cuts Matthew Time in Half.",
+"Matthew Is Job 1.",
+"It's a Matthew Adventure.",
+"A leaner, meaner Matthew It's the Matthew You Can See.",
+"Matthew better than best.",
+"Matthew - Just do it.",
+"Made To Make Your Matthew Water.",
+"Life's Pretty Straight Without Matthew.",
+"See the Face You Love Light Up With Matthew.",
+"Cleans Right Round The Matthew.",
+"People like Matthew.",
+"The Curiously Strong Matthew.",
+"Matthew when it has to get done.",
+"The best Matthew in the world.",
+"Just Matthew.",
+"World's finest Matthew.",
+"Tonight, Let It Be Matthew.",
+"The Power of Matthew.",
+"The queen buys Matthew.",
+"The Lion Goes from Matthew to Matthew.",
+"Hungry? Why Wait? Grab a Matthew.",
+"Snap!Crackle!Matthew!",
+"Happiness is Matthew-Shaped.",
+"Get the Matthew Habit.",
+"It Makes Your Matthew Smack.",
+"Your Flexible Matthew.",
+"The Science Of Matthew.",
+"The goddess made Matthew.",
+"Start the day with Matthew.",
+"We Do Matthew Right.",
+"Matthew - as good as it gets!",
+"Oh Hungry? Oh Matthew.",
+"Built Matthew Tough.",
+"Thank Matthew It's Friday.",
+"Matthew get's you where you're going.",
+"The Home of Matthew.",
+"Inspired by Matthew.",
+"Just Do Matthew.",
+"Got Matthew? Matthew is so Bracing.",
+"Say Matthew.",
+"If You've Got the Time, We've Got the Matthew.",
+"My Matthew is better than your Matthew.",
+"free Matthew with your purchase.",
+"Please Don't Squeeze The Matthew.",
+"I need Matthew right now.",
+"It Takes A Tough Man To Make A Tender Matthew.",
+"Matthew, just the best.",
+"We're Always Low Matthew.",
+"Stay cool with Matthew.",
+"Matthew.It's Everywhere You Wanna Be.",
+"My Goodness, My Matthew!",
+"Let Your Fingers Do the Walking Through the Matthew.",
+"It's Not All Matthew, Matthew, Matthew, you know.",
+"Matthew - If you love Matthew.",
+"Our Matthew beats last years Matthew.",
+"There's First Love, and There's Matthew Love.",
+"Matthew - Your personal entertainer.",
+"No need to worry with Matthew.",
+"3.2.1.Matthew.",
+"This is the best Matthew you can get.",
+"Always the real thing, always Matthew.",
+"Do you know Matthew? Vorsprung Durch Matthew.",
+"Designed for Matthew, Engineered to Last.",
+"To Our Members, We're The Fourth Matthew.",
+"There's Only One Matthew.",
+"Matthew the river of life.",
+"Every Matthew has a story.",
+"Prolongs Active Matthew.",
+"Matthew for your kids!",
+"If Only Everything in Life was as Reliable as a Matthew.",
+"Mild Green Matthew Liquid.",
+"There's only one thing in the world I want and that is Matthew.",
+"Plink, Plink, Matthew.",
+"Your Matthew, Right Away.",
+"Matthew for all.",
+"Naughty little Matthew.",
+"Matthew always and forever.",
+"Where the hell is Matthew? Problem? The Solution:Matthew.",
+"Who Would You Have A Matthew With? Matthew, the real thing.",
+"Does She or Doesn't She? Only Her Matthew Knows for Sure.",
+"Sweet as the Moment When the Matthew Went 'Pop' Live in Your Matthew, Play in Ours.",
+"Tell Them About The Matthew, Mummy.",
+"Matthew for all time.",
+"Matthew, any time of day.",
+"Bigger.Better.Matthew.",
+"My Anti-Drug is Matthew.",
+"Matthew - when you just feel like it.",
+"The Matthew universe.",
+"I believe in Matthew.",
+"Matthew: The Other White Meat.",
+"Pride of the Matthew For Over a Hundred Years.",
+"You Too Can Have A Matthew Like Mine.",
+"Lipsmackin' Thirstquenchin' Acetastin' Motivatin' Goodbuzzin' Cooltalkin' Highwalkin' Fastlivin' Evergivin' Coolfizzin' Matthew.",
+"When you say Matthew you've said it all.",
+"Run For The Matthew.",
+"Matthew when only the best will do.",
+"Matthew is the buzz.",
+"The American Way of Matthew.",
+"Power For Your Matthew.",
+"Beanz Meanz Matthew.",
+"Every Bubble's Passed Its Matthew.",
+"Get Matthew before your friend does.",
+"Simple Impartial Matthew.",
+"Matthew? Yes please.",
+"I'm not Just the Matthew, I'm a Member.",
+"Why Can't Everything Orange Be Matthew? Matthew, a radical new idea.",
+"Make Every Matthew Count.",
+"The World's Local Matthew.",
+"Super Matthew is Almost Here.",
+"Matthew stays on track.",
+"Matthew soothes the nerves.",
+"Matthew the only way to fly.",
+"Matthew - It Looks Good on You.",
+"When You've Got Matthew, Flaunt It.",
+"Just gotta have Matthew.",
+"A nice shiny new Matthew.",
+"Out Of The Strong Came Forth Matthew.",
+"Matthew will love you forever.",
+"Designed for Matthew.",
+"Be inspired by Matthew.",
+"The Too Good to Hurry Matthew.",
+"Matthew - Yabba Dabba Duh!",
+"A Glass and a Half in Every Matthew.",
+"The Matthew Goes Straight to your Head.",
+"Matthew makes me want to do it again.",
+"Matthew.one is not enough.",
+"Matthew values.",
+"It's Shake 'n' Matthew, and I Helped.",
+"Let's Matthew!",
+"Matthewtastic!",
+"There Ain't No Party Like A Matthew Party.",
+"Matthew just what the doctor ordered.",
+"Let's talk about Matthew.",
+"Matthew, the best you can get!",
+"Does the Hard Matthew for You.",
+"You Can't Get Quicker Than a Matthew Fitter.",
+"You Need A Matthew.",
+"Get Matthew, forget the rest.",
+"Go farther with Matthew.",
+"Want a suggestion? - Matthew!",
+"Matthew.",
+"Oh my gods, it's a Matthew.",
+"Matthew loaded for bear.",
+"Matthew pointing in the right direction.",
+"Matthew Keeps Going and Going.",
+"There's More Than One Way To Eat A Matthew.",
+"Matthew for a better future.",
+"It's nothing but Matthew Matthew is a female force.",
+"The Lighter Way To Enjoy Matthew.",
+"Get the Door - It's Matthew.",
+"Matthew will make you feel better.",
+"Make the world a better place with Matthew.",
+"Just for the Taste of Matthew.",
+"Enjoy Matthew.",
+"You wouldn't want to miss Matthew.",
+"My Matthew beats everything.",
+"Change Your Whole Matthew.",
+"The Matthew Bars Are On Me!",
+"Matthew Comes to Those Who Wait.",
+"Everyone should believe in Matthew.",
+"Matthew for your life.",
+"What is Matthew? Makes You Feel Matthew Again.",
+"Heal the world with Matthew.",
+"8 out of 10 Owners who Expressed a Preference said Their Cats Preferred Matthew.",
+"Matthew gets the job done.",
+"Hey, have you tried Matthew? Happiness is a Cigar Called Matthew.",
+"Never Knowingly Matthew.",
+"Bring Out The Matthew.",
+"Wouldn't You Like To Be A Matthew Too? Fresh from the Captain's Matthew.",
+"Our Matthew is bigger!",
+"Give the Dog a Matthew.",
+"Because Matthew Can't Drive.",
+"Where Do You Want Matthew To Go Today? Matthew keeps going, and going, and going.",
+"an you feel Matthew? One goal, one passion - Matthew.",
+"Matthew, it's as simple as that!",
+"Matthew - once you have it, you love it.",
+"It's time to think about Matthew.",
+"Matthew Tested, Mother Approved.",
+"Dial Down the Matthew.",
+"We Don't Make Matthew.",
+"We Make Matthew Better.",
+"The facts show Matthew is tops.",
+"Matthew.",
+"We build smiles.",
+"Matthew eats the competition.",
+"Matthew is What We Do.",
+"Little.Yellow.Different.Matthew.",
+"Matthew, try it you'll like it!",
+"Nothing to worry about with Matthew.",
+"Matthew-Lickin' Good.",
+"Come to Life. Come to Matthew.",
+"Central Heating for Matthew.",
+"The Queen of Matthew.",
+"Matthew, pure lust.",
+"Matthew when nothing else will do.",
+"Matthew for you!",
+"Matthew gets you through the night.",
+"Matthew, one for all.",
+"Matthew a cut above the rest.",
+"Matthew's like heaven.",
+"I want Matthew and I want it now.",
+"The Real Smell of Matthew.",
+"The Most Interesting Matthew in the World.",
+"The Matthew effect.",
+"Turn Loose The Matthew.",
+"Matthew right as rain.",
+"Keep going well, keep going Matthew.",
+"You're in Good Hands with Matthew.",
+"Pleasing Matthew the World Over.",
+"Recommended By Dr.Matthew.",
+"Matthew shows good taste.",
+"The Cookie That Thinks It's a Matthew.",
+"I can't believe it's Matthew.",
+"I Want My Matthew.",
+"The Spirit of Matthew.",
+"That'll be the Matthew.",
+"Award winning Matthew.",
+"Don't Hold Matthew Back.",
+"Long life Matthew.",
+"It's Different in a Matthew.",
+"Are you ready for Matthew? Matthew moments.",
+"Matthew gets me excited.",
+"Matthew - empowering people.",
+"The Good Matthew Kids Go For.",
+"I'd walk a mile for Matthew.",
+"Don't Get Mad, Get Matthew.",
+"Everything We Do is Driven by Matthew.",
+"Matthew outshines the rest.",
+"Kids Will Do Anything For Matthew.",
+"Absolut Matthew.",
+"Simply the best Matthew.",
+"With a name like Matthew, it has to be good.",
+"A Matthew A Day Helps You Work, Rest and Play.",
+"Free Matthew.",
+"Go To Work On A Matthew.",
+"Matthew is going places.",
+"The Matthew Of Paradise.",
+"Hope It's Matthew, It's Matthew, We Hope It's Matthew.",
+"Matthew the best part of the day.",
+"Matthew, your way!",
+"Drinka Pinta Matthew A Day.",
+"Saved by Matthew!",
+"Matthew makes me happy.",
+"All You Need is a Matthew and a Dream.",
+"If You Can't Beat Matthew, Join Matthew.",
+"Gives A Meal Matthew-Appeal.",
+"This Is Not Your Father's Matthew.",
+"I've Seen The Future, and It's Matthew-Shaped.",
+"Feel it - Matthew!",
+"Matthew - a safe place in an unsafe world!",
+"Free for all Matthew.",
+"Half the Matthew, All the Taste.",
+"No finer Matthew can be found.",
+"We Build Matthew.",
+"Matthew is rolling, the others are stoned.",
+"I Think, Therefore Matthew.",
+"It's Just For Me And My Matthew.",
+"You can't stop Matthew.",
+"The Loudest Noise Comes From The Electric Matthew.",
+"A Smooth-Running Matthew is a Relaxing Experience.",
+"Got a Matthew? You're in Luck.",
+"P-P-P-Pick Up A Matthew.",
+"Nonstop Matthew.",
+"You'll Wonder Where the Yellow Went, When You Brush Your Teeth with Matthew.",
+"Matthew takes good care of you.",
+"Matthew rules.",
+"It's A Bit Of A Matthew.",
+"The more Matthew the better.",
+"Long live Matthew.",
+"The gods made Matthew.",
+"Matthew - Australian for Beer.",
+"Spreads Straight from the Matthew.",
+"You know when it's Matthew.",
+"Matthew the best of the litter.",
+"Matthew brings out the best.",
+"See my shiny new Matthew? Do The Matthew.",
+"Things Happen After a Matthew.",
+"America's Most Trusted Matthew.",
+"This Is The Age Of The Matthew.",
+"So Easy, No Wonder Matthew is #1.",
+"Matthew - The Appetizer!",
+"Matthew Is Good For You.",
+"Just Like Matthew Used To Make.",
+"The Passionate Pursuit of Matthew.",
+"Matthew for people who want more.",
+"We All Adore a Matthew.",
+"Matthew the wise choice.",
+"Matthew lasts longer.",
+"More Than Just a Matthew.",
+"Why Have Cotton When You Can Have Matthew? Takes a Matthew but it Keeps on Tickin'.",
+"Ding-Dong!Matthew Calling!",
+"Double the Pleasure, Double the Matthew.",
+"Red hot Matthew.",
+"Wrapped up with Matthew.",
+"Do it with Matthew.",
+"See the Matthew, Feel the Shine.",
+"Matthew, what else? Matthew, created by nature.",
+"Matthew the clear choice.",
+"Mattheweriffic!",
+"Snap Into A Slim Matthew.",
+"Solutions For a Small Matthew.",
+"You Deserve A Matthew Today.",
+"I Was a Matthew Weakling.",
+"Gotta Lotta Matthew.",
+"Oh my goddess, it's a Matthew.",
+
+      ];
+      let currentLineIndex = -1;  // Start with no line selected
+      let lastChangeTime = 0;
+
+      function getRandomLine() {
+        let newIndex;
+        do {
+          newIndex = Math.floor(Math.random() * lines.length);
+        } while (newIndex === currentLineIndex && lines.length > 1);
+        return newIndex;
+      }
+
+      // WebGL vars
+      let gl, programInfo, positionBuffer;
+      let textTexture;
+      let offscreenCanvas, offscreenCtx;
+
+      // Playlist management
+      let playlist = [];
+      let currentTrackIndex = -1;
+
+      function updateTrackInfo() {
+        if (currentTrackIndex >= 0 && currentTrackIndex < playlist.length) {
+          const fileName = playlist[currentTrackIndex].name;
+          trackInfo.textContent = `${currentTrackIndex + 1}/${playlist.length}: ${fileName}`;
+        } else {
+          trackInfo.textContent = 'No tracks loaded';
+        }
+      }
+
+      function handleTrackEnd() {
+        if (playlist.length > 0) {
+          const newIndex = (currentTrackIndex + 1) % playlist.length;
+          loadTrack(newIndex);
+        }
+      }
+
+      function setupAudioElement(audioElement) {
+        // Remove any existing event listeners
+        const newAudioElement = audioElement.cloneNode(true);
+        audioElement.parentNode.replaceChild(newAudioElement, audioElement);
+        
+        // Add event listeners to the new element
+        newAudioElement.addEventListener('ended', handleTrackEnd);
+        newAudioElement.addEventListener('pause', () => cancelAnimationFrame(animationId));
+        
+        return newAudioElement;
+      }
+
+      function loadTrack(index) {
+        if (index >= 0 && index < playlist.length) {
+          currentTrackIndex = index;
+          const file = playlist[index];
+          const fileURL = URL.createObjectURL(file);
+          
+          // Stop current playback
+          audioElement.pause();
+          
+          // Clean up old audio context
+          if (audioContext) {
+            cancelAnimationFrame(animationId);
+            if (sourceNode) {
+              sourceNode.disconnect();
+            }
+            if (analyserNode) {
+              analyserNode.disconnect();
+            }
+            audioContext.close();
+          }
+          
+          // Create new audio element
+          const newAudioElement = document.createElement('audio');
+          newAudioElement.controls = true;
+          newAudioElement.style.position = 'absolute';
+          newAudioElement.style.bottom = '20px';
+          newAudioElement.style.left = '50%';
+          newAudioElement.style.transform = 'translateX(-50%)';
+          newAudioElement.style.width = '300px';
+          newAudioElement.style.zIndex = '2';
+          
+          // Replace old audio element with new one
+          audioElement.parentNode.replaceChild(newAudioElement, audioElement);
+          audioElement = setupAudioElement(newAudioElement);
+          
+          // Set source and load
+          audioElement.src = fileURL;
+          audioElement.load();
+          
+          // Setup new audio context
+          setupAudioContext();
+          
+          // Start playback
+          audioElement.play().catch(error => {
+            console.error('Error playing audio:', error);
+          });
+          
+          updateTrackInfo();
+        }
+      }
+
+      // Handle folder selection
+      folderInput.addEventListener('change', function(evt) {
+        if (!evt.target.files.length) return;
+        
+        // Filter for MP3 files and sort them
+        playlist = Array.from(evt.target.files)
+          .filter(file => file.name.toLowerCase().endsWith('.mp3'))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        
+        if (playlist.length > 0) {
+          playlistControls.style.display = 'block';
+          loadTrack(0);
+        }
+      });
+
+      // Handle single file selection
+      fileInput.addEventListener('change', function(evt) {
+        if (!evt.target.files.length) return;
+        
+        // Create a single-item playlist
+        playlist = [evt.target.files[0]];
+        playlistControls.style.display = 'block';
+        loadTrack(0);
+      });
+
+      // Handle playlist navigation
+      prevTrackBtn.addEventListener('click', () => {
+        if (playlist.length > 0) {
+          const newIndex = (currentTrackIndex - 1 + playlist.length) % playlist.length;
+          loadTrack(newIndex);
+        }
+      });
+
+      nextTrackBtn.addEventListener('click', () => {
+        if (playlist.length > 0) {
+          const newIndex = (currentTrackIndex + 1) % playlist.length;
+          loadTrack(newIndex);
+        }
+      });
+
+      // Initialize WebGL
+      function initWebGL() {
+        gl = glCanvas.getContext('webgl');
+        if (!gl) { console.error('WebGL not supported'); return; }
+        const vsSource = `
+          attribute vec2 a_position;
+          varying vec2 v_uv;
+          void main() {
+            v_uv = (a_position + 1.0) * 0.5;
+            gl_Position = vec4(a_position, 0.0, 1.0);
+          }
+        `;
+        const fsSource = `
+          precision mediump float;
+          uniform sampler2D u_texture;
+          uniform float u_time;
+          uniform float u_spinAngle;
+          uniform float u_speed;
+          uniform vec2 u_resolution;
+          uniform float u_segments;
+          uniform float u_distortPow;
+          uniform float u_distortAmp;
+          uniform float u_hueSpeed;
+          varying vec2 v_uv;
+
+          // Convert to polar coords
+          vec2 toPolar(vec2 uv) {
+            vec2 p = uv - 0.5;
+            float r = length(p);
+            float a = atan(p.y, p.x);
+            return vec2(r, a);
+          }
+          vec2 toCartesian(vec2 polar) {
+            return vec2(cos(polar.y), sin(polar.y)) * polar.x + 0.5;
+          }
+
+          // Hue rotation
+          vec3 hueRotate(vec3 color, float angle) {
+            const mat3 toYIQ = mat3(
+              0.299, 0.587, 0.114,
+              0.596, -0.274, -0.322,
+              0.211, -0.523, 0.312
+            );
+            const mat3 toRGB = mat3(
+              1.0, 0.956, 0.621,
+              1.0, -0.272, -0.647,
+              1.0, -1.106, 1.703
+            );
+            vec3 yiq = toYIQ * color;
+            float hue = atan(yiq.z, yiq.y) + angle;
+            float chroma = length(yiq.yz);
+            yiq.y = chroma * cos(hue);
+            yiq.z = chroma * sin(hue);
+            return toRGB * yiq;
+          }
+
+          void main() {
+            // 3D spin around Y axis
+            vec2 centered = v_uv - 0.5;
+            float angle3d = u_spinAngle;
+            float x3 = cos(angle3d) * centered.x - sin(angle3d) * (centered.y * 0.0);
+            float z3 = sin(angle3d) * centered.x + cos(angle3d) * (centered.y * 0.0);
+            float perspective = 1.5;
+            float scale3 = 1.0 / (perspective - z3);
+            vec2 uv3 = vec2(x3, centered.y) * scale3 + 0.5;
+
+            // Psychedelic hue shift
+            float hueAngle = u_time * u_hueSpeed;
+
+            // Kaleidoscope on rotated UV
+            vec2 polar = toPolar(uv3);
+            float angleSeg = 2.0 * 3.14159 / u_segments;
+            float angle = mod(polar.y + u_time * u_speed, angleSeg);
+            angle = abs(angle - 0.5 * angleSeg);
+            polar.y = angle;
+            float distortedR = pow(polar.x, u_distortPow) * (1.0 + u_distortAmp * sin(u_time + polar.y * u_segments));
+            polar.x = distortedR;
+            vec2 sampleUV = toCartesian(polar);
+            vec4 color = texture2D(u_texture, sampleUV);
+            // Apply hue rotation
+            vec3 shifted = hueRotate(color.rgb, hueAngle);
+            gl_FragColor = vec4(shifted, color.a);
+          }
+        `;
+        const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
+        const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
+        const shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) { console.error('Shader error: ' + gl.getProgramInfoLog(shaderProgram)); return; }
+        programInfo = {
+          program: shaderProgram,
+          attribLocations: { position: gl.getAttribLocation(shaderProgram, 'a_position') },
+          uniformLocations: {
+            texture: gl.getUniformLocation(shaderProgram, 'u_texture'),
+            time: gl.getUniformLocation(shaderProgram, 'u_time'),
+            spinAngle: gl.getUniformLocation(shaderProgram, 'u_spinAngle'),
+            speed: gl.getUniformLocation(shaderProgram, 'u_speed'),
+            resolution: gl.getUniformLocation(shaderProgram, 'u_resolution'),
+            segments: gl.getUniformLocation(shaderProgram, 'u_segments'),
+            distortPow: gl.getUniformLocation(shaderProgram, 'u_distortPow'),
+            distortAmp: gl.getUniformLocation(shaderProgram, 'u_distortAmp'),
+            hueSpeed: gl.getUniformLocation(shaderProgram, 'u_hueSpeed')
+          }
+        };
+        positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+        offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = glCanvas.width;
+        offscreenCanvas.height = glCanvas.height;
+        offscreenCtx = offscreenCanvas.getContext('2d');
+        textTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, textTexture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        // Enable blending for feedback trail
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      }
+      function loadShader(gl, type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { console.error('Shader compile error: ' + gl.getShaderInfoLog(shader)); gl.deleteShader(shader); return null; }
+        return shader;
+      }
+      function resize() {
+        glCanvas.width = window.innerWidth;
+        glCanvas.height = window.innerHeight;
+        if (offscreenCanvas) { offscreenCanvas.width = glCanvas.width; offscreenCanvas.height = glCanvas.height; }
+        if (gl) gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+      }
+      window.addEventListener('resize', resize);
+      function updateTextTexture() {
+        offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+        offscreenCtx.font = `${textSize}px Helvetica`;
+        offscreenCtx.fillStyle = '#fff';
+        offscreenCtx.textAlign = 'center';
+        offscreenCtx.textBaseline = 'middle';
+        offscreenCtx.fillText(textContainer.textContent, offscreenCanvas.width / 2, offscreenCanvas.height / 2);
+        gl.bindTexture(gl.TEXTURE_2D, textTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, offscreenCanvas);
+      }
+      function renderKaleidoscope(time) {
+        if (!gl) return;
+        const t = time * 0.001;
+        // Clear with feedbackAlpha to create trail
+        gl.clearColor(0.0, 0.0, 0.0, feedbackAlpha);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.useProgram(programInfo.program);
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.enableVertexAttribArray(programInfo.attribLocations.position);
+        gl.vertexAttribPointer(programInfo.attribLocations.position, 2, gl.FLOAT, false, 0, 0);
+        // Map spin angle based on time
+        const spinAngle = t * (spinSpeedMin + (spinSpeedMax - spinSpeedMin) * 0.5);
+        // Pass uniforms
+        gl.uniform1f(programInfo.uniformLocations.time, t);
+        gl.uniform1f(programInfo.uniformLocations.spinAngle, spinAngle);
+        gl.uniform1f(programInfo.uniformLocations.speed, speed);
+        gl.uniform2f(programInfo.uniformLocations.resolution, glCanvas.width, glCanvas.height);
+        gl.uniform1f(programInfo.uniformLocations.segments, segments);
+        // Compute dynamic distort power between min and max using sine
+        const dynamicDistortPow = distortPowMin + (distortPowMax - distortPowMin) * (0.5 + 0.5 * Math.sin(t));
+        gl.uniform1f(programInfo.uniformLocations.distortPow, dynamicDistortPow);
+        gl.uniform1f(programInfo.uniformLocations.distortAmp, distortAmp);
+        gl.uniform1f(programInfo.uniformLocations.hueSpeed, hueSpeed);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, textTexture);
+        gl.uniform1i(programInfo.uniformLocations.texture, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
+      function setupAudioContext() {
+        if (audioContext) {
+          cancelAnimationFrame(animationId);
+          if (sourceNode) {
+            sourceNode.disconnect();
+          }
+          if (analyserNode) {
+            analyserNode.disconnect();
+          }
+          audioContext.close();
+        }
+        
+        audioContext = new (window.AudioContext)();
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 256;
+        bufferLength = analyserNode.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+        
+        // Create new source node
+        sourceNode = audioContext.createMediaElementSource(audioElement);
+        sourceNode.connect(analyserNode);
+        analyserNode.connect(audioContext.destination);
+        
+        audioElement.addEventListener('play', () => {
+          if (audioContext.state === 'suspended') {
+            audioContext.resume();
+          }
+          lastChangeTime = audioElement.currentTime;
+          wasBelowThreshold = true;
+          initWebGL();
+          resize();
+          renderLoop();
+        });
+      }
+      function renderLoop(time) {
+        // Continuous text hue rotation
+        const tSec = time * 0.001;
+        textContainer.style.filter = `hue-rotate(${(tSec * hueSpeed * 60) % 360}deg)`;
+        analyserNode.getByteFrequencyData(dataArray);
+        let sum = 0; for (let i = 0; i < bufferLength; i++) sum += dataArray[i];
+        const average = sum / bufferLength;
+        const now = audioElement.currentTime;
+        
+        // Initialize with first line if none selected
+        if (currentLineIndex === -1) {
+          currentLineIndex = Math.floor(Math.random() * lines.length);
+          textContainer.textContent = lines[currentLineIndex];
+          lastChangeTime = now;
+        }
+        
+        if (average <= beatThreshold) { 
+          wasBelowThreshold = true; 
+        }
+        
+        if (wasBelowThreshold && average > beatThreshold && (now - lastChangeTime) >= minInterval) {
+          let newIndex;
+          do {
+            newIndex = Math.floor(Math.random() * lines.length);
+          } while (newIndex === currentLineIndex && lines.length > 1);
+          
+          currentLineIndex = newIndex;
+          textContainer.textContent = lines[currentLineIndex];
+          lastChangeTime = now;
+          wasBelowThreshold = false;
+        }
+        const minScale = 1.0; const maxScale = 2.0;
+        const scaleFactor = minScale + (average / 255) * (maxScale - minScale);
+        textContainer.style.transform = `translate(-50%, -50%) scale(${scaleFactor})`;
+        // Update visible text size
+        textContainer.style.fontSize = `${textSize}px`;
+        const hue = Math.round((average / 255) * 360);
+        textContainer.style.color = `hsl(${hue}, 80%, 60%)`;
+        updateTextTexture();
+        renderKaleidoscope(time);
+        animationId = requestAnimationFrame(renderLoop);
+      }
+      audioElement.addEventListener('pause', () => cancelAnimationFrame(animationId));
+
+      // Settings UI logic
+      settingsBtn.addEventListener('click', () => { settingsModal.style.display = 'flex'; });
+      closeSettings.addEventListener('click', () => { settingsModal.style.display = 'none'; });
+      beatThresholdSlider.addEventListener('input', () => { beatThreshold = +beatThresholdSlider.value; beatThresholdVal.textContent = beatThreshold; });
+      minIntervalInput.addEventListener('input', () => { minInterval = +minIntervalInput.value; minIntervalVal.textContent = minInterval; });
+      textSizeSlider.addEventListener('input', () => { textSize = +textSizeSlider.value; textSizeVal.textContent = textSize; });
+      spinSpeedMinSlider.addEventListener('input', () => { spinSpeedMin = +spinSpeedMinSlider.value; spinSpeedMinVal.textContent = spinSpeedMin.toFixed(1); });
+      spinSpeedMaxSlider.addEventListener('input', () => { spinSpeedMax = +spinSpeedMaxSlider.value; spinSpeedMaxVal.textContent = spinSpeedMax.toFixed(1); });
+      speedSlider.addEventListener('input', () => { speed = +speedSlider.value; speedVal.textContent = speed.toFixed(1); });
+      segmentsSlider.addEventListener('input', () => { segments = +segmentsSlider.value; segmentsVal.textContent = segments; });
+      distortPowMinSlider.addEventListener('input', () => { distortPowMin = +distortPowMinSlider.value; distortPowMinVal.textContent = distortPowMin.toFixed(1); });
+      distortPowMaxSlider.addEventListener('input', () => { distortPowMax = +distortPowMaxSlider.value; distortPowMaxVal.textContent = distortPowMax.toFixed(1); });
+      distortAmpSlider.addEventListener('input', () => { distortAmp = +distortAmpSlider.value; distortAmpVal.textContent = distortAmp.toFixed(2); });
+      hueSpeedSlider.addEventListener('input', () => { hueSpeed = +hueSpeedSlider.value; hueSpeedVal.textContent = hueSpeed.toFixed(1); });
+      feedbackAlphaSlider.addEventListener('input', () => { feedbackAlpha = +feedbackAlphaSlider.value; feedbackAlphaVal.textContent = feedbackAlpha.toFixed(2); });
+    })();
+  </script>
+</body>
+</html>
