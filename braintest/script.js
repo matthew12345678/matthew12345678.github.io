@@ -307,7 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Default presets
     const defaultPresets = {
-        'updown': {
+        'scraper': {
             modules: [
                 {
                     id: "0",
@@ -355,7 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         },
-        'Water Chirper': {
+        'Chirper': {
             modules: [
                 {
                     id: "0",
@@ -403,7 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         },
-        'Squiddy': {
+        'bubbler': {
             modules: [
                 {
                     id: "0",
@@ -451,182 +451,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         },
-        'Lost': {
-            modules: [
-                {
-                    id: "0",
-                    waveType: "reverse-sawtooth",
-                    customPoints: [],
-                    speed: -0.75,
-                    speedMin: -7,
-                    speedMax: 1,
-                    depth: 0.5,
-                    low: 200,
-                    high: 1100,
-                    phase: 149,
-                    logScale: 1.77,
-                    enabled: true
-                },
-                {
-                    id: "1",
-                    waveType: "square",
-                    customPoints: [],
-                    speed: 0.56,
-                    speedMin: -7,
-                    speedMax: 1,
-                    depth: 0.5,
-                    low: -1,
-                    high: 1,
-                    phase: 0,
-                    logScale: 1,
-                    enabled: true
-                }
-            ],
-            global: {
-                carrierType: 'sine',
-                frequency: 440,
-                volume: 0.5,
-                filter: {
-                    type: 'lowpass',
-                    frequency: 45,
-                    Q: 18.1386,
-                    gain: 0
-                },
-                reverb: {
-                    mix: 0.25,
-                    preDelay: 10,
-                    decay: 0.01
-                }
-            }
-        },
-        'Thumper': {
-            modules: [
-                {
-                    id: "0",
-                    waveType: "sine",
-                    customPoints: [],
-                    speed: 1.98,
-                    speedMin: -5.62,
-                    speedMax: 1.98,
-                    depth: 1,
-                    low: 5000,
-                    high: 1,
-                    phase: 87,
-                    logScale: 1,
-                    enabled: true
-                },
-                {
-                    id: "1",
-                    waveType: "reverse-sawtooth",
-                    customPoints: [],
-                    speed: 1.05,
-                    speedMin: -6.02,
-                    speedMax: 2.71,
-                    depth: 0.97,
-                    low: -1,
-                    high: 1,
-                    phase: 64,
-                    logScale: 0.1,
-                    enabled: true
-                }
-            ],
-            global: {
-                carrierType: 'square',
-                frequency: 262,
-                volume: 1,
-                filter: {
-                    type: 'lowpass',
-                    frequency: 33,
-                    Q: 20.4231,
-                    gain: 0
-                },
-                reverb: {
-                    mix: 0.01,
-                    preDelay: 20,
-                    decay: 0
-                }
-            }
-        },
-        'Modulated Square': {
-            modules: [
-                {
-                    waveType: 'square',
-                    speed: -1.5,
-                    depth: 0.7,
-                    low: -1,
-                    high: 1,
-                    phase: 0,
-                    logScale: 1,
-                    enabled: true
-                },
-                {
-                    waveType: 'sine',
-                    speed: -2.5,
-                    depth: 0.4,
-                    low: -1,
-                    high: 1,
-                    phase: 45,
-                    logScale: 1,
-                    enabled: true
-                }
-            ],
-            global: {
-                carrierType: 'square',
-                frequency: 220,
-                volume: 0.4,
-                filter: {
-                    type: 'lowpass',
-                    frequency: 800,
-                    Q: 2,
-                    gain: 0
-                },
-                reverb: {
-                    mix: 0.2,
-                    preDelay: 30,
-                    decay: 0.4
-                }
-            }
-        },
-        'Complex Modulation': {
-            modules: [
-                {
-                    waveType: 'triangle',
-                    speed: -2,
-                    depth: 0.8,
-                    low: -1,
-                    high: 1,
-                    phase: 0,
-                    logScale: 1.5,
-                    enabled: true
-                },
-                {
-                    waveType: 'sawtooth',
-                    speed: -3,
-                    depth: 0.6,
-                    low: -1,
-                    high: 1,
-                    phase: 180,
-                    logScale: 1.2,
-                    enabled: true
-                }
-            ],
-            global: {
-                carrierType: 'sine',
-                frequency: 330,
-                volume: 0.6,
-                filter: {
-                    type: 'bandpass',
-                    frequency: 1200,
-                    Q: 3,
-                    gain: 6
-                },
-                reverb: {
-                    mix: 0.4,
-                    preDelay: 50,
-                    decay: 0.6
-                }
-            }
-        }
+        
+
     };
 
     // Initialize audio context on first user interaction
@@ -1187,17 +1013,33 @@ class WaveModule {
                 this.customPoints = [];
                 p.drawCtx.clearRect(0, 0, p.drawCanvas.width, p.drawCanvas.height);
                 p.drawCtx.beginPath();
-                const r = p.drawCanvas.getBoundingClientRect();
-                const pt = { x: e.clientX - r.left, y: e.clientY - r.top };
-                p.drawCtx.moveTo(pt.x, pt.y);
-                this.customPoints.push(pt);
+                
+                // Get canvas rect and scale
+                const rect = p.drawCanvas.getBoundingClientRect();
+                const scaleX = p.drawCanvas.width / rect.width;
+                const scaleY = p.drawCanvas.height / rect.height;
+                
+                // Calculate correct canvas coordinates
+                const x = (e.clientX - rect.left) * scaleX;
+                const y = (e.clientY - rect.top) * scaleY;
+                
+                p.drawCtx.moveTo(x, y);
+                this.customPoints.push({ x, y });
             });
             p.drawCanvas.addEventListener('mousemove', e => {
                 if (!drawing) return;
-                const r = p.drawCanvas.getBoundingClientRect();
-                const pt = { x: e.clientX - r.left, y: e.clientY - r.top };
-                this.customPoints.push(pt);
-                p.drawCtx.lineTo(pt.x, pt.y);
+                
+                // Get canvas rect and scale
+                const rect = p.drawCanvas.getBoundingClientRect();
+                const scaleX = p.drawCanvas.width / rect.width;
+                const scaleY = p.drawCanvas.height / rect.height;
+                
+                // Calculate correct canvas coordinates
+                const x = (e.clientX - rect.left) * scaleX;
+                const y = (e.clientY - rect.top) * scaleY;
+                
+                this.customPoints.push({ x, y });
+                p.drawCtx.lineTo(x, y);
                 p.drawCtx.strokeStyle = '#61dafb';
                 p.drawCtx.lineWidth = 2;
                 p.drawCtx.stroke();
