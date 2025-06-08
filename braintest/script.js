@@ -579,13 +579,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const masterVolDisplay = document.getElementById('masterVolDisplay');
     const presetSelector = document.getElementById('presetSelector');
     
-    // Populate preset selector
-    Object.keys(defaultPresets).forEach(presetName => {
-        const option = document.createElement('option');
-        option.value = presetName;
-        option.textContent = presetName;
-        presetSelector.appendChild(option);
-    });
+
 
     // Load preset files from the presets folder
     async function loadPresetFiles() {
