@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Video Player with External Controls Window</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; background-color: #111; color: #eee; display: flex; flex-direction: column; height: 100vh; }
+    #drop-area { flex: 1; border: 3px dashed #555; border-radius: 8px; margin: 1rem; display: flex; align-items: center; justify-content: center; text-align: center; transition: background-color 0.2s, border-color 0.2s; }
+    #drop-area.hover { background-color: rgba(100,100,100,0.1); border-color: #888; }
+    #drop-area p { font-size: 1.2rem; pointer-events: none; }
+    #video-container { width: 100%; flex: 1; background-color: black; position: relative; }
+    #video-container:fullscreen, #video-container:-webkit-full-screen { width: 100%; height: 100%; position: fixed; top: 0; left: 0; background-color: black; display: flex; justify-content: center; align-items: center; }
+    video { display: none; }
+    #video-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: black; }
+    #playlist { max-height: 20vh; overflow-y: auto; margin: 0 1rem 1rem 1rem; background-color: #222; border-radius: 4px; padding: 0.5rem; font-size: 0.9rem; }
+    #playlist .item { padding: 0.25rem 0.5rem; border-bottom: 1px solid #333; cursor: pointer; }
+    #playlist .item:last-child { border-bottom: none; }
+    #playlist .item.playing { background-color: #444; color: #0f0; }
+  </style>
+</head>
+<body>
+
+  <div id="drop-area">
+    <p>Drag &amp; drop a folder (or video files) here<br>▶ It will queue and play all videos in order</p>
+  </div>
+
+  <div id="video-container">
+    <video id="video-player" crossorigin="anonymous" playsinline></video>
+    <canvas id="video-canvas"></canvas>
+  </div>
+
+  <div id="playlist"></div>
+
+  <script>
+    // Elements
+    const dropArea = document.getElementById('drop-area');
+    const playlistEl = document.getElementById('playlist');
+    const videoContainer = document.getElementById('video-container');
+    const videoPlayer = document.getElementById('video-player');
+    const canvas = document.getElementById('video-canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    // Control window reference
+    let controlWin = null;
+
+    // Initial settings
+    videoPlayer.volume = 0.5;
+    videoPlayer.loop = false;
+    let videoFiles = [];
+    let currentIndex = 0;
+
+    window.addEventListener('load', () => {
+      setupDragAndDrop();
+      openControlWindow();
+      setupVideoEndHandler();
+    });
+
+    function setupDragAndDrop() {
+      ['dragenter','dragover','dragleave','drop'].forEach(evt => {
+        dropArea.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); });
+      });
+      ['dragenter','dragover'].forEach(evt => dropArea.addEventListener(evt, () => dropArea.classList.add('hover')));
+      ['dragleave','drop'].forEach(evt => dropArea.addEventListener(evt, () => dropArea.classList.remove('hover')));
+      dropArea.addEventListener('drop', handleDrop);
+    }
+
+    async function handleDrop(e) {
+      videoFiles = [];
+      currentIndex = 0;
+      playlistEl.innerHTML = '';
+      const items = e.dataTransfer.items;
+      const entries = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.webkitGetAsEntry) {
+          const entry = item.webkitGetAsEntry(); if (entry) entries.push(entry);
+        } else {
+          const file = item.getAsFile(); if (file && file.type.startsWith('video/')) videoFiles.push(file);
+        }
+      }
+      async function traverse(entry) {
+        if (entry.isFile) {
+          return new Promise(resolve => entry.file(file => { if (file.type.startsWith('video/')) videoFiles.push(file); resolve(); }));
+        } else if (entry.isDirectory) {
+          const reader = entry.createReader();
+          return new Promise(resolve => {
+            function readAll() {
+              reader.readEntries(async ents => {
+                if (!ents.length) return resolve();
+                await Promise.all(ents.map(child => traverse(child)));
+                readAll();
+              });
+            }
+            readAll();
+          });
+        }
+      }
+      await Promise.all(entries.map(e => traverse(e)));
+      if (!videoFiles.length) {
+        dropArea.querySelector('p').textContent = 'No video files detected.';
+        return;
+      }
+      videoFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      videoFiles.forEach((file, idx) => {
+        const div = document.createElement('div');
+        div.classList.add('item');
+        div.textContent = file.name;
+        div.addEventListener('click', () => playIndex(idx));
+        playlistEl.appendChild(div);
+      });
+      playIndex(0);
+    }
+
+    function openControlWindow() {
+      controlWin = window.open('', 'controls', 'width=400,height=950');
+      if (!controlWin) return;
+      const doc = controlWin.document;
+      doc.write(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head><meta charset="UTF-8"><title>Controls</title>
+          <style>
+            body { margin: 0; font-family: sans-serif; background: #222; color: #eee; padding: 1rem; }
+            .control { margin-bottom: 1rem; }
+            .control label { display: block; margin-bottom: 0.5rem; }
+            .control input, .control button { width: 100%; padding: 0.5rem; margin-bottom: 0.5rem; }
+          </style>
+        </head>
+        <body>
+          <div class="control">
+            <button id="play-btn">Play</button>
+            <button id="pause-btn">Pause</button>
+          </div>
+          <div class="control">
+            <label>Position: <span id="pos-label">0:00 / 0:00</span></label>
+            <input type="range" id="position" min="0" max="0" step="0.1" value="0">
+          </div>
+          <div class="control"><button id="back-btn">«10s</button></div>
+          <div class="control"><button id="forward-btn">10s»</button></div>
+          <div class="control">
+            <label>Rate: <span id="rate-label">1.00x</span></label>
+            <input type="range" id="rate-range" min="0.01" max="2" step="0.01" value="1">
+          </div>
+          <div class="control">
+            <label>Volume: <span id="vol-label">50%</span></label>
+            <input type="range" id="volume-range" min="0" max="1" step="0.01" value="0.5">
+          </div>
+          <div class="control">
+            <button id="loop-btn">Loop: Off</button>
+          </div>
+          <div class="control"><button id="pip-btn">PiP</button></div>
+          <div class="control"><button id="fullscreen-btn">Fullscreen</button></div>
+        </body>
+        </html>
+      `);
+      doc.close();
+      setupControlEvents();
+    }
+
+    function setupControlEvents() {
+      if (!controlWin || controlWin.closed) return;
+      const doc = controlWin.document;
+      doc.getElementById('play-btn').onclick = () => videoPlayer.play();
+      doc.getElementById('pause-btn').onclick = () => videoPlayer.pause();
+      doc.getElementById('position').oninput = e => videoPlayer.currentTime = parseFloat(e.target.value);
+      doc.getElementById('back-btn').onclick = () => skipSeconds(-10);
+      doc.getElementById('forward-btn').onclick = () => skipSeconds(10);
+      doc.getElementById('rate-range').oninput = e => {
+        const r = parseFloat(e.target.value);
+        videoPlayer.playbackRate = r;
+        doc.getElementById('rate-label').textContent = r.toFixed(2) + 'x';
+      };
+      doc.getElementById('volume-range').oninput = e => {
+        const v = parseFloat(e.target.value);
+        videoPlayer.volume = v;
+        doc.getElementById('vol-label').textContent = Math.round(v * 100) + '%';
+      };
+      doc.getElementById('loop-btn').onclick = () => {
+        videoPlayer.loop = !videoPlayer.loop;
+        doc.getElementById('loop-btn').textContent = `Loop: ${videoPlayer.loop ? 'On' : 'Off'}`;
+      };
+      doc.getElementById('pip-btn').onclick = () => videoPlayer.requestPictureInPicture().catch(() => {});
+      doc.getElementById('fullscreen-btn').onclick = () => {
+        if (videoContainer.requestFullscreen) videoContainer.requestFullscreen();
+        else if (videoContainer.webkitRequestFullscreen) videoContainer.webkitRequestFullscreen();
+      };
+    }
+
+    function playIndex(idx) {
+      if (idx < 0 || idx >= videoFiles.length) return;
+      currentIndex = idx;
+      Array.from(playlistEl.children).forEach((c, i) => c.classList.toggle('playing', i === idx));
+      videoPlayer.src = URL.createObjectURL(videoFiles[idx]);
+      videoPlayer.load();
+      videoPlayer.play().catch(() => {});
+    }
+
+    function skipSeconds(s) {
+      videoPlayer.currentTime = Math.min(videoPlayer.duration, Math.max(0, videoPlayer.currentTime + s));
+    }
+
+    function setupVideoEndHandler() {
+      videoPlayer.addEventListener('ended', () => {
+        if (!videoPlayer.loop) {
+          playIndex(currentIndex + 1);
+        }
+      });
+    }
+
+    videoPlayer.addEventListener('loadedmetadata', () => {
+      canvas.width = videoPlayer.videoWidth;
+      canvas.height = videoPlayer.videoHeight;
+      if (controlWin && !controlWin.closed) {
+        const doc = controlWin.document;
+        const posSlider = doc.getElementById('position');
+        const posLabel = doc.getElementById('pos-label');
+        posSlider.max = videoPlayer.duration;
+        posLabel.textContent = formatTime(0) + ' / ' + formatTime(videoPlayer.duration);
+      }
+    });
+
+    videoPlayer.addEventListener('timeupdate', () => {
+      if (controlWin && !controlWin.closed) {
+        const doc = controlWin.document;
+        const posSlider = doc.getElementById('position');
+        const posLabel = doc.getElementById('pos-label');
+        posSlider.value = videoPlayer.currentTime;
+        posLabel.textContent = formatTime(videoPlayer.currentTime) + ' / ' + formatTime(videoPlayer.duration);
+      }
+    });
+
+    // Draw video to canvas
+    function drawFrame() {
+      if (videoPlayer.readyState >= 2) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(videoPlayer, 0, 0, canvas.width, canvas.height);
+      }
+      requestAnimationFrame(drawFrame);
+    }
+    requestAnimationFrame(drawFrame);
+
+    function formatTime(t) {
+      const m = Math.floor(t / 60);
+      const s = Math.floor(t % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+  </script>
+</body>
+</html>
