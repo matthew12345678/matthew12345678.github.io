@@ -1,0 +1,111 @@
+body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    background-color: #f0f0f0;
+    font-family: sans-serif;
+    padding: 10px;
+}
+
+.container {
+    position: relative;
+    border: 2px solid #333;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    margin-bottom: 10px;
+}
+
+#videoFeed {
+    display: block;
+    max-width: 100%;
+    max-height: 80vh;
+}
+
+#overlayCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: auto;
+    cursor: crosshair;
+}
+
+.controls {
+    display: grid;
+    grid-template-columns: auto 1fr auto 1fr auto auto;
+    gap: 8px;
+    align-items: center;
+    background-color: #e0e0e0;
+    border-radius: 5px;
+    padding: 8px;
+    width: 100%;
+    max-width: 800px;
+}
+
+.controls label {
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+#volumeSlider, #frequencySlider {
+    width: 100%;
+    min-width: 100px;
+    max-width: 200px;
+}
+
+#frequencyDisplay {
+    min-width: 70px;
+    text-align: right;
+    font-weight: bold;
+}
+
+#axisChooser {
+    border: 1px solid #ccc;
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+#axisChooser legend {
+    font-size: 0.9em;
+    font-weight: bold;
+    padding: 0 4px;
+    margin: 0;
+}
+
+#axisChooser input[type="radio"] {
+    margin: 0 2px;
+}
+
+#axisChooser label {
+    margin-right: 4px;
+    font-weight: normal;
+}
+
+#waveformColorPicker {
+    height: 25px;
+    padding: 0 2px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+label[for="waveformColorPicker"] {
+    margin: 0;
+}
+
+#liveUpdateCheckbox {
+    margin: 0;
+}
+
+label[for="liveUpdateCheckbox"] {
+    margin: 0;
+    white-space: nowrap;
+}
+
+/* Mirror video + overlay together */
+.container {
+    transform: scaleX(-1);
+    transform-origin: center center;
+}
