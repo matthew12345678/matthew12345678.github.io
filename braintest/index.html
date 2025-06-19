@@ -236,6 +236,13 @@
 </head>
 <body>
     <div class="app-container">
+        <!-- Background Soundtrack Controls -->
+        <div class="control-group" style="margin-bottom: 10px; align-items: center;">
+            <audio id="bgAudio" src="soundscape.mp3" loop></audio>
+            <label for="bgAudioVolume" style="margin-right: 8px; color: var(--accent-color);">Background Volume:</label>
+            <input type="range" id="bgAudioVolume" min="0" max="1" step="0.01" value="0.5" style="width:120px;">
+            <span id="bgAudioVolumeDisplay" style="width:40px; display:inline-block; text-align:right; color: var(--accent-color);">0.50</span>
+        </div>
         <!-- Water Data Visualizer Section -->
         <div class="section">
             <h1>Water Level Data Visualizer</h1>
