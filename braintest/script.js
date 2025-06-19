@@ -4605,3 +4605,36 @@ class WaveModule {
         }
     }
 } 
+
+// === Background Soundtrack Logic ===
+window.addEventListener('DOMContentLoaded', function() {
+    const bgAudio = document.getElementById('bgAudio');
+    const bgAudioVolume = document.getElementById('bgAudioVolume');
+    const bgAudioVolumeDisplay = document.getElementById('bgAudioVolumeDisplay');
+    if (bgAudio && bgAudioVolume && bgAudioVolumeDisplay) {
+        // Set initial volume
+        bgAudio.volume = parseFloat(bgAudioVolume.value);
+        bgAudioVolumeDisplay.textContent = bgAudioVolume.value;
+
+        // Try to autoplay (may be blocked by browser)
+        const tryPlay = () => {
+            bgAudio.play().catch(() => {
+                // Wait for user gesture if autoplay is blocked
+                const enableAudio = () => {
+                    bgAudio.play();
+                    window.removeEventListener('click', enableAudio);
+                    window.removeEventListener('keydown', enableAudio);
+                };
+                window.addEventListener('click', enableAudio);
+                window.addEventListener('keydown', enableAudio);
+            });
+        };
+        tryPlay();
+
+        // Volume control
+        bgAudioVolume.addEventListener('input', function() {
+            bgAudio.volume = parseFloat(this.value);
+            bgAudioVolumeDisplay.textContent = parseFloat(this.value).toFixed(2);
+        });
+    }
+});
