@@ -10,6 +10,7 @@
     #controls { padding: 10px; background: #f9f9f9; }
     #status { margin-top: 10px; font-size: 14px; }
     .control-group { margin-bottom: 8px; }
+    #logList { margin-top: 10px; font-size: 14px; max-height: 120px; overflow-y: auto; background: #eee; padding: 5px; }
   </style>
 </head>
 <body>
@@ -19,10 +20,14 @@
     <div class="control-group">
       <button id="start">Start Tracking</button>
       <button id="centerMap">Center Map on Me</button>
+      <button id="markPosition">Mark My Position</button>
       <button id="clearLog">Clear Log</button>
+      <button id="exportPrefs">Export Points</button>
+      <input type="file" id="importPrefs" style="display:none">
+      <button onclick="document.getElementById('importPrefs').click()">Import Points</button>
     </div>
     <div class="control-group">
-      <label><input type="checkbox" id="audioToggle" checked> Enable Sound</label><br>
+      <label><input type="checkbox" id="audioToggle" checked> Enable Ding</label><br>
       <label><input type="checkbox" id="loggingToggle" checked> Enable Logging</label>
     </div>
     <div class="control-group">
@@ -30,6 +35,7 @@
       <input type="number" id="radius" value="3" min="0.1" step="0.1">
     </div>
     <div id="status">Waiting to start…</div>
+    <div id="logList"></div>
   </div>
 
   <audio id="beep" src="ding.mp3" preload="auto"></audio>
@@ -41,16 +47,18 @@
       maxZoom: 19
     }).addTo(map);
 
-    const targetPoints = [];
+    let targetPoints = [];
     const log = [];
     let userMarker = null;
     let currentPosition = null;
+    let activeStream = null;
 
     const beep = document.getElementById('beep');
     const status = document.getElementById('status');
     const loggingToggle = document.getElementById('loggingToggle');
     const audioToggle = document.getElementById('audioToggle');
     const radiusInput = document.getElementById('radius');
+    const logList = document.getElementById('logList');
 
     function haversine(lat1, lon1, lat2, lon2) {
       const R = 6371e3;
@@ -61,10 +69,90 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
+    function stopCurrentStream() {
+      if (activeStream) {
+        activeStream.pause();
+        activeStream = null;
+      }
+    }
+
+    function updateLogList() {
+      logList.innerHTML = '';
+      targetPoints.forEach((tp, i) => {
+        const div = document.createElement('div');
+        div.textContent = `#${i + 1} → ${tp.lat.toFixed(4)}, ${tp.lng.toFixed(4)} | ${tp.streamUrl || 'ding'}`;
+        const removeBtn = document.createElement('button');
+        removeBtn.textContent = '❌';
+        removeBtn.onclick = () => {
+          map.removeLayer(tp.marker);
+          targetPoints.splice(i, 1);
+          saveTargetsToLocalStorage();
+          updateLogList();
+        };
+        div.appendChild(removeBtn);
+        logList.appendChild(div);
+      });
+    }
+
+    function checkTriggers(lat, lon) {
+      const triggerRadius = parseFloat(radiusInput.value);
+      for (let tp of targetPoints) {
+        const dist = haversine(lat, lon, tp.lat, tp.lng);
+        if (dist < triggerRadius) {
+          if (tp.streamUrl && tp.streamUrl !== '') {
+            stopCurrentStream();
+            activeStream = new Audio(tp.streamUrl);
+            activeStream.play();
+          } else if (audioToggle.checked) {
+            beep.play();
+          }
+          return true;
+        }
+      }
+      stopCurrentStream();
+      return false;
+    }
+
+    function saveTargetsToLocalStorage() {
+      localStorage.setItem('targetPoints', JSON.stringify(targetPoints.map(p => ({ lat: p.lat, lng: p.lng, streamUrl: p.streamUrl || '' }))));
+    }
+
+    function loadTargetsFromLocalStorage() {
+      const stored = localStorage.getItem('targetPoints');
+      if (stored) {
+        const loadedPoints = JSON.parse(stored);
+        for (let { lat, lng, streamUrl } of loadedPoints) {
+          const marker = L.circle([lat, lng], { radius: 1, color: 'red' }).addTo(map);
+          marker.on('click', () => removePoint(lat, lng));
+          targetPoints.push({ lat, lng, marker, streamUrl });
+        }
+        updateLogList();
+      }
+    }
+
+    function removePoint(lat, lng) {
+      const i = targetPoints.findIndex(p => p.lat === lat && p.lng === lng);
+      if (i !== -1) {
+        map.removeLayer(targetPoints[i].marker);
+        targetPoints.splice(i, 1);
+        saveTargetsToLocalStorage();
+        updateLogList();
+      }
+    }
+
     map.on('click', e => {
       const { lat, lng } = e.latlng;
+      const existing = targetPoints.find(p => Math.abs(p.lat - lat) < 0.0001 && Math.abs(p.lng - lng) < 0.0001);
+      if (existing) {
+        removePoint(existing.lat, existing.lng);
+        return;
+      }
+      const streamUrl = prompt("Enter streaming audio URL for this point (or leave blank for ding):", "");
       const marker = L.circle([lat, lng], { radius: 1, color: 'red' }).addTo(map);
-      targetPoints.push({ lat, lng, marker });
+      marker.on('click', () => removePoint(lat, lng));
+      targetPoints.push({ lat, lng, marker, streamUrl });
+      saveTargetsToLocalStorage();
+      updateLogList();
     });
 
     document.getElementById('start').addEventListener('click', () => {
@@ -79,17 +167,7 @@
             userMarker.setLatLng(currentPosition);
           }
 
-          const triggerRadius = parseFloat(radiusInput.value);
-          let triggered = false;
-
-          for (let tp of targetPoints) {
-            const dist = haversine(latitude, longitude, tp.lat, tp.lng);
-            if (dist < triggerRadius) {
-              if (audioToggle.checked) beep.play();
-              triggered = true;
-              break;
-            }
-          }
+          const triggered = checkTriggers(latitude, longitude);
 
           if (loggingToggle.checked) {
             log.push({ time: Date.now(), lat: latitude, lon: longitude, accuracy });
@@ -113,10 +191,49 @@
       }
     });
 
+    document.getElementById('markPosition').addEventListener('click', () => {
+      if (currentPosition) {
+        const streamUrl = prompt("Enter streaming audio URL for your marker (or leave blank for ding):", "");
+        const marker = L.circleMarker(currentPosition, { radius: 5, color: 'green' }).addTo(map);
+        const lat = currentPosition[0];
+        const lng = currentPosition[1];
+        marker.on('click', () => removePoint(lat, lng));
+        targetPoints.push({ lat, lng, marker, streamUrl });
+        saveTargetsToLocalStorage();
+        updateLogList();
+        checkTriggers(lat, lng);
+      } else {
+        alert('Current GPS location not yet available.');
+      }
+    });
+
     document.getElementById('clearLog').addEventListener('click', () => {
       log.length = 0;
       alert('GPS log cleared.');
     });
+
+    document.getElementById('exportPrefs').addEventListener('click', () => {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(localStorage.getItem('targetPoints'));
+      const dl = document.createElement('a');
+      dl.setAttribute("href", dataStr);
+      dl.setAttribute("download", "gps_points.json");
+      dl.click();
+    });
+
+    document.getElementById('importPrefs').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const points = JSON.parse(event.target.result);
+        targetPoints.forEach(p => map.removeLayer(p.marker));
+        targetPoints = [];
+        localStorage.setItem('targetPoints', JSON.stringify(points));
+        loadTargetsFromLocalStorage();
+      };
+      reader.readAsText(file);
+    });
+
+    loadTargetsFromLocalStorage();
   </script>
 </body>
 </html>
