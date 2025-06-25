@@ -43,9 +43,7 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
     let map = L.map('map').setView([51.5074, -0.1278], 17);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19
-    }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
     let targetPoints = [];
     const log = [];
@@ -157,7 +155,7 @@
 
     document.getElementById('start').addEventListener('click', () => {
       navigator.geolocation.watchPosition(
-        pos => {
+        (pos) => {
           const { latitude, longitude, accuracy } = pos.coords;
           currentPosition = [latitude, longitude];
 
@@ -169,12 +167,20 @@
 
           const triggered = checkTriggers(latitude, longitude);
 
-          if (loggingToggle.checked) {
+          if (loggingToggle && loggingToggle.checked) {
             log.push({ time: Date.now(), lat: latitude, lon: longitude, accuracy });
           }
 
+          const environment = accuracy <= 10 ? '🌤️ Likely outside' : '🏠 Possibly inside';
           status.textContent = `Lat: ${latitude.toFixed(6)}, Lon: ${longitude.toFixed(6)}, Accuracy: ±${accuracy.toFixed(1)}m` +
-            (triggered ? ' ✅ Triggered!' : '');
+            (triggered ? ' ✅ Triggered!' : '') + ` — ${environment}`;
+
+          if (status && status.style) {
+            status.style.backgroundColor = accuracy <= 10 ? '#d9f9d9' : '#ffeaea';
+            status.style.border = '1px solid #999';
+            status.style.padding = '4px';
+            status.style.borderRadius = '4px';
+          }
         },
         err => {
           status.textContent = `Error: ${err.message}`;
