@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>GPS Trigger Sound Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+    #map { height: 60%; }
+    #controls { padding: 10px; background: #f9f9f9; }
+    #status { margin-top: 10px; font-size: 14px; }
+    .control-group { margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h2 style="text-align:center">GPS Sound Trigger with Map</h2>
+  <div id="map"></div>
+  <div id="controls">
+    <div class="control-group">
+      <button id="start">Start Tracking</button>
+      <button id="centerMap">Center Map on Me</button>
+      <button id="clearLog">Clear Log</button>
+    </div>
+    <div class="control-group">
+      <label><input type="checkbox" id="audioToggle" checked> Enable Sound</label><br>
+      <label><input type="checkbox" id="loggingToggle" checked> Enable Logging</label>
+    </div>
+    <div class="control-group">
+      <label for="radius">Trigger Radius (m):</label>
+      <input type="number" id="radius" value="3" min="0.1" step="0.1">
+    </div>
+    <div id="status">Waiting to start…</div>
+  </div>
+
+  <audio id="beep" src="ding.mp3" preload="auto"></audio>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    let map = L.map('map').setView([51.5074, -0.1278], 17);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19
+    }).addTo(map);
+
+    const targetPoints = [];
+    const log = [];
+    let userMarker = null;
+    let currentPosition = null;
+
+    const beep = document.getElementById('beep');
+    const status = document.getElementById('status');
+    const loggingToggle = document.getElementById('loggingToggle');
+    const audioToggle = document.getElementById('audioToggle');
+    const radiusInput = document.getElementById('radius');
+
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 6371e3;
+      const toRad = angle => angle * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat/2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    map.on('click', e => {
+      const { lat, lng } = e.latlng;
+      const marker = L.circle([lat, lng], { radius: 1, color: 'red' }).addTo(map);
+      targetPoints.push({ lat, lng, marker });
+    });
+
+    document.getElementById('start').addEventListener('click', () => {
+      navigator.geolocation.watchPosition(
+        pos => {
+          const { latitude, longitude, accuracy } = pos.coords;
+          currentPosition = [latitude, longitude];
+
+          if (!userMarker) {
+            userMarker = L.circleMarker(currentPosition, { radius: 6, color: 'blue' }).addTo(map);
+          } else {
+            userMarker.setLatLng(currentPosition);
+          }
+
+          const triggerRadius = parseFloat(radiusInput.value);
+          let triggered = false;
+
+          for (let tp of targetPoints) {
+            const dist = haversine(latitude, longitude, tp.lat, tp.lng);
+            if (dist < triggerRadius) {
+              if (audioToggle.checked) beep.play();
+              triggered = true;
+              break;
+            }
+          }
+
+          if (loggingToggle.checked) {
+            log.push({ time: Date.now(), lat: latitude, lon: longitude, accuracy });
+          }
+
+          status.textContent = `Lat: ${latitude.toFixed(6)}, Lon: ${longitude.toFixed(6)}, Accuracy: ±${accuracy.toFixed(1)}m` +
+            (triggered ? ' ✅ Triggered!' : '');
+        },
+        err => {
+          status.textContent = `Error: ${err.message}`;
+        },
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
+      );
+    });
+
+    document.getElementById('centerMap').addEventListener('click', () => {
+      if (currentPosition) {
+        map.setView(currentPosition, map.getZoom());
+      } else {
+        alert('Current GPS location not yet available.');
+      }
+    });
+
+    document.getElementById('clearLog').addEventListener('click', () => {
+      log.length = 0;
+      alert('GPS log cleared.');
+    });
+  </script>
+</body>
+</html>
