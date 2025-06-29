@@ -3316,7 +3316,7 @@ document.addEventListener('DOMContentLoaded', () => {
   "global": {
     "carrierType": "sawtooth",
     "frequency": 112.26499938964844,
-    "volume": 0,
+    "volume": 0.13,
     "filter": {
       "type": "highpass",
       "frequency": 833.73876953125,
@@ -3818,7 +3818,7 @@ document.addEventListener('DOMContentLoaded', () => {
   "global": {
     "carrierType": "sawtooth",
     "frequency": 927.6710205078125,
-    "volume": 0,
+    "volume": 0.6,
     "filter": {
       "type": "lowpass",
       "frequency": 1025.7227783203125,
