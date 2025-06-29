@@ -1856,7 +1856,7 @@ document.addEventListener('DOMContentLoaded', () => {
   "global": {
     "carrierType": "square",
     "frequency": 40,
-    "volume": 0,
+    "volume": 1.0,
     "filter": {
       "type": "bandpass",
       "frequency": 3319.173828125,
