@@ -805,7 +805,7 @@ document.addEventListener('DOMContentLoaded', () => {
             "global": {
                 "carrierType": "sawtooth",
                 "frequency": 20.569000244140625,
-                "volume": 0.3070000112056732,
+                "volume": 0.07,
                 "filter": {
                     "type": "lowpass",
                     "frequency": 514.0791625976562,
@@ -1307,7 +1307,7 @@ document.addEventListener('DOMContentLoaded', () => {
   "global": {
     "carrierType": "sawtooth",
     "frequency": 96.63300323486328,
-    "volume": 0,
+    "volume": 0.13,
     "filter": {
       "type": "lowpass",
       "frequency": 1177.687255859375,
@@ -1808,7 +1808,7 @@ document.addEventListener('DOMContentLoaded', () => {
   "global": {
     "carrierType": "sawtooth",
     "frequency": 15.607000350952148,
-    "volume": 0.06881999969482422,
+    "volume": 1.0,
     "filter": {
       "type": "lowpass",
       "frequency": 833.73876953125,
@@ -2129,7 +2129,7 @@ document.addEventListener('DOMContentLoaded', () => {
   "global": {
     "carrierType": "sine",
     "frequency": 822.1339721679688,
-    "volume": 0,
+    "volume": 0.22,
     "filter": {
       "type": "lowpass",
       "frequency": 1352.1658935546875,
@@ -2178,7 +2178,7 @@ document.addEventListener('DOMContentLoaded', () => {
             global: {
                 carrierType: 'sine',
                 frequency: 726,
-                volume: 0.5,
+                volume: 0.13,
                 filter: {
                     type: 'lowpass',
                     frequency:  1339.6,
