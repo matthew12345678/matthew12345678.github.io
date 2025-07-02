@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Face Replacement with Multiple Masks</title>
+  <style>
+    body {
+      margin: 0;
+      text-align: center;
+      background: #222;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+    #video, #canvas {
+      border-radius: 4px;
+      border: 2px solid #0f0;
+    }
+    #container {
+      position: relative;
+      display: inline-block;
+      margin-top: 10px;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #controls {
+      margin-top: 15px;
+    }
+    label {
+      margin-right: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Face Replacement with Multiple Mask Images</h1>
+
+  <div id="controls">
+    <label><input type="radio" name="source" value="camera" checked /> Use Camera</label>
+    <label><input type="radio" name="source" value="upload" /> Upload Video</label>
+    <input type="file" id="videoUpload" accept="video/*" style="display:none; margin-left: 10px;" />
+    <br/><br/>
+    <label for="maskUpload">Upload Face Mask Images (multiple):</label>
+    <input type="file" id="maskUpload" accept="image/*" multiple />
+  </div>
+
+  <div id="container">
+    <video id="video" width="720" height="560" autoplay muted playsinline></video>
+    <canvas id="canvas" width="720" height="560"></canvas>
+  </div>
+
+  <!-- face-api.js library -->
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.0.2/dist/face-api.min.js"></script>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const videoUpload = document.getElementById('videoUpload');
+    const maskUpload = document.getElementById('maskUpload');
+    const sourceRadios = document.getElementsByName('source');
+
+    let currentStream = null;
+    let animationId = null;
+
+    // Array to hold loaded mask images
+    let maskImages = [];
+
+    async function loadModels() {
+      const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models/';
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    }
+
+    async function setupCamera() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+        video.srcObject = stream;
+        currentStream = stream;
+        return new Promise(resolve => {
+          video.onloadedmetadata = () => resolve(video);
+        });
+      } catch (err) {
+        alert('Error accessing camera: ' + err);
+      }
+    }
+
+    function clearCanvas() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    async function detectFaces() {
+      if (video.paused || video.ended || video.readyState < 2) {
+        clearCanvas();
+        animationId = requestAnimationFrame(detectFaces);
+        return;
+      }
+
+      const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
+      const displaySize = { width: video.width, height: video.height };
+      const resizedDetections = faceapi.resizeResults(detections, displaySize);
+
+      clearCanvas();
+
+      resizedDetections.forEach((det, i) => {
+        const box = det.box;
+        if (maskImages.length > 0) {
+          const mask = maskImages[i % maskImages.length];
+          ctx.drawImage(mask, box.x, box.y, box.width, box.height);
+        } else {
+          ctx.strokeStyle = '#0f0';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(box.x, box.y, box.width, box.height);
+        }
+      });
+
+      animationId = requestAnimationFrame(detectFaces);
+    }
+
+    async function startCamera() {
+      await setupCamera();
+      video.play();
+      detectFaces();
+    }
+
+    function stopVideo() {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+      clearCanvas();
+      video.pause();
+      video.srcObject = null;
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+      }
+    }
+
+    function startVideoFile(file) {
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+      clearCanvas();
+
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+      }
+
+      video.pause();
+      video.srcObject = null;
+      video.src = URL.createObjectURL(file);
+      video.load();
+
+      video.oncanplay = () => {
+        video.play();
+      };
+
+      video.onplay = () => {
+        detectFaces();
+      };
+
+      video.onended = () => {
+        clearCanvas();
+      };
+    }
+
+    // Handle source selection changes
+    function onSourceChange() {
+      const selected = Array.from(sourceRadios).find(r => r.checked).value;
+      if (selected === 'camera') {
+        videoUpload.style.display = 'none';
+        video.src = '';
+        startCamera();
+      } else {
+        stopVideo();
+        videoUpload.style.display = 'inline-block';
+      }
+    }
+
+    // Handle video file upload
+    videoUpload.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        startVideoFile(file);
+      }
+    });
+
+    // Handle mask images upload (multiple)
+    maskUpload.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files);
+      if (files.length === 0) {
+        maskImages = [];
+        return;
+      }
+      maskImages = [];
+      let loadedCount = 0;
+
+      files.forEach((file, index) => {
+        const img = new Image();
+        img.onload = () => {
+          maskImages[index] = img; // maintain order by file index
+          loadedCount++;
+          // (optional) You could trigger something when all loaded, if needed
+        };
+        img.onerror = () => {
+          alert('Failed to load mask image: ' + file.name);
+        };
+        img.src = URL.createObjectURL(file);
+      });
+    });
+
+    Array.from(sourceRadios).forEach(radio => {
+      radio.addEventListener('change', onSourceChange);
+    });
+
+    async function init() {
+      await loadModels();
+      onSourceChange(); // start with default selected source
+    }
+
+    init();
+  </script>
+</body>
+</html>
