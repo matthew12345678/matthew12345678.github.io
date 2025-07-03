@@ -2,51 +2,42 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Live Spectrogram with Speed, Gain & FFT Controls</title>
+  <title>Live Spectrogram with Sound File Option</title>
   <style>
     html, body {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background: #000;
-      color: #fff;
-      font-family: sans-serif;
+      margin: 0; padding: 0; overflow: hidden;
+      background: #000; color: #fff; font-family: sans-serif;
     }
     #controls {
-      position: absolute;
-      top: 10px;
-      left: 50%;
+      position: absolute; top: 10px; left: 50%;
       transform: translateX(-50%);
-      background: rgba(0,0,0,0.6);
-      padding: 10px 15px;
-      border-radius: 8px;
-      z-index: 10;
-      display: flex;
-      gap: 12px;
-      align-items: center;
+      background: rgba(0,0,0,0.6); padding: 10px 15px;
+      border-radius: 8px; z-index: 10;
+      display: flex; gap: 12px; align-items: center;
     }
-    #controls label {
-      font-size: 14px;
-      white-space: nowrap;
-    }
-    #controls input,
-    #controls select {
-      cursor: pointer;
-    }
-    #spectrogram {
-      display: block;
-      width: 100vw;
-      height: 100vh;
-    }
+    #controls label { font-size: 14px; white-space: nowrap; }
+    #controls input, #controls select { cursor: pointer; }
+    #spectrogram { display: block; width: 100vw; height: 100vh; }
   </style>
 </head>
 <body>
   <div id="controls">
-    <label for="gain">Mic Gain:</label>
+    <label for="sourceType">Input:</label>
+    <select id="sourceType">
+      <option value="mic" selected>Microphone</option>
+      <option value="file">Audio File</option>
+    </select>
+
+    <input type="file" id="audioFile" accept="audio/*" style="display:none">
+
+    <label for="gain">Gain:</label>
     <input type="range" id="gain" min="0" max="10" step="0.1" value="1">
     <span id="gainValue">1.0×</span>
 
-    <label for="fftSize">FFT Size:</label>
+<button id="startButton" style="position: absolute; top: 10px; right: 10px; z-index: 999;">Start Audio</button>
+
+
+    <label for="fftSize">FFT:</label>
     <select id="fftSize">
       <option value="512">512</option>
       <option value="1024">1024</option>
@@ -55,102 +46,170 @@
       <option value="8192">8192</option>
     </select>
 
-    <label for="speed">Scroll Speed:</label>
+    <label for="speed">Speed:</label>
     <input type="range" id="speed" min="1" max="10" step="1" value="1">
     <span id="speedValue">1 px/f</span>
   </div>
+
   <canvas id="spectrogram"></canvas>
 
-  <script>
-    (async function() {
-      // UI elements
-      const gainSlider = document.getElementById('gain');
-      const gainValueDisplay = document.getElementById('gainValue');
-      const fftSelect = document.getElementById('fftSize');
-      const speedSlider = document.getElementById('speed');
-      const speedValueDisplay = document.getElementById('speedValue');
+ <script>
+  (function () {
+    const sourceTypeSelect = document.getElementById('sourceType');
+    const audioFileInput = document.getElementById('audioFile');
+    const gainSlider = document.getElementById('gain');
+    const gainValueDisplay = document.getElementById('gainValue');
+    const fftSelect = document.getElementById('fftSize');
+    const speedSlider = document.getElementById('speed');
+    const speedValueDisplay = document.getElementById('speedValue');
+    const canvas = document.getElementById('spectrogram');
+    const ctx = canvas.getContext('2d');
+    const startButton = document.getElementById('startButton');
 
-      // Canvas setup
-      const canvas = document.getElementById('spectrogram');
-      const ctx = canvas.getContext('2d');
-      resizeCanvas();
-      window.addEventListener('resize', resizeCanvas);
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const micGain = audioCtx.createGain();
+    micGain.gain.value = parseFloat(gainSlider.value);
 
-      // Audio setup
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = parseInt(fftSelect.value);
+    analyser.smoothingTimeConstant = 0.0;
 
-      // Gain node
-      const micGain = audioCtx.createGain();
-      micGain.gain.value = parseFloat(gainSlider.value);
-      gainSlider.addEventListener('input', () => {
-        const g = parseFloat(gainSlider.value);
-        micGain.gain.value = g;
-        gainValueDisplay.textContent = g.toFixed(1) + '×';
-      });
+    let bufferLength = analyser.frequencyBinCount;
+    let dataArray = new Uint8Array(bufferLength);
+    let sourceNode = null;
+    let currentMode = 'mic';
 
-      // Analyser node
-      let analyser = audioCtx.createAnalyser();
+    let micStreamNode = null;
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    gainSlider.addEventListener('input', () => {
+      const g = parseFloat(gainSlider.value);
+      micGain.gain.value = g;
+      gainValueDisplay.textContent = g.toFixed(1) + '×';
+    });
+
+    fftSelect.addEventListener('change', () => {
       analyser.fftSize = parseInt(fftSelect.value);
-      analyser.smoothingTimeConstant = 0.0;
+      bufferLength = analyser.frequencyBinCount;
+      dataArray = new Uint8Array(bufferLength);
+    });
 
-      // Connect graph
-      source.connect(micGain);
-      micGain.connect(analyser);
+    speedSlider.addEventListener('input', () => {
+      speedValueDisplay.textContent = speedSlider.value + ' px/f';
+    });
 
-      // Buffer
-      let bufferLength = analyser.frequencyBinCount;
-      let dataArray = new Uint8Array(bufferLength);
+    sourceTypeSelect.addEventListener('change', async () => {
+      const mode = sourceTypeSelect.value;
+      currentMode = mode;
 
-      // FFT size change
-      fftSelect.addEventListener('change', () => {
-        analyser.fftSize = parseInt(fftSelect.value);
-        bufferLength = analyser.frequencyBinCount;
-        dataArray = new Uint8Array(bufferLength);
-      });
+      if (sourceNode) {
+        try { sourceNode.disconnect(); } catch {}
+      }
 
-      // Speed display
-      speedSlider.addEventListener('input', () => {
-        speedValueDisplay.textContent = speedSlider.value + ' px/f';
-      });
+      if (mode === 'mic') {
+        audioFileInput.style.display = 'none';
+        await setupMicInput();
+      } else {
+        audioFileInput.style.display = 'inline';
+      }
+    });
 
-      // Draw loop
-      function draw() {
-        requestAnimationFrame(draw);
+    audioFileInput.addEventListener('change', () => {
+      if (audioFileInput.files.length > 0) {
+        setupFileInput(audioFileInput.files[0]);
+      }
+    });
 
-        const { width, height } = canvas;
-        const speed = parseInt(speedSlider.value);
+    startButton.addEventListener('click', async () => {
+      await audioCtx.resume();
+      await setupMicInput();
+      draw();
+      startButton.remove();
+    });
 
-        // Scroll left by `speed` pixels
-        ctx.drawImage(
-          canvas,
-          speed, 0, width - speed, height,
-          0, 0, width - speed, height
-        );
+ async function setupMicInput() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micStreamNode = audioCtx.createMediaStreamSource(stream);
 
-        // Draw `speed` new spectral slices
-        for (let s = 0; s < speed; s++) {
-          analyser.getByteFrequencyData(dataArray);
-          const x = width - speed + s;
-          for (let i = 0; i < bufferLength; i++) {
-            const value = dataArray[i] / 255;
-            const y = height - Math.floor((i / bufferLength) * height);
-            const hue = (1 - value) * 240;
-            const light = Math.floor(value * 50 + 25);
-            ctx.fillStyle = `hsl(${hue},100%,${light}%)`;
-            ctx.fillRect(x, y, 1, 1);
-          }
+    micStreamNode.connect(micGain);
+    micGain.connect(analyser);
+
+    // Disconnect from speakers if it was previously connected
+    try {
+      micGain.disconnect(audioCtx.destination);
+    } catch (e) {
+      // safe to ignore
+    }
+
+    sourceNode = micStreamNode;
+  } catch (err) {
+    console.error("Mic error:", err);
+  }
+}
+
+
+function setupFileInput(file) {
+  if (sourceNode) {
+    try { sourceNode.disconnect(); } catch {}
+  }
+
+  const fileReader = new FileReader();
+  fileReader.onload = async function () {
+    const arrayBuffer = fileReader.result;
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+    const bufferSource = audioCtx.createBufferSource();
+    bufferSource.buffer = audioBuffer;
+    bufferSource.loop = true;
+
+    bufferSource.connect(micGain);
+    micGain.connect(analyser);
+
+    // Safely connect to output for file playback
+    try {
+      micGain.connect(audioCtx.destination);
+    } catch (e) {
+      // already connected — ignore
+    }
+
+    bufferSource.start(0);
+    sourceNode = bufferSource;
+  };
+  fileReader.readAsArrayBuffer(file);
+}
+
+
+    function draw() {
+      requestAnimationFrame(draw);
+
+      const { width, height } = canvas;
+      const speed = parseInt(speedSlider.value);
+
+      ctx.drawImage(canvas, speed, 0, width - speed, height, 0, 0, width - speed, height);
+
+      for (let s = 0; s < speed; s++) {
+        analyser.getByteFrequencyData(dataArray);
+        const x = width - speed + s;
+        for (let i = 0; i < bufferLength; i++) {
+          const value = dataArray[i] / 255;
+          const y = height - Math.floor((i / bufferLength) * height);
+          const hue = (1 - value) * 240;
+          const light = Math.floor(value * 50 + 25);
+          ctx.fillStyle = `hsl(${hue},100%,${light}%)`;
+          ctx.fillRect(x, y, 1, 1);
         }
       }
+    }
 
-      draw();
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+  })();
+</script>
 
-      function resizeCanvas() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-      }
-    })();
-  </script>
 </body>
 </html>
