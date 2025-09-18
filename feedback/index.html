@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Classic Visual Feedback Machine</title>
+  <style>
+    :root{--bg:#0f1724;--muted:#9aa7bf;--accent:#7dd3fc}
+    html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, Roboto, "Helvetica Neue", Arial;color:#e6eef8;background:var(--bg)}
+    .wrap{display:flex;gap:16px;padding:18px;box-sizing:border-box;height:100%}
+    .left{flex:1;display:flex;flex-direction:column;gap:12px}
+    .canvas-wrap{flex:1;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(2,6,23,.7);background:#000;display:flex;align-items:center;justify-content:center}
+    canvas{width:100%;height:100%;display:block}
+    .controls{width:360px;min-width:280px;background:#071026;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+    label{font-size:13px;color:var(--muted)}
+    .row{display:flex;gap:8px;align-items:center}
+    input[type=range]{width:100%}
+    .btn{background:transparent;border:1px solid #123046;color:var(--accent);padding:8px 10px;border-radius:8px;cursor:pointer}
+    .btn:active{transform:translateY(1px)}
+    .small{font-size:12px;color:var(--muted)}
+    select,input[type=file]{width:100%}
+    .preset-list{display:flex;gap:8px;flex-wrap:wrap}
+    .preset{padding:6px 8px;border-radius:8px;background:#071f31;border:1px solid #123046;color:var(--muted);cursor:pointer}
+    .footer{font-size:12px;color:var(--muted);text-align:center}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="left">
+      <div class="canvas-wrap">
+        <canvas id="mainCanvas"></canvas>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;justify-content:space-between">
+        <div class="small">Tip: allow webcam, then press Start. Use the sliders to dial the feedback.</div>
+        <div style="display:flex;gap:8px">
+          <button id="snapshotBtn" class="btn">Save snapshot</button>
+          <button id="startStopBtn" class="btn">Start</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div>
+        <label>Input Source</label>
+        <select id="sourceSelect">
+          <option value="webcam">Webcam</option>
+          <option value="upload">Upload Image / Video</option>
+        </select>
+        <input id="fileInput" type="file" accept="image/*,video/*" style="margin-top:8px;display:none" />
+      </div>
+
+      <div>
+        <label>Mix (how much new input you add)</label>
+        <div class="row"><input id="mix" type="range" min="0" max="1" step="0.01" value="0.35"></div>
+      </div>
+
+      <div>
+        <label>Feedback Decay (alpha applied to previous frame)</label>
+        <div class="row"><input id="decay" type="range" min="0" max="1" step="0.01" value="0.92"></div>
+      </div>
+
+      <div>
+        <label>Scale (zoom feedback)</label>
+        <div class="row"><input id="scale" type="range" min="0.9" max="1.2" step="0.001" value="0.995"></div>
+      </div>
+
+      <div>
+        <label>Rotation (deg per frame)</label>
+        <div class="row"><input id="rotation" type="range" min="-2" max="2" step="0.01" value="0.01"></div>
+      </div>
+
+      <div>
+        <label>Symmetry (0 = none, 1 = vertical mirror, 2 = 4-way)</label>
+        <div class="row"><input id="symmetry" type="range" min="0" max="2" step="1" value="0"></div>
+      </div>
+
+      <div>
+        <label>Color Shift (hue per second)</label>
+        <div class="row"><input id="hueSpeed" type="range" min="-180" max="180" step="1" value="6"></div>
+      </div>
+
+      <div>
+        <label>Blend Mode</label>
+        <select id="blendMode">
+          <option value="source-over">Normal</option>
+          <option value="lighter">Additive</option>
+          <option value="multiply">Multiply</option>
+          <option value="screen">Screen</option>
+          <option value="overlay">Overlay</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Generative Variation</label>
+        <div class="preset-list">
+          <button class="preset" data-preset="gentle">Gentle Spiral</button>
+          <button class="preset" data-preset="wild">Wild Stretch</button>
+          <button class="preset" data-preset="kaleido">Kaleidoscope</button>
+          <button class="preset" data-preset="phot">Photocopy</button>
+        </div>
+      </div>
+
+      <div>
+        <label>Advanced: feedback blur (px)</label>
+        <div class="row"><input id="blur" type="range" min="0" max="20" step="1" value="0"></div>
+      </div>
+
+      <div class="footer">Built-in generative parameters + live feedback loop. Works offline in modern browsers.</div>
+    </div>
+  </div>
+
+  <video id="sourceVideo" autoplay playsinline muted style="display:none"></video>
+
+  <script>
+  (function(){
+    // Elements
+    const mainCanvas = document.getElementById('mainCanvas');
+    const ctx = mainCanvas.getContext('2d');
+    const video = document.getElementById('sourceVideo');
+    const startStopBtn = document.getElementById('startStopBtn');
+    const snapshotBtn = document.getElementById('snapshotBtn');
+    const mixEl = document.getElementById('mix');
+    const decayEl = document.getElementById('decay');
+    const scaleEl = document.getElementById('scale');
+    const rotationEl = document.getElementById('rotation');
+    const symmetryEl = document.getElementById('symmetry');
+    const hueSpeedEl = document.getElementById('hueSpeed');
+    const blendModeEl = document.getElementById('blendMode');
+    const sourceSelect = document.getElementById('sourceSelect');
+    const fileInput = document.getElementById('fileInput');
+    const blurEl = document.getElementById('blur');
+
+    // Double buffer canvas for feedback
+    const buffer = document.createElement('canvas');
+    const bctx = buffer.getContext('2d');
+
+    let running = false;
+    let stream = null;
+    let lastTime = performance.now();
+    let angle = 0;
+    let hue = 0;
+
+    // Resize to fit container while keeping high internal resolution for quality
+    function resize(){
+      const rect = mainCanvas.getBoundingClientRect();
+      const w = Math.max(320, Math.floor(rect.width));
+      const h = Math.max(240, Math.floor(rect.height));
+      if(mainCanvas.width !== w || mainCanvas.height !== h){
+        mainCanvas.width = w;
+        mainCanvas.height = h;
+        buffer.width = w;
+        buffer.height = h;
+      }
+    }
+
+    // Start webcam
+    async function startWebcam(){
+      stopStream();
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+        video.srcObject = stream;
+        await video.play();
+      }catch(e){
+        alert('Could not access webcam: ' + e.message);
+      }
+    }
+
+    function stopStream(){
+      if(stream){
+        stream.getTracks().forEach(t=>t.stop());
+        stream = null;
+        video.srcObject = null;
+      }
+    }
+
+    // Load file (image or video)
+    fileInput.addEventListener('change', async (e)=>{
+      const f = e.target.files && e.target.files[0];
+      if(!f) return;
+      stopStream();
+      const url = URL.createObjectURL(f);
+      if(f.type.startsWith('image/')){
+        video.pause();
+        video.srcObject = null;
+        video.src = url;
+        video.loop = true;
+        await video.play();
+      }else{
+        // video file
+        video.src = url;
+        video.loop = true;
+        await video.play();
+      }
+    });
+
+    sourceSelect.addEventListener('change', ()=>{
+      if(sourceSelect.value === 'upload'){
+        fileInput.style.display = 'block';
+      }else{
+        fileInput.style.display = 'none';
+        // start webcam immediately if running
+        if(running) startWebcam();
+      }
+    });
+
+    // Snapshot
+    snapshotBtn.addEventListener('click', ()=>{
+      const data = mainCanvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.download = 'feedback-snapshot.png';
+      a.href = data;
+      a.click();
+    });
+
+    startStopBtn.addEventListener('click', async ()=>{
+      if(!running){
+        running = true;
+        startStopBtn.textContent = 'Stop';
+        if(sourceSelect.value === 'webcam') await startWebcam();
+        else if(!video.src) alert('Please upload a file first');
+        resize();
+        lastTime = performance.now();
+        requestAnimationFrame(loop);
+      }else{
+        running = false;
+        startStopBtn.textContent = 'Start';
+        stopStream();
+      }
+    });
+
+    window.addEventListener('resize', resize);
+
+    // Simple utility: apply a hue rotation on image data
+    function hueRotateImageData(imageData, degrees){
+      const d = imageData.data;
+      const rad = degrees * Math.PI / 180;
+      const cos = Math.cos(rad), sin = Math.sin(rad);
+      // Using basic RGB->YIQ rotation approximation (cheap)
+      for(let i=0;i<d.length;i+=4){
+        let r = d[i], g = d[i+1], b = d[i+2];
+        // rotate in chroma plane
+        const nr = 0.299*r + 0.587*g + 0.114*b + (0.701*(r - 0.299*r - 0.587*g - 0.114*b))*cos - (0.168736*(r - 0.299*r - 0.587*g - 0.114*b))*sin;
+        const ng = 0.299*r + 0.587*g + 0.114*b + (0.587*(r - 0.299*r - 0.587*g - 0.114*b))*cos + (0.331264*(r - 0.299*r - 0.587*g - 0.114*b))*sin;
+        const nb = 0.299*r + 0.587*g + 0.114*b - (0.886*(r - 0.299*r - 0.587*g - 0.114*b))*cos + (0.5*(r - 0.299*r - 0.587*g - 0.114*b))*sin;
+        d[i] = Math.max(0,Math.min(255,nr));
+        d[i+1] = Math.max(0,Math.min(255,ng));
+        d[i+2] = Math.max(0,Math.min(255,nb));
+      }
+    }
+
+    // Main loop
+    function loop(now){
+      if(!running) return;
+      resize();
+      const dt = Math.min(60, now - lastTime) / 1000;
+      lastTime = now;
+
+      // parameters
+      const mix = parseFloat(mixEl.value);
+      const decay = parseFloat(decayEl.value);
+      const scale = parseFloat(scaleEl.value);
+      const rotatePerFrame = parseFloat(rotationEl.value) * Math.PI/180; // degrees -> radians
+      const symmetry = parseInt(symmetryEl.value);
+      const hueSpeed = parseFloat(hueSpeedEl.value);
+      const blur = parseInt(blurEl.value);
+      const blendMode = blendModeEl.value;
+
+      // accumulate angle and hue
+      angle += rotatePerFrame;
+      hue += hueSpeed * dt;
+
+      // draw previous buffer to main canvas transformed slightly (this is the feedback)
+      ctx.save();
+      ctx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
+
+      // Optionally blur the previous frame by drawing it scaled and with globalAlpha
+      ctx.globalCompositeOperation = 'source-over';
+      // draw buffer back with decay alpha
+      ctx.globalAlpha = decay;
+
+      // apply transform around centre
+      ctx.translate(mainCanvas.width/2, mainCanvas.height/2);
+      ctx.rotate(angle);
+      ctx.scale(scale, scale);
+      ctx.translate(-mainCanvas.width/2, -mainCanvas.height/2);
+
+      ctx.drawImage(buffer, 0, 0);
+      ctx.restore();
+
+      // now draw fresh input on top using selected blend mode and mix
+      ctx.save();
+      ctx.globalCompositeOperation = blendMode;
+      ctx.globalAlpha = mix;
+
+      // draw video/input scaled to cover canvas
+      if(video && (video.readyState >= 2)){
+        // fit-cover calculation
+        const iw = video.videoWidth || video.width;
+        const ih = video.videoHeight || video.height;
+        if(iw && ih){
+          const canvasRatio = mainCanvas.width / mainCanvas.height;
+          const videoRatio = iw / ih;
+          let dw = mainCanvas.width, dh = mainCanvas.height;
+          let sx=0, sy=0, sWidth = iw, sHeight = ih;
+          if(videoRatio > canvasRatio){
+            // video wider -> crop sides
+            sWidth = ih * canvasRatio;
+            sx = (iw - sWidth)/2;
+          }else{
+            // taller -> crop top/bottom
+            sHeight = iw / canvasRatio;
+            sy = (ih - sHeight)/2;
+          }
+          // draw portion of video to cover canvas
+          ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, mainCanvas.width, mainCanvas.height);
+        }else{
+          ctx.drawImage(video, 0, 0, mainCanvas.width, mainCanvas.height);
+        }
+      }
+
+      ctx.restore();
+
+      // color shift effect - operate on whole canvas rarely (cheap hack: do every N frames)
+      if(Math.abs(hueSpeed) > 0.1){
+        try{
+          const id = ctx.getImageData(0,0,mainCanvas.width, mainCanvas.height);
+          // simple oscillating hue rotate by small amount
+          const rot = (Math.sin(now/1000) * 0.5 + 0.5) * hueSpeed * 0.2;
+          hueRotateImageData(id, rot);
+          ctx.putImageData(id, 0, 0);
+        }catch(e){/* security errors on cross-origin video may throw */}
+      }
+
+      // symmetry (mirroring) - draw extra mirrored copies
+      if(symmetry > 0){
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.6; // subtle
+        if(symmetry >= 1){ // vertical mirror
+          ctx.translate(mainCanvas.width, 0);
+          ctx.scale(-1,1);
+          ctx.drawImage(mainCanvas, 0, 0);
+        }
+        if(symmetry >= 2){ // 4-way
+          ctx.setTransform(1,0,0,1,0,0);
+          ctx.globalAlpha = 0.5;
+          // rotate 90 and draw
+          ctx.translate(mainCanvas.width/2, mainCanvas.height/2);
+          ctx.rotate(Math.PI/2);
+          ctx.translate(-mainCanvas.width/2, -mainCanvas.height/2);
+          ctx.drawImage(mainCanvas, 0, 0);
+        }
+        ctx.restore();
+      }
+
+      // optionally blur by scaling down/up (cheap blur)
+      if(blur > 0){
+        const smallW = Math.max(2, Math.floor(mainCanvas.width / (1 + blur/6)));
+        const smallH = Math.max(2, Math.floor(mainCanvas.height / (1 + blur/6)));
+        const tmp = document.createElement('canvas');
+        tmp.width = smallW; tmp.height = smallH;
+        const tctx = tmp.getContext('2d');
+        tctx.drawImage(mainCanvas, 0, 0, smallW, smallH);
+        ctx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
+        ctx.drawImage(tmp, 0, 0, mainCanvas.width, mainCanvas.height);
+      }
+
+      // copy result into buffer for next frame
+      bctx.clearRect(0,0,buffer.width, buffer.height);
+      bctx.globalCompositeOperation = 'source-over';
+      bctx.drawImage(mainCanvas, 0, 0);
+
+      // generative nudges: apply small random transforms to buffer occasionally
+      applyGenerative(now);
+
+      requestAnimationFrame(loop);
+    }
+
+    // Simple generative behaviours triggered by preset buttons
+    function applyGenerative(now){
+      // tiny time-based scale wobble & shear applied directly on buffer to create motion
+      const t = now / 1000;
+      const preset = currentPreset || 'gentle';
+      if(preset === 'gentle'){
+        // subtle spiral: nudge pixels by translating a smidge
+        const tx = Math.sin(t * 0.3) * 1.2;
+        const ty = Math.cos(t * 0.27) * 1.2;
+        const s = 1 + Math.sin(t * 0.02) * 0.002;
+        // perform transform on buffer
+        transformBuffer(s, 0.0008, tx, ty);
+      }else if(preset === 'wild'){
+        const tx = Math.sin(t * 1.7) * 6;
+        const ty = Math.cos(t * 1.3) * 6;
+        const s = 1 + Math.sin(t * 0.8) * 0.03;
+        transformBuffer(s, Math.sin(t*0.5)*0.02, tx, ty);
+      }else if(preset === 'kaleido'){
+        // quick rotate + mirror
+        transformBuffer(0.999, 0.006, Math.sin(t*1.2)*2, Math.cos(t*1.2)*2);
+        // add a subtle mirror by drawing flipped into buffer
+        bctx.save();
+        bctx.globalCompositeOperation = 'lighter';
+        bctx.translate(buffer.width,0); bctx.scale(-1,1);
+        bctx.globalAlpha = 0.08;
+        bctx.drawImage(buffer,0,0);
+        bctx.restore();
+      }else if(preset === 'phot'){
+        // photocopy: heavy contrast and slight jitter
+        transformBuffer(0.998, 0.002, Math.random()*2-1, Math.random()*2-1);
+      }
+    }
+
+    // apply a small transform to the buffer via an intermediate canvas
+    function transformBuffer(scaleFactor, rotateDelta, tx, ty){
+      const tmp = document.createElement('canvas');
+      tmp.width = buffer.width; tmp.height = buffer.height;
+      const tctx = tmp.getContext('2d');
+      tctx.clearRect(0,0,tmp.width,tmp.height);
+      tctx.save();
+      tctx.translate(tmp.width/2 + tx, tmp.height/2 + ty);
+      tctx.rotate(rotateDelta || 0);
+      tctx.scale(scaleFactor, scaleFactor);
+      tctx.translate(-tmp.width/2, -tmp.height/2);
+      tctx.drawImage(buffer, 0, 0);
+      tctx.restore();
+      bctx.clearRect(0,0,buffer.width, buffer.height);
+      bctx.drawImage(tmp, 0, 0);
+    }
+
+    // Presets wiring
+    let currentPreset = 'gentle';
+    document.querySelectorAll('.preset').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const p = btn.dataset.preset;
+        currentPreset = p;
+        // subtle parameter nudges by preset
+        if(p==='gentle'){ mixEl.value = 0.35; decayEl.value=0.92; scaleEl.value=0.995; rotationEl.value=0.01; blurEl.value=0; }
+        if(p==='wild'){ mixEl.value = 0.55; decayEl.value=0.85; scaleEl.value=0.99; rotationEl.value=0.2; blurEl.value=2; }
+        if(p==='kaleido'){ mixEl.value = 0.45; decayEl.value=0.9; scaleEl.value=0.997; rotationEl.value=0.06; symmetryEl.value=2; blurEl.value=1; }
+        if(p==='phot'){ mixEl.value = 0.25; decayEl.value=0.975; scaleEl.value=0.998; rotationEl.value=0.0; blurEl.value=0; }
+      });
+    });
+
+    // Auto-start safe handling: don't call getUserMedia until user presses Start
+
+    // On page unload stop webcam
+    window.addEventListener('beforeunload', ()=>{ stopStream(); });
+
+    // initial resize
+    resize();
+  })();
+  </script>
+</body>
+</html>
