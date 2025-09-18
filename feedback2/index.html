@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Classic Visual Feedback Machine</title>
+  <style>
+    :root{--bg:#0f1724;--muted:#9aa7bf;--accent:#7dd3fc}
+    html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, Roboto, "Helvetica Neue", Arial;color:#e6eef8;background:var(--bg)}
+    .wrap{display:flex;gap:16px;padding:18px;box-sizing:border-box;height:100%}
+    .left{flex:1;display:flex;flex-direction:column;gap:12px}
+    .canvas-wrap{flex:1;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(2,6,23,.7);background:#000;display:flex;align-items:center;justify-content:center}
+    canvas{width:100%;height:100%;display:block}
+    .controls{width:360px;min-width:280px;background:#071026;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+    label{font-size:13px;color:var(--muted)}
+    .row{display:flex;gap:8px;align-items:center}
+    input[type=range]{width:100%}
+    .btn{background:transparent;border:1px solid #123046;color:var(--accent);padding:8px 10px;border-radius:8px;cursor:pointer}
+    .btn:active{transform:translateY(1px)}
+    .small{font-size:12px;color:var(--muted)}
+    select,input[type=file]{width:100%}
+    .preset-list{display:flex;gap:8px;flex-wrap:wrap}
+    .preset{padding:6px 8px;border-radius:8px;background:#071f31;border:1px solid #123046;color:var(--muted);cursor:pointer}
+    .footer{font-size:12px;color:var(--muted);text-align:center}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="left">
+      <div class="canvas-wrap">
+        <canvas id="mainCanvas"></canvas>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;justify-content:space-between">
+        <div class="small">Tip: allow webcam, then press Start. Use the sliders to dial the feedback.</div>
+        <div style="display:flex;gap:8px">
+          <button id="snapshotBtn" class="btn">Save snapshot</button>
+          <button id="startStopBtn" class="btn">Start</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div>
+        <label>Input Source</label>
+        <select id="sourceSelect">
+          <option value="webcam">Webcam</option>
+          <option value="upload">Upload Image / Video</option>
+        </select>
+        <input id="fileInput" type="file" accept="image/*,video/*" style="margin-top:8px;display:none" />
+      </div>
+
+      <div>
+        <label>Mix (how much new input you add)</label>
+        <div class="row"><input id="mix" type="range" min="0" max="1" step="0.01" value="0.35"></div>
+      </div>
+
+      <div>
+        <label>Feedback Decay (alpha applied to previous frame)</label>
+        <div class="row"><input id="decay" type="range" min="0" max="1" step="0.01" value="0.92"></div>
+      </div>
+
+      <div>
+        <label>Scale (zoom feedback)</label>
+        <div class="row"><input id="scale" type="range" min="0.9" max="1.2" step="0.001" value="0.995"></div>
+      </div>
+
+      <div>
+        <label>Rotation (deg per frame)</label>
+        <div class="row"><input id="rotation" type="range" min="-2" max="2" step="0.01" value="0.01"></div>
+      </div>
+
+      <div>
+        <label>Symmetry (0 = none, 1 = vertical mirror, 2 = 4-way)</label>
+        <div class="row"><input id="symmetry" type="range" min="0" max="2" step="1" value="0"></div>
+      </div>
+
+      <div>
+        <label>Color Shift (hue per second)</label>
+        <div class="row"><input id="hueSpeed" type="range" min="-180" max="180" step="1" value="6"></div>
+      </div>
+
+      <div>
+        <label>Brightness</label>
+        <div class="row"><input id="brightness" type="range" min="0" max="2" step="0.01" value="1"></div>
+      </div>
+
+      <div>
+        <label>Contrast</label>
+        <div class="row"><input id="contrast" type="range" min="0" max="2" step="0.01" value="1"></div>
+      </div>
+
+      <div>
+        <label>Saturation</label>
+        <div class="row"><input id="saturation" type="range" min="0" max="2" step="0.01" value="1"></div>
+      </div>
+
+      <div>
+        <label>Blend Mode</label>
+        <select id="blendMode">
+          <option value="source-over">Normal</option>
+          <option value="lighter">Additive</option>
+          <option value="multiply">Multiply</option>
+          <option value="screen">Screen</option>
+          <option value="overlay">Overlay</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Generative Variation</label>
+        <div class="preset-list">
+          <button class="preset" data-preset="gentle">Gentle Spiral</button>
+          <button class="preset" data-preset="wild">Wild Stretch</button>
+          <button class="preset" data-preset="kaleido">Kaleidoscope</button>
+          <button class="preset" data-preset="phot">Photocopy</button>
+        </div>
+      </div>
+
+      <div>
+        <label>Advanced: feedback blur (px)</label>
+        <div class="row"><input id="blur" type="range" min="0" max="20" step="1" value="0"></div>
+      </div>
+
+      <div class="footer">Built-in generative parameters + live feedback loop. Works offline in modern browsers.</div>
+    </div>
+  </div>
+
+  <video id="sourceVideo" autoplay playsinline muted style="display:none"></video>
+
+  <script>
+  (function(){
+    const mainCanvas = document.getElementById('mainCanvas');
+    const ctx = mainCanvas.getContext('2d');
+    const video = document.getElementById('sourceVideo');
+    const startStopBtn = document.getElementById('startStopBtn');
+    const snapshotBtn = document.getElementById('snapshotBtn');
+    const mixEl = document.getElementById('mix');
+    const decayEl = document.getElementById('decay');
+    const scaleEl = document.getElementById('scale');
+    const rotationEl = document.getElementById('rotation');
+    const symmetryEl = document.getElementById('symmetry');
+    const hueSpeedEl = document.getElementById('hueSpeed');
+    const brightnessEl = document.getElementById('brightness');
+    const contrastEl = document.getElementById('contrast');
+    const saturationEl = document.getElementById('saturation');
+    const blendModeEl = document.getElementById('blendMode');
+    const sourceSelect = document.getElementById('sourceSelect');
+    const fileInput = document.getElementById('fileInput');
+    const blurEl = document.getElementById('blur');
+
+    const buffer = document.createElement('canvas');
+    const bctx = buffer.getContext('2d');
+
+    let running = false;
+    let stream = null;
+    let lastTime = performance.now();
+    let angle = 0;
+
+    function resize(){
+      const rect = mainCanvas.getBoundingClientRect();
+      const w = Math.max(320, Math.floor(rect.width));
+      const h = Math.max(240, Math.floor(rect.height));
+      if(mainCanvas.width !== w || mainCanvas.height !== h){
+        mainCanvas.width = w;
+        mainCanvas.height = h;
+        buffer.width = w;
+        buffer.height = h;
+      }
+    }
+
+    async function startWebcam(){
+      stopStream();
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+        video.srcObject = stream;
+        await video.play();
+      }catch(e){alert('Could not access webcam: ' + e.message);}
+    }
+
+    function stopStream(){
+      if(stream){stream.getTracks().forEach(t=>t.stop());stream = null;video.srcObject = null;}
+    }
+
+    fileInput.addEventListener('change', async (e)=>{
+      const f = e.target.files && e.target.files[0];
+      if(!f) return;
+      stopStream();
+      const url = URL.createObjectURL(f);
+      if(f.type.startsWith('image/')){
+        video.pause();
+        video.srcObject = null;
+        video.src = url;
+        video.loop = true;
+        await video.play();
+      }else{
+        video.src = url;
+        video.loop = true;
+        await video.play();
+      }
+    });
+
+    sourceSelect.addEventListener('change', ()=>{
+      fileInput.style.display = sourceSelect.value === 'upload' ? 'block' : 'none';
+      if(sourceSelect.value === 'webcam' && running) startWebcam();
+    });
+
+    snapshotBtn.addEventListener('click', ()=>{
+      const data = mainCanvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.download = 'feedback-snapshot.png';
+      a.href = data;
+      a.click();
+    });
+
+    startStopBtn.addEventListener('click', async ()=>{
+      if(!running){
+        running = true;
+        startStopBtn.textContent = 'Stop';
+        if(sourceSelect.value === 'webcam') await startWebcam();
+        resize();
+        lastTime = performance.now();
+        requestAnimationFrame(loop);
+      }else{
+        running = false;
+        startStopBtn.textContent = 'Start';
+        stopStream();
+      }
+    });
+
+    window.addEventListener('resize', resize);
+
+    function loop(now){
+      if(!running) return;
+      resize();
+      const dt = Math.min(60, now - lastTime) / 1000;
+      lastTime = now;
+
+      const mix = parseFloat(mixEl.value);
+      const decay = parseFloat(decayEl.value);
+      const scale = parseFloat(scaleEl.value);
+      const rotatePerFrame = parseFloat(rotationEl.value) * Math.PI/180;
+      const symmetry = parseInt(symmetryEl.value);
+      const hueSpeed = parseFloat(hueSpeedEl.value);
+      const brightness = parseFloat(brightnessEl.value);
+      const contrast = parseFloat(contrastEl.value);
+      const saturation = parseFloat(saturationEl.value);
+      const blur = parseInt(blurEl.value);
+      const blendMode = blendModeEl.value;
+
+      angle += rotatePerFrame;
+
+      ctx.save();
+      ctx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = decay;
+      ctx.translate(mainCanvas.width/2, mainCanvas.height/2);
+      ctx.rotate(angle);
+      ctx.scale(scale, scale);
+      ctx.translate(-mainCanvas.width/2, -mainCanvas.height/2);
+      ctx.drawImage(buffer, 0, 0);
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalCompositeOperation = blendMode;
+      ctx.globalAlpha = mix;
+      if(video && (video.readyState >= 2)){
+        const iw = video.videoWidth || video.width;
+        const ih = video.videoHeight || video.height;
+        if(iw && ih){
+          const canvasRatio = mainCanvas.width / mainCanvas.height;
+          const videoRatio = iw / ih;
+          let sWidth = iw, sHeight = ih, sx=0, sy=0;
+          if(videoRatio > canvasRatio){sWidth = ih * canvasRatio; sx = (iw - sWidth)/2;} else {sHeight = iw / canvasRatio; sy = (ih - sHeight)/2;}
+          ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, mainCanvas.width, mainCanvas.height);
+        } else {
+          ctx.drawImage(video, 0, 0, mainCanvas.width, mainCanvas.height);
+        }
+      }
+      ctx.restore();
+
+      if(blur > 0){
+        const smallW = Math.max(2, Math.floor(mainCanvas.width / (1 + blur/6)));
+        const smallH = Math.max(2, Math.floor(mainCanvas.height / (1 + blur/6)));
+        const tmp = document.createElement('canvas');
+        tmp.width = smallW; tmp.height = smallH;
+        const tctx = tmp.getContext('2d');
+        tctx.drawImage(mainCanvas, 0, 0, smallW, smallH);
+        ctx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
+        ctx.drawImage(tmp, 0, 0, mainCanvas.width, mainCanvas.height);
+      }
+
+      let imageData = ctx.getImageData(0,0,mainCanvas.width, mainCanvas.height);
+      applyAdjustments(imageData, brightness, contrast, saturation);
+      ctx.putImageData(imageData,0,0);
+
+      if(symmetry > 0){
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.6;
+        if(symmetry >= 1){ctx.translate(mainCanvas.width, 0);ctx.scale(-1,1);ctx.drawImage(mainCanvas, 0, 0);} 
+        if(symmetry >= 2){ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha = 0.5;ctx.translate(mainCanvas.width/2, mainCanvas.height/2);ctx.rotate(Math.PI/2);ctx.translate(-mainCanvas.width/2, -mainCanvas.height/2);ctx.drawImage(mainCanvas, 0, 0);} 
+        ctx.restore();
+      }
+
+      bctx.clearRect(0,0,buffer.width, buffer.height);
+      bctx.globalCompositeOperation = 'source-over';
+      bctx.drawImage(mainCanvas, 0, 0);
+
+      requestAnimationFrame(loop);
+    }
+
+    function applyAdjustments(imageData, brightness, contrast, saturation){
+      const d = imageData.data;
+      const cFactor = (259*(contrast*255 + 255))/(255*(259 - contrast*255));
+      for(let i=0;i<d.length;i+=4){
+        // brightness and contrast
+        for(let j=0;j<3;j++){
+          d[i+j] = cFactor*(d[i+j]-128)+128;
+          d[i+j] *= brightness;
+        }
+        // saturation
+        const gray = 0.2989*d[i] + 0.5870*d[i+1] + 0.1140*d[i+2];
+        for(let j=0;j<3;j++){
+          d[i+j] = gray + (d[i+j]-gray)*saturation;
+        }
+      }
+    }
+
+    window.addEventListener('beforeunload', ()=>{ stopStream(); });
+    resize();
+  })();
+  </script>
+</body>
+</html>
