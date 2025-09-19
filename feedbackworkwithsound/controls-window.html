@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Audio & Visual Controls</title>
+  <style>
+    :root{--bg:#0f1724;--muted:#9aa7bf;--accent:#7dd3fc}
+    html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, Roboto, "Helvetica Neue", Arial;color:#e6eef8;background:var(--bg)}
+    .controls-container{display:flex;flex-direction:column;height:100vh;padding:18px;box-sizing:border-box;overflow-y:auto}
+    .section{background:#071026;border-radius:12px;padding:12px;margin-bottom:12px}
+    .section-title{font-size:14px;color:var(--accent);font-weight:bold;margin-bottom:10px;border-bottom:1px solid #123046;padding-bottom:5px}
+    label{font-size:13px;color:var(--muted);display:block;margin-bottom:5px}
+    .row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    input[type=range]{width:100%}
+    .btn{background:transparent;border:1px solid #123046;color:var(--accent);padding:8px 10px;border-radius:8px;cursor:pointer;font-size:12px}
+    .btn:active{transform:translateY(1px)}
+    .main-btn{font-size:16px;font-weight:700;padding:12px 20px;min-width:120px;background:rgba(125,211,252,0.15);border:2px solid var(--accent);margin-bottom:10px}
+    .main-btn:hover{background:rgba(125,211,252,0.25)}
+    .main-btn:active{transform:translateY(2px)}
+    .direction-btn{width:40px;height:40px;font-size:16px;font-weight:bold;border-radius:6px}
+    .direction-btn:hover{background:rgba(125,211,252,0.1)}
+    .learn-btn{min-width:40px;font-size:10px;padding:4px 6px}
+    .learn-btn.learning{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+    .learn-mode{background:rgba(125,211,252,0.1);border:1px solid var(--accent)}
+    .small{font-size:11px;color:var(--muted)}
+    select,input[type=file]{width:100%;background:#071f31;border:1px solid #123046;color:var(--accent);padding:6px;border-radius:4px;margin-bottom:8px}
+    .preset-list{display:flex;gap:6px;flex-wrap:wrap}
+    .preset{padding:4px 6px;border-radius:6px;background:#071f31;border:1px solid #123046;color:var(--muted);cursor:pointer;font-size:11px}
+    .status{font-size:11px;color:var(--muted);margin-top:4px}
+    .status.connected{color:var(--accent)}
+  </style>
+</head>
+<body>
+  <div class="controls-container">
+    <!-- Main Controls -->
+    <div class="section">
+      <div class="section-title">Main Controls</div>
+      <button id="startStopBtn" class="btn main-btn">Start</button>
+      
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:12px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <button id="upBtn" class="btn direction-btn">↑</button>
+          <div style="display:flex;gap:4px">
+            <button id="leftBtn" class="btn direction-btn">←</button>
+            <button id="downBtn" class="btn direction-btn">↓</button>
+            <button id="rightBtn" class="btn direction-btn">→</button>
+          </div>
+        </div>
+        
+        <button id="snapshotBtn" class="btn">Save snapshot</button>
+      </div>
+    </div>
+
+    <!-- Input Source -->
+    <div class="section">
+      <div class="section-title">Input Source</div>
+      <label>Input Source</label>
+      <select id="sourceSelect">
+        <option value="webcam">Webcam</option>
+        <option value="upload">Upload Image / Video</option>
+      </select>
+      <input id="fileInput" type="file" accept="image/*,video/*" style="display:none" />
+      
+      <label>MIDI Input Device</label>
+      <select id="midiSelect">
+        <option value="">No MIDI device</option>
+      </select>
+      <div class="status" id="midiStatus">MIDI not connected</div>
+    </div>
+
+    <!-- Visual Parameters -->
+    <div class="section">
+      <div class="section-title">Visual Parameters</div>
+      
+      <div>
+        <label>Mix (how much new input you add)</label>
+        <div class="row"><input id="mix" type="range" min="0" max="1" step="0.01" value="0.35"><button class="btn learn-btn" data-slider="mix">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Feedback Decay (alpha applied to previous frame)</label>
+        <div class="row"><input id="decay" type="range" min="0" max="1" step="0.01" value="0.92"><button class="btn learn-btn" data-slider="decay">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Scale (zoom feedback)</label>
+        <div class="row"><input id="scale" type="range" min="0.9" max="1.2" step="0.001" value="0.995"><button class="btn learn-btn" data-slider="scale">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Rotation (deg per frame)</label>
+        <div class="row"><input id="rotation" type="range" min="-2" max="2" step="0.01" value="0.01"><button class="btn learn-btn" data-slider="rotation">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Symmetry (0 = none, 1 = vertical mirror, 2 = 4-way)</label>
+        <div class="row"><input id="symmetry" type="range" min="0" max="2" step="1" value="0"><button class="btn learn-btn" data-slider="symmetry">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Color Shift (hue per second)</label>
+        <div class="row"><input id="hueSpeed" type="range" min="-180" max="180" step="1" value="6"><button class="btn learn-btn" data-slider="hueSpeed">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Brightness</label>
+        <div class="row"><input id="brightness" type="range" min="0" max="2" step="0.01" value="1"><button class="btn learn-btn" data-slider="brightness">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Contrast</label>
+        <div class="row"><input id="contrast" type="range" min="0" max="2" step="0.01" value="1"><button class="btn learn-btn" data-slider="contrast">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Saturation</label>
+        <div class="row"><input id="saturation" type="range" min="0" max="2" step="0.01" value="1"><button class="btn learn-btn" data-slider="saturation">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Blend Mode</label>
+        <select id="blendMode">
+          <option value="source-over">Normal</option>
+          <option value="lighter">Additive</option>
+          <option value="multiply">Multiply</option>
+          <option value="screen">Screen</option>
+          <option value="overlay">Overlay</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Generative Variation</label>
+        <div class="preset-list">
+          <button class="preset" data-preset="gentle">Gentle Spiral</button>
+          <button class="preset" data-preset="wild">Wild Stretch</button>
+          <button class="preset" data-preset="kaleido">Kaleidoscope</button>
+          <button class="preset" data-preset="phot">Photocopy</button>
+        </div>
+      </div>
+
+      <div>
+        <label>Advanced: feedback blur (px)</label>
+        <div class="row"><input id="blur" type="range" min="0" max="20" step="1" value="0"><button class="btn learn-btn" data-slider="blur">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Feedback Center X Position</label>
+        <div class="row"><input id="centerX" type="range" min="-100" max="100" step="1" value="0"><button class="btn learn-btn" data-slider="centerX">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Feedback Center Y Position</label>
+        <div class="row"><input id="centerY" type="range" min="-100" max="100" step="1" value="0"><button class="btn learn-btn" data-slider="centerY">Learn</button></div>
+      </div>
+    </div>
+
+    <!-- Audio Synthesis -->
+    <div class="section">
+      <div class="section-title">Audio Synthesis</div>
+
+      <div>
+        <label>Audio Enable</label>
+        <div class="row">
+          <button id="audioToggleBtn" class="btn" style="flex: 1;">Enable Audio</button>
+        </div>
+      </div>
+
+      <div>
+        <label>Volume</label>
+        <div class="row"><input id="audioVolume" type="range" min="0" max="1" step="0.01" value="0.3"><button class="btn learn-btn" data-slider="audioVolume">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Carrier Frequency (Hz)</label>
+        <div class="row"><input id="carrierFreq" type="range" min="100" max="2000" step="1" value="440"><button class="btn learn-btn" data-slider="carrierFreq">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Modulation Depth</label>
+        <div class="row"><input id="modDepth" type="range" min="0" max="1000" step="1" value="200"><button class="btn learn-btn" data-slider="modDepth">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Matrix Strip Width</label>
+        <div class="row"><input id="stripWidth" type="range" min="1" max="50" step="1" value="10"><button class="btn learn-btn" data-slider="stripWidth">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Audio Update Rate (Hz)</label>
+        <div class="row"><input id="audioRate" type="range" min="10" max="120" step="1" value="60"><button class="btn learn-btn" data-slider="audioRate">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Frequency Range</label>
+        <div class="row"><input id="freqRange" type="range" min="100" max="2000" step="10" value="1000"><button class="btn learn-btn" data-slider="freqRange">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Audio Mode</label>
+        <select id="audioMode">
+          <option value="horizontal">Horizontal Strips</option>
+          <option value="vertical">Vertical Strips</option>
+          <option value="diagonal">Diagonal Strips</option>
+          <option value="center">Center Radial</option>
+          <option value="edge">Edge Detection</option>
+          <option value="motion">Motion Tracking</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Harmonic Count</label>
+        <div class="row"><input id="harmonicCount" type="range" min="1" max="8" step="1" value="4"><button class="btn learn-btn" data-slider="harmonicCount">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Harmonic Spread</label>
+        <div class="row"><input id="harmonicSpread" type="range" min="0.5" max="3" step="0.1" value="1.5"><button class="btn learn-btn" data-slider="harmonicSpread">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Responsiveness</label>
+        <div class="row"><input id="responsiveness" type="range" min="0.1" max="5" step="0.1" value="2"><button class="btn learn-btn" data-slider="responsiveness">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Filter Cutoff</label>
+        <div class="row"><input id="filterCutoff" type="range" min="100" max="8000" step="10" value="2000"><button class="btn learn-btn" data-slider="filterCutoff">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Reverb Amount</label>
+        <div class="row"><input id="reverbAmount" type="range" min="0" max="1" step="0.01" value="0.3"><button class="btn learn-btn" data-slider="reverbAmount">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Harmonic Mode</label>
+        <select id="harmonicMode">
+          <option value="major">Major Scale</option>
+          <option value="minor">Minor Scale</option>
+          <option value="pentatonic">Pentatonic</option>
+          <option value="chromatic">Chromatic</option>
+          <option value="just">Just Intonation</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div class="section">
+      <div class="section-title">Status</div>
+      <div class="status" id="windowStatus">Controls Window Ready</div>
+      <div class="small" style="margin-top:8px">Built-in generative parameters + live feedback loop + audio synthesis. Works offline in modern browsers.</div>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    // Get all control elements
+    const elements = {
+      startStopBtn: document.getElementById('startStopBtn'),
+      snapshotBtn: document.getElementById('snapshotBtn'),
+      upBtn: document.getElementById('upBtn'),
+      downBtn: document.getElementById('downBtn'),
+      leftBtn: document.getElementById('leftBtn'),
+      rightBtn: document.getElementById('rightBtn'),
+      sourceSelect: document.getElementById('sourceSelect'),
+      fileInput: document.getElementById('fileInput'),
+      midiSelect: document.getElementById('midiSelect'),
+      midiStatus: document.getElementById('midiStatus'),
+      windowStatus: document.getElementById('windowStatus'),
+      audioToggleBtn: document.getElementById('audioToggleBtn'),
+      
+      // Visual parameters
+      mix: document.getElementById('mix'),
+      decay: document.getElementById('decay'),
+      scale: document.getElementById('scale'),
+      rotation: document.getElementById('rotation'),
+      symmetry: document.getElementById('symmetry'),
+      hueSpeed: document.getElementById('hueSpeed'),
+      brightness: document.getElementById('brightness'),
+      contrast: document.getElementById('contrast'),
+      saturation: document.getElementById('saturation'),
+      blendMode: document.getElementById('blendMode'),
+      blur: document.getElementById('blur'),
+      centerX: document.getElementById('centerX'),
+      centerY: document.getElementById('centerY'),
+      
+      // Audio parameters
+      audioVolume: document.getElementById('audioVolume'),
+      carrierFreq: document.getElementById('carrierFreq'),
+      modDepth: document.getElementById('modDepth'),
+      stripWidth: document.getElementById('stripWidth'),
+      audioRate: document.getElementById('audioRate'),
+      freqRange: document.getElementById('freqRange'),
+      audioMode: document.getElementById('audioMode'),
+      harmonicCount: document.getElementById('harmonicCount'),
+      harmonicSpread: document.getElementById('harmonicSpread'),
+      responsiveness: document.getElementById('responsiveness'),
+      filterCutoff: document.getElementById('filterCutoff'),
+      reverbAmount: document.getElementById('reverbAmount'),
+      harmonicMode: document.getElementById('harmonicMode')
+    };
+
+    let learnMode = false;
+    let learningSlider = null;
+    let midiMappings = {};
+    let midiInput = null;
+
+    // MIDI Functions (simplified version)
+    async function initializeMIDI() {
+      if (!navigator.requestMIDIAccess) {
+        elements.midiStatus.textContent = 'MIDI not supported in this browser';
+        return;
+      }
+
+      try {
+        const midiAccess = await navigator.requestMIDIAccess();
+        updateMIDIDeviceList(midiAccess.inputs);
+        
+        midiAccess.onstatechange = (e) => {
+          updateMIDIDeviceList(midiAccess.inputs);
+        };
+
+        elements.midiSelect.addEventListener('change', (e) => {
+          const deviceId = e.target.value;
+          if (deviceId && midiAccess.inputs.has(deviceId)) {
+            midiInput = midiAccess.inputs.get(deviceId);
+            midiInput.onmidimessage = handleMIDIMessage;
+            elements.midiStatus.textContent = `Connected to: ${midiInput.name}`;
+            elements.midiStatus.className = 'status connected';
+          } else {
+            if (midiInput) {
+              midiInput.onmidimessage = null;
+              midiInput = null;
+            }
+            elements.midiStatus.textContent = 'MIDI not connected';
+            elements.midiStatus.className = 'status';
+          }
+        });
+
+      } catch (error) {
+        elements.midiStatus.textContent = 'MIDI access denied: ' + error.message;
+      }
+    }
+
+    function updateMIDIDeviceList(inputs) {
+      const currentValue = elements.midiSelect.value;
+      elements.midiSelect.innerHTML = '<option value="">No MIDI device</option>';
+      
+      inputs.forEach((input, key) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = input.name;
+        elements.midiSelect.appendChild(option);
+      });
+      
+      if (currentValue && inputs.has(currentValue)) {
+        elements.midiSelect.value = currentValue;
+        elements.midiSelect.dispatchEvent(new Event('change'));
+      }
+    }
+
+    function handleMIDIMessage(message) {
+      const [command, cc, value] = message.data;
+      
+      if (command === 176) { // Control Change on channel 1
+        if (learnMode && learningSlider) {
+          assignMIDICC(learningSlider, cc);
+          exitLearnMode();
+        } else {
+          const sliderId = midiMappings[cc];
+          if (sliderId) {
+            const slider = elements[sliderId];
+            if (slider) {
+              const min = parseFloat(slider.min);
+              const max = parseFloat(slider.max);
+              const normalizedValue = value / 127;
+              const sliderValue = min + (max - min) * normalizedValue;
+              
+              if (sliderId === 'symmetry') {
+                slider.value = Math.round(sliderValue);
+              } else {
+                slider.value = sliderValue.toFixed(3);
+              }
+              
+              slider.dispatchEvent(new Event('input'));
+            }
+          }
+        }
+      }
+    }
+
+    function startLearnMode(sliderId) {
+      if (learnMode) {
+        exitLearnMode();
+      }
+      
+      learnMode = true;
+      learningSlider = sliderId;
+      
+      const learnBtn = document.querySelector(`[data-slider="${sliderId}"]`);
+      const sliderContainer = learnBtn.closest('.row').parentElement;
+      
+      learnBtn.textContent = 'Cancel';
+      learnBtn.classList.add('learning');
+      sliderContainer.classList.add('learn-mode');
+      
+      elements.midiStatus.textContent = `Learning: ${sliderId} - Move a MIDI control`;
+    }
+
+    function exitLearnMode() {
+      if (!learnMode) return;
+      
+      learnMode = false;
+      
+      const learnBtn = document.querySelector(`[data-slider="${learningSlider}"]`);
+      const sliderContainer = learnBtn.closest('.row').parentElement;
+      
+      learnBtn.textContent = 'Learn';
+      learnBtn.classList.remove('learning');
+      sliderContainer.classList.remove('learn-mode');
+      
+      elements.midiStatus.textContent = midiInput ? `Connected to: ${midiInput.name}` : 'MIDI not connected';
+      elements.midiStatus.className = midiInput ? 'status connected' : 'status';
+      
+      learningSlider = null;
+    }
+
+    function assignMIDICC(sliderId, cc) {
+      Object.keys(midiMappings).forEach(key => {
+        if (midiMappings[key] === sliderId) {
+          delete midiMappings[key];
+        }
+      });
+      
+      midiMappings[cc] = sliderId;
+      localStorage.setItem('midiMappings', JSON.stringify(midiMappings));
+      
+      elements.midiStatus.textContent = `Assigned CC ${cc} to ${sliderId}`;
+      setTimeout(() => {
+        if (!learnMode) {
+          elements.midiStatus.textContent = midiInput ? `Connected to: ${midiInput.name}` : 'MIDI not connected';
+        }
+      }, 2000);
+    }
+
+    function loadMIDIMappings() {
+      const saved = localStorage.getItem('midiMappings');
+      if (saved) {
+        try {
+          midiMappings = JSON.parse(saved);
+        } catch (e) {
+          console.warn('Failed to load MIDI mappings:', e);
+          midiMappings = {};
+        }
+      }
+    }
+
+    // Send parameter updates to main window
+    function sendParameterUpdate(paramName, value) {
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'parameterUpdate',
+          param: paramName,
+          value: value
+        }, '*');
+      }
+    }
+
+    // Event listeners
+    elements.startStopBtn.addEventListener('click', () => {
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'toggleStartStop'
+        }, '*');
+      }
+    });
+
+    elements.snapshotBtn.addEventListener('click', () => {
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'takeSnapshot'
+        }, '*');
+      }
+    });
+
+    // Direction controls
+    elements.upBtn.addEventListener('click', () => sendCameraControl('up'));
+    elements.downBtn.addEventListener('click', () => sendCameraControl('down'));
+    elements.leftBtn.addEventListener('click', () => sendCameraControl('left'));
+    elements.rightBtn.addEventListener('click', () => sendCameraControl('right'));
+
+    function sendCameraControl(action) {
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'cameraControl',
+          action: action
+        }, '*');
+      }
+    }
+
+    // Audio toggle
+    elements.audioToggleBtn.addEventListener('click', () => {
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'toggleAudio'
+        }, '*');
+      }
+    });
+
+    // Source selection
+    elements.sourceSelect.addEventListener('change', () => {
+      elements.fileInput.style.display = elements.sourceSelect.value === 'upload' ? 'block' : 'none';
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'sourceChange',
+          source: elements.sourceSelect.value
+        }, '*');
+      }
+    });
+
+    elements.fileInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file && window.opener) {
+        const url = URL.createObjectURL(file);
+        window.opener.postMessage({
+          type: 'fileUpload',
+          url: url,
+          type: file.type
+        }, '*');
+      }
+    });
+
+    // Add input listeners for all sliders and selects
+    Object.keys(elements).forEach(key => {
+      const element = elements[key];
+      if (element && (element.type === 'range' || element.tagName === 'SELECT')) {
+        element.addEventListener('input', () => {
+          sendParameterUpdate(key, element.value);
+        });
+      }
+    });
+
+    // MIDI Learn button listeners
+    document.addEventListener('click', (e) => {
+      if (e.target.classList.contains('learn-btn')) {
+        const sliderId = e.target.getAttribute('data-slider');
+        if (learnMode && learningSlider === sliderId) {
+          exitLearnMode();
+        } else {
+          startLearnMode(sliderId);
+        }
+      }
+    });
+
+    // Listen for messages from main window
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      
+      switch(data.type) {
+        case 'updateButtonState':
+          elements.startStopBtn.textContent = data.running ? 'Stop' : 'Start';
+          elements.audioToggleBtn.textContent = data.audioEnabled ? 'Disable Audio' : 'Enable Audio';
+          elements.audioToggleBtn.style.background = data.audioEnabled ? 'rgba(125,211,252,0.25)' : 'transparent';
+          break;
+          
+        case 'updateParameter':
+          if (elements[data.param]) {
+            elements[data.param].value = data.value;
+          }
+          break;
+      }
+    });
+
+    // Initialize
+    loadMIDIMappings();
+    initializeMIDI();
+    
+    // Notify main window that controls window is ready
+    if (window.opener) {
+      window.opener.postMessage({ type: 'controlsWindowReady' }, '*');
+    }
+
+    window.addEventListener('beforeunload', () => {
+      if (window.opener) {
+        window.opener.postMessage({ type: 'controlsWindowClosed' }, '*');
+      }
+    });
+  })();
+  </script>
+</body>
+</html>

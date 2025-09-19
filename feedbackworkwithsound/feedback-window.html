@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Visual Feedback Display</title>
+  <style>
+    :root{--bg:#0f1724;--muted:#9aa7bf;--accent:#7dd3fc}
+    html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, Roboto, "Helvetica Neue", Arial;color:#e6eef8;background:var(--bg)}
+    .feedback-container{display:flex;flex-direction:column;height:100vh;padding:20px;box-sizing:border-box}
+    .canvas-wrap{flex:1;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(2,6,23,.7);background:#000;display:flex;align-items:center;justify-content:center;position:relative}
+    canvas{width:100%;height:100%;display:block}
+    .status-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid #123046;margin-top:10px}
+    .status-item{font-size:12px;color:var(--muted)}
+    .status-connected{color:var(--accent)}
+    .fullscreen-btn{position:absolute;top:10px;right:10px;background:rgba(125,211,252,0.2);border:1px solid var(--accent);color:var(--accent);padding:8px 12px;border-radius:6px;cursor:pointer;font-size:12px}
+    .fullscreen-btn:hover{background:rgba(125,211,252,0.3)}
+  </style>
+</head>
+<body>
+  <div class="feedback-container">
+    <div class="canvas-wrap">
+      <canvas id="feedbackCanvas"></canvas>
+      <button id="fullscreenBtn" class="fullscreen-btn">Fullscreen</button>
+    </div>
+    <div class="status-bar">
+      <div class="status-item">Visual Feedback Display</div>
+      <div id="connectionStatus" class="status-item">Connecting...</div>
+      <div id="performanceStatus" class="status-item">FPS: --</div>
+    </div>
+  </div>
+
+  <video id="sourceVideo" autoplay playsinline muted style="display:none"></video>
+
+  <script>
+  (function(){
+    const feedbackCanvas = document.getElementById('feedbackCanvas');
+    const ctx = feedbackCanvas.getContext('2d');
+    const video = document.getElementById('sourceVideo');
+    const connectionStatus = document.getElementById('connectionStatus');
+    const performanceStatus = document.getElementById('performanceStatus');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+
+    const buffer = document.createElement('canvas');
+    const bctx = buffer.getContext('2d');
+
+    let running = false;
+    let stream = null;
+    let lastTime = performance.now();
+    let angle = 0;
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let currentFps = 0;
+    
+    // Camera position for directional controls
+    let cameraX = 0;
+    let cameraY = 0;
+    let cameraZoom = 1;
+
+    // Visual parameters (received from main window)
+    let visualParams = {
+      mix: 0.35,
+      decay: 0.92,
+      scale: 0.995,
+      rotation: 0.01,
+      symmetry: 0,
+      hueSpeed: 6,
+      brightness: 1,
+      contrast: 1,
+      saturation: 1,
+      blendMode: 'source-over',
+      blur: 0,
+      centerX: 0,
+      centerY: 0
+    };
+
+    function resize(){
+      const rect = feedbackCanvas.getBoundingClientRect();
+      const w = Math.max(320, Math.floor(rect.width));
+      const h = Math.max(240, Math.floor(rect.height));
+      if(feedbackCanvas.width !== w || feedbackCanvas.height !== h){
+        feedbackCanvas.width = w;
+        feedbackCanvas.height = h;
+        buffer.width = w;
+        buffer.height = h;
+      }
+    }
+
+    function updatePerformanceStats() {
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        currentFps = Math.round((frameCount * 1000) / (now - lastFpsTime));
+        performanceStatus.textContent = `FPS: ${currentFps}`;
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+    }
+
+    function loop(now){
+      if(!running) return;
+      resize();
+      updatePerformanceStats();
+      
+      const dt = Math.min(60, now - lastTime) / 1000;
+      lastTime = now;
+
+      angle += visualParams.rotation * Math.PI/180;
+
+      ctx.save();
+      ctx.clearRect(0,0,feedbackCanvas.width, feedbackCanvas.height);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = visualParams.decay;
+      
+      // Calculate center position based on slider values
+      const centerOffsetX = (visualParams.centerX / 100) * feedbackCanvas.width;
+      const centerOffsetY = (visualParams.centerY / 100) * feedbackCanvas.height;
+      const feedbackCenterX = feedbackCanvas.width/2 + centerOffsetX;
+      const feedbackCenterY = feedbackCanvas.height/2 + centerOffsetY;
+      
+      ctx.translate(feedbackCenterX, feedbackCenterY);
+      ctx.rotate(angle);
+      ctx.scale(visualParams.scale, visualParams.scale);
+      ctx.translate(-feedbackCanvas.width/2, -feedbackCanvas.height/2);
+      ctx.drawImage(buffer, 0, 0);
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalCompositeOperation = visualParams.blendMode;
+      ctx.globalAlpha = visualParams.mix;
+      if(video && (video.readyState >= 2)){
+        const iw = video.videoWidth || video.width;
+        const ih = video.videoHeight || video.height;
+        if(iw && ih){
+          const canvasRatio = feedbackCanvas.width / feedbackCanvas.height;
+          const videoRatio = iw / ih;
+          let sWidth = iw, sHeight = ih, sx=0, sy=0;
+          if(videoRatio > canvasRatio){sWidth = ih * canvasRatio; sx = (iw - sWidth)/2;} else {sHeight = iw / canvasRatio; sy = (ih - sHeight)/2;}
+          
+          // Apply camera position offset
+          const scaledWidth = feedbackCanvas.width * cameraZoom;
+          const scaledHeight = feedbackCanvas.height * cameraZoom;
+          const offsetX = cameraX + (feedbackCanvas.width - scaledWidth) / 2;
+          const offsetY = cameraY + (feedbackCanvas.height - scaledHeight) / 2;
+          
+          ctx.drawImage(video, sx, sy, sWidth, sHeight, offsetX, offsetY, scaledWidth, scaledHeight);
+        } else {
+          // Apply camera position offset for fallback case
+          const scaledWidth = feedbackCanvas.width * cameraZoom;
+          const scaledHeight = feedbackCanvas.height * cameraZoom;
+          const offsetX = cameraX + (feedbackCanvas.width - scaledWidth) / 2;
+          const offsetY = cameraY + (feedbackCanvas.height - scaledHeight) / 2;
+          
+          ctx.drawImage(video, offsetX, offsetY, scaledWidth, scaledHeight);
+        }
+      }
+      ctx.restore();
+
+      if(visualParams.blur > 0){
+        const smallW = Math.max(2, Math.floor(feedbackCanvas.width / (1 + visualParams.blur/6)));
+        const smallH = Math.max(2, Math.floor(feedbackCanvas.height / (1 + visualParams.blur/6)));
+        const tmp = document.createElement('canvas');
+        tmp.width = smallW; tmp.height = smallH;
+        const tctx = tmp.getContext('2d');
+        tctx.drawImage(feedbackCanvas, 0, 0, smallW, smallH);
+        ctx.clearRect(0,0,feedbackCanvas.width, feedbackCanvas.height);
+        ctx.drawImage(tmp, 0, 0, feedbackCanvas.width, feedbackCanvas.height);
+      }
+
+      let imageData = ctx.getImageData(0,0,feedbackCanvas.width, feedbackCanvas.height);
+      applyAdjustments(imageData, visualParams.brightness, visualParams.contrast, visualParams.saturation);
+      ctx.putImageData(imageData,0,0);
+
+      if(visualParams.symmetry > 0){
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.6;
+        if(visualParams.symmetry >= 1){ctx.translate(feedbackCanvas.width, 0);ctx.scale(-1,1);ctx.drawImage(feedbackCanvas, 0, 0);} 
+        if(visualParams.symmetry >= 2){ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha = 0.5;ctx.translate(feedbackCanvas.width/2, feedbackCanvas.height/2);ctx.rotate(Math.PI/2);ctx.translate(-feedbackCanvas.width/2, -feedbackCanvas.height/2);ctx.drawImage(feedbackCanvas, 0, 0);} 
+        ctx.restore();
+      }
+
+      bctx.clearRect(0,0,buffer.width, buffer.height);
+      bctx.globalCompositeOperation = 'source-over';
+      bctx.drawImage(feedbackCanvas, 0, 0);
+
+      // Note: Audio analysis is handled by main window, no need to send frame data
+
+      requestAnimationFrame(loop);
+    }
+
+    function applyAdjustments(imageData, brightness, contrast, saturation){
+      const d = imageData.data;
+      const cFactor = (259*(contrast*255 + 255))/(255*(259 - contrast*255));
+      for(let i=0;i<d.length;i+=4){
+        // brightness and contrast
+        for(let j=0;j<3;j++){
+          d[i+j] = cFactor*(d[i+j]-128)+128;
+          d[i+j] *= brightness;
+        }
+        // saturation
+        const gray = 0.2989*d[i] + 0.5870*d[i+1] + 0.1140*d[i+2];
+        for(let j=0;j<3;j++){
+          d[i+j] = gray + (d[i+j]-gray)*saturation;
+        }
+      }
+    }
+
+    async function startWebcam(){
+      stopStream();
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+        video.srcObject = stream;
+        await video.play();
+      }catch(e){
+        console.error('Could not access webcam:', e.message);
+        connectionStatus.textContent = 'Webcam Error';
+      }
+    }
+
+    function stopStream(){
+      if(stream){stream.getTracks().forEach(t=>t.stop());stream = null;video.srcObject = null;}
+    }
+
+    // Listen for messages from main window
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      
+      switch(data.type) {
+        case 'startFeedback':
+          running = true;
+          connectionStatus.textContent = 'Connected';
+          connectionStatus.className = 'status-item status-connected';
+          if(data.source === 'webcam') {
+            startWebcam();
+          }
+          resize();
+          lastTime = performance.now();
+          requestAnimationFrame(loop);
+          break;
+          
+        case 'stopFeedback':
+          running = false;
+          connectionStatus.textContent = 'Stopped';
+          connectionStatus.className = 'status-item';
+          stopStream();
+          break;
+          
+        case 'updateParams':
+          visualParams = { ...visualParams, ...data.params };
+          break;
+          
+        case 'setVideoSource':
+          stopStream();
+          if(data.url) {
+            video.src = data.url;
+            video.loop = true;
+            video.play();
+          }
+          break;
+          
+        case 'cameraControl':
+          if(data.action === 'up') cameraY -= 10;
+          else if(data.action === 'down') cameraY += 10;
+          else if(data.action === 'left') cameraX -= 10;
+          else if(data.action === 'right') cameraX += 10;
+          break;
+      }
+    });
+
+    // Fullscreen functionality
+    fullscreenBtn.addEventListener('click', () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        feedbackCanvas.requestFullscreen();
+      }
+    });
+
+    // Handle fullscreen change
+    document.addEventListener('fullscreenchange', () => {
+      fullscreenBtn.textContent = document.fullscreenElement ? 'Exit Fullscreen' : 'Fullscreen';
+    });
+
+    // Initialize
+    resize();
+    connectionStatus.textContent = 'Ready';
+    
+    // Notify main window that feedback window is ready
+    if (window.opener) {
+      window.opener.postMessage({ type: 'feedbackWindowReady' }, '*');
+    }
+
+    window.addEventListener('beforeunload', () => {
+      stopStream();
+      if (window.opener) {
+        window.opener.postMessage({ type: 'feedbackWindowClosed' }, '*');
+      }
+    });
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1618 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Classic Visual Feedback Machine</title>
+  <style>
+    :root{--bg:#0f1724;--muted:#9aa7bf;--accent:#7dd3fc}
+    html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, Roboto, "Helvetica Neue", Arial;color:#e6eef8;background:var(--bg)}
+    .wrap{display:flex;gap:16px;padding:18px;box-sizing:border-box;height:100%}
+    .left{flex:1;display:flex;flex-direction:column;gap:12px}
+    .canvas-wrap{flex:1;border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(2,6,23,.7);background:#000;display:flex;align-items:center;justify-content:center}
+    canvas{width:100%;height:100%;display:block}
+    .controls{width:360px;min-width:280px;background:#071026;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+    label{font-size:13px;color:var(--muted)}
+    .row{display:flex;gap:8px;align-items:center}
+    input[type=range]{width:100%}
+    .btn{background:transparent;border:1px solid #123046;color:var(--accent);padding:8px 10px;border-radius:8px;cursor:pointer}
+    .btn:active{transform:translateY(1px)}
+    .main-btn{font-size:24px;font-weight:700;padding:20px 32px;min-width:160px;background:rgba(125,211,252,0.15);border:3px solid var(--accent)}
+    .main-btn:hover{background:rgba(125,211,252,0.25)}
+    .main-btn:active{transform:translateY(3px)}
+    .direction-btn{width:50px;height:50px;font-size:20px;font-weight:bold;border-radius:8px}
+    .direction-btn:hover{background:rgba(125,211,252,0.1)}
+    .small{font-size:12px;color:var(--muted)}
+    select,input[type=file]{width:100%}
+    .preset-list{display:flex;gap:8px;flex-wrap:wrap}
+    .preset{padding:6px 8px;border-radius:8px;background:#071f31;border:1px solid #123046;color:var(--muted);cursor:pointer}
+    .learn-btn{min-width:50px;font-size:11px;padding:6px 8px}
+    .learn-btn.learning{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+    .learn-mode{background:rgba(125,211,252,0.1);border:1px solid var(--accent)}
+    .footer{font-size:12px;color:var(--muted);text-align:center}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="left">
+      <div class="canvas-wrap">
+        <canvas id="mainCanvas"></canvas>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:16px;margin-bottom:12px">
+        <button id="startStopBtn" class="btn main-btn">Start</button>
+        
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <button id="upBtn" class="btn direction-btn">↑</button>
+          <div style="display:flex;gap:4px">
+            <button id="leftBtn" class="btn direction-btn">←</button>
+            <button id="downBtn" class="btn direction-btn">↓</button>
+            <button id="rightBtn" class="btn direction-btn">→</button>
+          </div>
+        </div>
+        
+        <button id="snapshotBtn" class="btn">Save snapshot</button>
+      </div>
+      <div class="small" style="text-align:center;margin-bottom:8px">Tip: allow webcam, then press Start. Use the sliders to dial the feedback.</div>
+    </div>
+
+    <div class="controls">
+      <div>
+        <label>Input Source</label>
+        <select id="sourceSelect">
+          <option value="webcam">Webcam</option>
+          <option value="upload">Upload Image / Video</option>
+        </select>
+        <input id="fileInput" type="file" accept="image/*,video/*" style="margin-top:8px;display:none" />
+      </div>
+
+      <div>
+        <label>MIDI Input Device</label>
+        <select id="midiSelect">
+          <option value="">No MIDI device</option>
+        </select>
+        <div class="small" id="midiStatus" style="margin-top:4px;color:var(--muted)">MIDI not connected</div>
+      </div>
+
+      <div>
+        <label>Mix (how much new input you add)</label>
+        <div class="row"><input id="mix" type="range" min="0" max="1" step="0.01" value="0.35"><button class="btn learn-btn" data-slider="mix">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Feedback Decay (alpha applied to previous frame)</label>
+        <div class="row"><input id="decay" type="range" min="0" max="1" step="0.01" value="0.92"><button class="btn learn-btn" data-slider="decay">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Scale (zoom feedback)</label>
+        <div class="row"><input id="scale" type="range" min="0.9" max="1.2" step="0.001" value="0.995"><button class="btn learn-btn" data-slider="scale">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Rotation (deg per frame)</label>
+        <div class="row"><input id="rotation" type="range" min="-2" max="2" step="0.01" value="0.01"><button class="btn learn-btn" data-slider="rotation">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Symmetry (0 = none, 1 = vertical mirror, 2 = 4-way)</label>
+        <div class="row"><input id="symmetry" type="range" min="0" max="2" step="1" value="0"><button class="btn learn-btn" data-slider="symmetry">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Color Shift (hue per second)</label>
+        <div class="row"><input id="hueSpeed" type="range" min="-180" max="180" step="1" value="6"><button class="btn learn-btn" data-slider="hueSpeed">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Brightness</label>
+        <div class="row"><input id="brightness" type="range" min="0" max="2" step="0.01" value="1"><button class="btn learn-btn" data-slider="brightness">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Contrast</label>
+        <div class="row"><input id="contrast" type="range" min="0" max="2" step="0.01" value="1"><button class="btn learn-btn" data-slider="contrast">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Saturation</label>
+        <div class="row"><input id="saturation" type="range" min="0" max="2" step="0.01" value="1"><button class="btn learn-btn" data-slider="saturation">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Blend Mode</label>
+        <select id="blendMode">
+          <option value="source-over">Normal</option>
+          <option value="lighter">Additive</option>
+          <option value="multiply">Multiply</option>
+          <option value="screen">Screen</option>
+          <option value="overlay">Overlay</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Generative Variation</label>
+        <div class="preset-list">
+          <button class="preset" data-preset="gentle">Gentle Spiral</button>
+          <button class="preset" data-preset="wild">Wild Stretch</button>
+          <button class="preset" data-preset="kaleido">Kaleidoscope</button>
+          <button class="preset" data-preset="phot">Photocopy</button>
+        </div>
+      </div>
+
+      <div>
+        <label>Advanced: feedback blur (px)</label>
+        <div class="row"><input id="blur" type="range" min="0" max="20" step="1" value="0"><button class="btn learn-btn" data-slider="blur">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Feedback Center X Position</label>
+        <div class="row"><input id="centerX" type="range" min="-100" max="100" step="1" value="0"><button class="btn learn-btn" data-slider="centerX">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Feedback Center Y Position</label>
+        <div class="row"><input id="centerY" type="range" min="-100" max="100" step="1" value="0"><button class="btn learn-btn" data-slider="centerY">Learn</button></div>
+      </div>
+
+      <div style="border-top: 1px solid #123046; padding-top: 12px; margin-top: 12px;">
+        <label style="color: var(--accent); font-weight: bold;">Audio Synthesis</label>
+      </div>
+
+      <div>
+        <label>Audio Enable</label>
+        <div class="row">
+          <button id="audioToggleBtn" class="btn" style="flex: 1;">Enable Audio</button>
+        </div>
+      </div>
+
+      <div>
+        <label>Volume</label>
+        <div class="row"><input id="audioVolume" type="range" min="0" max="1" step="0.01" value="0.3"><button class="btn learn-btn" data-slider="audioVolume">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Carrier Frequency (Hz)</label>
+        <div class="row"><input id="carrierFreq" type="range" min="100" max="2000" step="1" value="440"><button class="btn learn-btn" data-slider="carrierFreq">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Modulation Depth</label>
+        <div class="row"><input id="modDepth" type="range" min="0" max="1000" step="1" value="200"><button class="btn learn-btn" data-slider="modDepth">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Matrix Strip Width</label>
+        <div class="row"><input id="stripWidth" type="range" min="1" max="50" step="1" value="10"><button class="btn learn-btn" data-slider="stripWidth">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Audio Update Rate (Hz)</label>
+        <div class="row"><input id="audioRate" type="range" min="10" max="120" step="1" value="60"><button class="btn learn-btn" data-slider="audioRate">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Frequency Range</label>
+        <div class="row"><input id="freqRange" type="range" min="100" max="2000" step="10" value="1000"><button class="btn learn-btn" data-slider="freqRange">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Audio Mode</label>
+        <select id="audioMode">
+          <option value="horizontal">Horizontal Strips</option>
+          <option value="vertical">Vertical Strips</option>
+          <option value="diagonal">Diagonal Strips</option>
+          <option value="center">Center Radial</option>
+          <option value="edge">Edge Detection</option>
+          <option value="motion">Motion Tracking</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Harmonic Count</label>
+        <div class="row"><input id="harmonicCount" type="range" min="1" max="8" step="1" value="4"><button class="btn learn-btn" data-slider="harmonicCount">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Harmonic Spread</label>
+        <div class="row"><input id="harmonicSpread" type="range" min="0.5" max="3" step="0.1" value="1.5"><button class="btn learn-btn" data-slider="harmonicSpread">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Responsiveness</label>
+        <div class="row"><input id="responsiveness" type="range" min="0.1" max="5" step="0.1" value="2"><button class="btn learn-btn" data-slider="responsiveness">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Filter Cutoff</label>
+        <div class="row"><input id="filterCutoff" type="range" min="100" max="8000" step="10" value="2000"><button class="btn learn-btn" data-slider="filterCutoff">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Reverb Amount</label>
+        <div class="row"><input id="reverbAmount" type="range" min="0" max="1" step="0.01" value="0.3"><button class="btn learn-btn" data-slider="reverbAmount">Learn</button></div>
+      </div>
+
+      <div>
+        <label>Harmonic Mode</label>
+        <select id="harmonicMode">
+          <option value="major">Major Scale</option>
+          <option value="minor">Minor Scale</option>
+          <option value="pentatonic">Pentatonic</option>
+          <option value="chromatic">Chromatic</option>
+          <option value="just">Just Intonation</option>
+        </select>
+      </div>
+
+      <div style="border-top: 1px solid #123046; padding-top: 12px; margin-top: 12px;">
+        <label style="color: var(--accent); font-weight: bold;">Window Management</label>
+      </div>
+
+      <div>
+        <label>Separate Windows</label>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button id="openFeedbackWindow" class="btn" style="flex:1">Open Feedback Window</button>
+          <button id="openControlsWindow" class="btn" style="flex:1">Open Controls Window</button>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button id="closeAllWindows" class="btn" style="flex:1">Close All Windows</button>
+          <button id="arrangeWindows" class="btn" style="flex:1">Arrange Windows</button>
+        </div>
+      </div>
+
+      <div>
+        <label>Window Status</label>
+        <div class="small" id="windowStatus">Main window ready</div>
+      </div>
+
+      <div class="footer">Built-in generative parameters + live feedback loop + audio synthesis. Works offline in modern browsers.</div>
+    </div>
+  </div>
+
+  <video id="sourceVideo" autoplay playsinline muted style="display:none"></video>
+
+  <script>
+  (function(){
+    const mainCanvas = document.getElementById('mainCanvas');
+    const ctx = mainCanvas.getContext('2d');
+    const video = document.getElementById('sourceVideo');
+    const startStopBtn = document.getElementById('startStopBtn');
+    const snapshotBtn = document.getElementById('snapshotBtn');
+    const mixEl = document.getElementById('mix');
+    const decayEl = document.getElementById('decay');
+    const scaleEl = document.getElementById('scale');
+    const rotationEl = document.getElementById('rotation');
+    const symmetryEl = document.getElementById('symmetry');
+    const hueSpeedEl = document.getElementById('hueSpeed');
+    const brightnessEl = document.getElementById('brightness');
+    const contrastEl = document.getElementById('contrast');
+    const saturationEl = document.getElementById('saturation');
+    const blendModeEl = document.getElementById('blendMode');
+    const sourceSelect = document.getElementById('sourceSelect');
+    const fileInput = document.getElementById('fileInput');
+    const blurEl = document.getElementById('blur');
+    const midiSelect = document.getElementById('midiSelect');
+    const midiStatus = document.getElementById('midiStatus');
+    const upBtn = document.getElementById('upBtn');
+    const downBtn = document.getElementById('downBtn');
+    const leftBtn = document.getElementById('leftBtn');
+    const rightBtn = document.getElementById('rightBtn');
+    const centerXEl = document.getElementById('centerX');
+    const centerYEl = document.getElementById('centerY');
+    const audioToggleBtn = document.getElementById('audioToggleBtn');
+    const audioVolumeEl = document.getElementById('audioVolume');
+    const carrierFreqEl = document.getElementById('carrierFreq');
+    const modDepthEl = document.getElementById('modDepth');
+    const stripWidthEl = document.getElementById('stripWidth');
+    const audioRateEl = document.getElementById('audioRate');
+    const freqRangeEl = document.getElementById('freqRange');
+    const audioModeEl = document.getElementById('audioMode');
+    const harmonicCountEl = document.getElementById('harmonicCount');
+    const harmonicSpreadEl = document.getElementById('harmonicSpread');
+    const responsivenessEl = document.getElementById('responsiveness');
+    const filterCutoffEl = document.getElementById('filterCutoff');
+    const reverbAmountEl = document.getElementById('reverbAmount');
+    const harmonicModeEl = document.getElementById('harmonicMode');
+    const openFeedbackWindowBtn = document.getElementById('openFeedbackWindow');
+    const openControlsWindowBtn = document.getElementById('openControlsWindow');
+    const closeAllWindowsBtn = document.getElementById('closeAllWindows');
+    const arrangeWindowsBtn = document.getElementById('arrangeWindows');
+    const windowStatusEl = document.getElementById('windowStatus');
+
+    const buffer = document.createElement('canvas');
+    const bctx = buffer.getContext('2d');
+
+    let running = false;
+    let stream = null;
+    let lastTime = performance.now();
+    let angle = 0;
+    let midiInput = null;
+    let learnMode = false;
+    let learningSlider = null;
+    
+    // Camera position for directional controls
+    let cameraX = 0;
+    let cameraY = 0;
+    let cameraZoom = 1;
+
+    // Dynamic MIDI CC mappings (loaded from localStorage)
+    let midiMappings = {};
+
+    // Enhanced Audio system variables
+    let audioContext = null;
+    let audioEnabled = false;
+    let masterGainNode = null;
+    let filterNode = null;
+    let reverbNode = null;
+    let harmonicOscillators = [];
+    let harmonicGains = [];
+    let lastAudioUpdate = 0;
+    let audioUpdateInterval = 1000 / 60; // 60 FPS by default
+    let previousImageData = null;
+    let motionData = null;
+
+    // Window management variables
+    let feedbackWindow = null;
+    let controlsWindow = null;
+    let feedbackWindowReady = false;
+    let controlsWindowReady = false;
+
+    // Enhanced Audio initialization functions
+    async function initializeAudio() {
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Create master gain node
+        masterGainNode = audioContext.createGain();
+        masterGainNode.connect(audioContext.destination);
+        masterGainNode.gain.value = parseFloat(audioVolumeEl.value);
+        
+        // Create low-pass filter
+        filterNode = audioContext.createBiquadFilter();
+        filterNode.type = 'lowpass';
+        filterNode.frequency.setValueAtTime(parseFloat(filterCutoffEl.value), audioContext.currentTime);
+        filterNode.Q.setValueAtTime(1, audioContext.currentTime);
+        filterNode.connect(masterGainNode);
+        
+        // Create reverb using convolver (simple impulse response)
+        createReverb();
+        
+        console.log('Enhanced audio context initialized');
+      } catch (error) {
+        console.error('Failed to initialize audio:', error);
+        audioToggleBtn.textContent = 'Audio Unavailable';
+        audioToggleBtn.disabled = true;
+      }
+    }
+
+    function createReverb() {
+      if (!audioContext) return;
+      
+      // Create a simple reverb using convolver
+      const length = audioContext.sampleRate * 2; // 2 seconds
+      const impulse = audioContext.createBuffer(2, length, audioContext.sampleRate);
+      
+      for (let channel = 0; channel < 2; channel++) {
+        const channelData = impulse.getChannelData(channel);
+        for (let i = 0; i < length; i++) {
+          const decay = Math.pow(1 - i / length, 2);
+          channelData[i] = (Math.random() * 2 - 1) * decay * 0.5;
+        }
+      }
+      
+      reverbNode = audioContext.createConvolver();
+      reverbNode.buffer = impulse;
+      reverbNode.connect(filterNode);
+    }
+
+    function createHarmonicOscillators() {
+      if (!audioContext || !audioEnabled) return;
+      
+      // Stop existing oscillators
+      stopHarmonicOscillators();
+      
+      const harmonicCount = parseInt(harmonicCountEl.value);
+      const baseFreq = parseFloat(carrierFreqEl.value);
+      const harmonicMode = harmonicModeEl.value;
+      
+      // Define harmonic ratios based on mode
+      const harmonicRatios = getHarmonicRatios(harmonicMode, harmonicCount);
+      
+      for (let i = 0; i < harmonicCount; i++) {
+        // Create oscillator
+        const oscillator = audioContext.createOscillator();
+        oscillator.type = i === 0 ? 'sine' : (i % 2 === 0 ? 'triangle' : 'sawtooth');
+        
+        // Calculate frequency with harmonic ratio
+        const ratio = harmonicRatios[i];
+        const frequency = baseFreq * ratio;
+        oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+        
+        // Create gain node for this harmonic
+        const gainNode = audioContext.createGain();
+        const harmonicVolume = 1 / (i + 1); // Lower harmonics are quieter
+        gainNode.gain.setValueAtTime(harmonicVolume * 0.3, audioContext.currentTime);
+        
+        // Connect oscillator to gain to reverb
+        oscillator.connect(gainNode);
+        gainNode.connect(reverbNode);
+        
+        // Start oscillator
+        oscillator.start();
+        
+        // Store references
+        harmonicOscillators.push(oscillator);
+        harmonicGains.push(gainNode);
+      }
+    }
+
+    function stopHarmonicOscillators() {
+      harmonicOscillators.forEach(osc => {
+        try {
+          osc.stop();
+          osc.disconnect();
+        } catch (e) {
+          // Oscillator might already be stopped
+        }
+      });
+      harmonicGains.forEach(gain => {
+        gain.disconnect();
+      });
+      harmonicOscillators = [];
+      harmonicGains = [];
+    }
+
+    function getHarmonicRatios(mode, count) {
+      const ratios = [];
+      
+      switch (mode) {
+        case 'major':
+          ratios.push(1, 1.25, 1.5, 1.875, 2, 2.5, 3, 3.75);
+          break;
+        case 'minor':
+          ratios.push(1, 1.125, 1.33, 1.6875, 2, 2.25, 2.67, 3.375);
+          break;
+        case 'pentatonic':
+          ratios.push(1, 1.125, 1.33, 1.5, 2, 2.25, 2.67, 3);
+          break;
+        case 'chromatic':
+          ratios.push(1, 1.059, 1.122, 1.189, 1.26, 1.335, 1.414, 1.498);
+          break;
+        case 'just':
+          ratios.push(1, 1.125, 1.25, 1.375, 1.5, 1.625, 1.75, 2);
+          break;
+        default:
+          ratios.push(1, 2, 3, 4, 5, 6, 7, 8);
+      }
+      
+      return ratios.slice(0, count);
+    }
+
+    // Window Management Functions
+    function openFeedbackWindow() {
+      if (feedbackWindow && !feedbackWindow.closed) {
+        feedbackWindow.focus();
+        return;
+      }
+      
+      const width = Math.min(1200, window.screen.width * 0.8);
+      const height = Math.min(800, window.screen.height * 0.8);
+      const left = (window.screen.width - width) / 2;
+      const top = (window.screen.height - height) / 2;
+      
+      feedbackWindow = window.open(
+        'feedback-window.html',
+        'feedbackWindow',
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,toolbar=no,menubar=no`
+      );
+      
+      if (feedbackWindow) {
+        feedbackWindowReady = false;
+        updateWindowStatus();
+        
+        // Send initial state to feedback window
+        setTimeout(() => {
+          if (feedbackWindow && !feedbackWindow.closed) {
+            sendToFeedbackWindow({
+              type: 'startFeedback',
+              source: sourceSelect.value
+            });
+            
+            if (running) {
+              sendToFeedbackWindow({
+                type: 'startFeedback',
+                source: sourceSelect.value
+              });
+            }
+          }
+        }, 1000);
+      }
+    }
+
+    function openControlsWindow() {
+      if (controlsWindow && !controlsWindow.closed) {
+        controlsWindow.focus();
+        return;
+      }
+      
+      const width = 400;
+      const height = Math.min(800, window.screen.height * 0.9);
+      const left = window.screen.width - width - 20;
+      const top = 20;
+      
+      controlsWindow = window.open(
+        'controls-window.html',
+        'controlsWindow',
+        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,toolbar=no,menubar=no`
+      );
+      
+      if (controlsWindow) {
+        controlsWindowReady = false;
+        updateWindowStatus();
+        
+        // Send current state to controls window
+        setTimeout(() => {
+          if (controlsWindow && !controlsWindow.closed) {
+            sendToControlsWindow({
+              type: 'updateButtonState',
+              running: running,
+              audioEnabled: audioEnabled
+            });
+          }
+        }, 1000);
+      }
+    }
+
+    function closeAllWindows() {
+      if (feedbackWindow && !feedbackWindow.closed) {
+        feedbackWindow.close();
+        feedbackWindow = null;
+        feedbackWindowReady = false;
+      }
+      if (controlsWindow && !controlsWindow.closed) {
+        controlsWindow.close();
+        controlsWindow = null;
+        controlsWindowReady = false;
+      }
+      updateWindowStatus();
+    }
+
+    function arrangeWindows() {
+      if (feedbackWindow && !feedbackWindow.closed) {
+        feedbackWindow.focus();
+      }
+      if (controlsWindow && !controlsWindow.closed) {
+        controlsWindow.focus();
+      }
+      window.focus();
+    }
+
+    function sendToFeedbackWindow(message) {
+      if (feedbackWindow && !feedbackWindow.closed) {
+        try {
+          feedbackWindow.postMessage(message, '*');
+        } catch (e) {
+          console.warn('Failed to send message to feedback window:', e);
+        }
+      }
+    }
+
+    function sendToControlsWindow(message) {
+      if (controlsWindow && !controlsWindow.closed) {
+        try {
+          controlsWindow.postMessage(message, '*');
+        } catch (e) {
+          console.warn('Failed to send message to controls window:', e);
+        }
+      }
+    }
+
+    function updateWindowStatus() {
+      const status = [];
+      if (feedbackWindowReady) status.push('Feedback: Ready');
+      else if (feedbackWindow && !feedbackWindow.closed) status.push('Feedback: Connecting...');
+      else status.push('Feedback: Closed');
+      
+      if (controlsWindowReady) status.push('Controls: Ready');
+      else if (controlsWindow && !controlsWindow.closed) status.push('Controls: Connecting...');
+      else status.push('Controls: Closed');
+      
+      windowStatusEl.textContent = status.join(' | ');
+    }
+
+    function updateAudioFromMatrix() {
+      if (!audioContext || !audioEnabled || !running) return;
+      
+      const now = performance.now();
+      if (now - lastAudioUpdate < audioUpdateInterval) return;
+      
+      lastAudioUpdate = now;
+      
+      // Get current image data
+      const imageData = ctx.getImageData(0, 0, mainCanvas.width, mainCanvas.height);
+      
+      // Calculate motion data if we have previous frame
+      if (previousImageData) {
+        motionData = calculateMotionData(previousImageData, imageData);
+      }
+      previousImageData = imageData;
+      
+      // Analyze matrix with enhanced responsiveness
+      const audioData = analyzeMatrixStrips(imageData);
+      
+      if (harmonicOscillators.length > 0) {
+        updateHarmonicOscillators(audioData);
+        updateAudioEffects(audioData);
+      }
+    }
+
+    function calculateMotionData(prevData, currentData) {
+      const prev = prevData.data;
+      const curr = currentData.data;
+      let totalMotion = 0;
+      let motionVectors = [];
+      
+      // Sample motion at regular intervals for performance
+      const step = 4;
+      for (let i = 0; i < prev.length; i += step * 4) {
+        const prevBrightness = (prev[i] + prev[i + 1] + prev[i + 2]) / 3;
+        const currBrightness = (curr[i] + curr[i + 1] + curr[i + 2]) / 3;
+        const motion = Math.abs(currBrightness - prevBrightness) / 255;
+        totalMotion += motion;
+        motionVectors.push(motion);
+      }
+      
+      return {
+        totalMotion: totalMotion / (motionVectors.length || 1),
+        motionVectors: motionVectors,
+        hasMotion: totalMotion > 10 // Threshold for significant motion
+      };
+    }
+
+    function updateHarmonicOscillators(audioData) {
+      const baseFreq = parseFloat(carrierFreqEl.value);
+      const freqRange = parseFloat(freqRangeEl.value);
+      const responsiveness = parseFloat(responsivenessEl.value);
+      const harmonicMode = harmonicModeEl.value;
+      const harmonicRatios = getHarmonicRatios(harmonicMode, harmonicOscillators.length);
+      
+      harmonicOscillators.forEach((oscillator, index) => {
+        // Calculate frequency with harmonic ratio and visual modulation
+        const ratio = harmonicRatios[index];
+        let targetFreq = baseFreq * ratio;
+        
+        // Apply visual modulation with responsiveness
+        const freqMod = (audioData.frequency - 0.5) * freqRange * responsiveness;
+        targetFreq += freqMod * (index + 1); // Higher harmonics get more modulation
+        
+        // Smooth frequency changes
+        const currentFreq = oscillator.frequency.value;
+        const newFreq = currentFreq + (targetFreq - currentFreq) * 0.1;
+        
+        oscillator.frequency.setValueAtTime(Math.max(20, Math.min(20000, newFreq)), audioContext.currentTime);
+        
+        // Update individual harmonic volume based on visual data
+        const baseVolume = 1 / (index + 1) * 0.3;
+        const visualVolume = audioData.volume * (audioData.intensity * 0.5 + 0.5);
+        const motionBoost = motionData && motionData.hasMotion ? 1.5 : 1;
+        
+        const targetVolume = baseVolume * visualVolume * motionBoost;
+        const gainNode = harmonicGains[index];
+        
+        if (gainNode) {
+          const currentGain = gainNode.gain.value;
+          const newGain = currentGain + (targetVolume - currentGain) * 0.15;
+          gainNode.gain.setValueAtTime(Math.max(0, Math.min(1, newGain)), audioContext.currentTime);
+        }
+      });
+    }
+
+    function updateAudioEffects(audioData) {
+      // Update filter cutoff based on visual brightness
+      const baseCutoff = parseFloat(filterCutoffEl.value);
+      const cutoffMod = audioData.brightness * baseCutoff * 0.5;
+      const targetCutoff = baseCutoff + cutoffMod;
+      
+      if (filterNode) {
+        const currentCutoff = filterNode.frequency.value;
+        const newCutoff = currentCutoff + (targetCutoff - currentCutoff) * 0.1;
+        filterNode.frequency.setValueAtTime(Math.max(100, Math.min(8000, newCutoff)), audioContext.currentTime);
+      }
+      
+      // Update reverb amount based on motion
+      const baseReverb = parseFloat(reverbAmountEl.value);
+      const reverbMod = motionData && motionData.hasMotion ? 0.7 : 0.3;
+      const targetReverb = baseReverb * reverbMod;
+      
+      // Update master volume with motion sensitivity
+      const baseVolume = parseFloat(audioVolumeEl.value);
+      const motionVolume = motionData && motionData.hasMotion ? 1.2 : 0.8;
+      const targetVolume = baseVolume * audioData.volume * motionVolume;
+      
+      if (masterGainNode) {
+        const currentGain = masterGainNode.gain.value;
+        const newGain = currentGain + (targetVolume - currentGain) * 0.1;
+        masterGainNode.gain.setValueAtTime(Math.max(0, Math.min(2, newGain)), audioContext.currentTime);
+      }
+    }
+
+    function analyzeMatrixStrips(imageData) {
+      const data = imageData.data;
+      const width = imageData.width;
+      const height = imageData.height;
+      const stripWidth = parseInt(stripWidthEl.value);
+      const mode = audioModeEl.value;
+      
+      let totalBrightness = 0;
+      let frequencyData = [];
+      let modulationData = [];
+      let edgeData = [];
+      let contrastData = [];
+      
+      // Analyze strips based on selected mode
+      if (mode === 'horizontal') {
+        for (let y = 0; y < height; y += stripWidth) {
+          let stripBrightness = 0;
+          let stripFreq = 0;
+          let stripContrast = 0;
+          let prevBrightness = 0;
+          
+          for (let x = 0; x < width; x++) {
+            const idx = (y * width + x) * 4;
+            const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3 / 255;
+            stripBrightness += brightness;
+            stripFreq += brightness * (x / width);
+            
+            // Calculate contrast (difference from previous pixel)
+            if (x > 0) {
+              const contrast = Math.abs(brightness - prevBrightness);
+              stripContrast += contrast;
+            }
+            prevBrightness = brightness;
+          }
+          
+          stripBrightness /= width;
+          stripFreq /= width;
+          stripContrast /= (width - 1);
+          
+          frequencyData.push(stripFreq);
+          modulationData.push(stripBrightness);
+          contrastData.push(stripContrast);
+          totalBrightness += stripBrightness;
+        }
+      } else if (mode === 'vertical') {
+        for (let x = 0; x < width; x += stripWidth) {
+          let stripBrightness = 0;
+          let stripFreq = 0;
+          let stripContrast = 0;
+          let prevBrightness = 0;
+          
+          for (let y = 0; y < height; y++) {
+            const idx = (y * width + x) * 4;
+            const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3 / 255;
+            stripBrightness += brightness;
+            stripFreq += brightness * (y / height);
+            
+            if (y > 0) {
+              const contrast = Math.abs(brightness - prevBrightness);
+              stripContrast += contrast;
+            }
+            prevBrightness = brightness;
+          }
+          
+          stripBrightness /= height;
+          stripFreq /= height;
+          stripContrast /= (height - 1);
+          
+          frequencyData.push(stripFreq);
+          modulationData.push(stripBrightness);
+          contrastData.push(stripContrast);
+          totalBrightness += stripBrightness;
+        }
+      } else if (mode === 'diagonal') {
+        const diagonalLength = Math.sqrt(width * width + height * height);
+        for (let d = 0; d < diagonalLength; d += stripWidth) {
+          let stripBrightness = 0;
+          let stripFreq = 0;
+          let stripContrast = 0;
+          let pixelCount = 0;
+          let prevBrightness = 0;
+          
+          for (let i = 0; i < Math.min(width, height); i++) {
+            const x = Math.floor(i + d * 0.7) % width;
+            const y = Math.floor(i + d * 0.5) % height;
+            const idx = (y * width + x) * 4;
+            const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3 / 255;
+            stripBrightness += brightness;
+            stripFreq += brightness * (i / Math.min(width, height));
+            
+            if (i > 0) {
+              const contrast = Math.abs(brightness - prevBrightness);
+              stripContrast += contrast;
+            }
+            prevBrightness = brightness;
+            pixelCount++;
+          }
+          
+          if (pixelCount > 0) {
+            stripBrightness /= pixelCount;
+            stripFreq /= pixelCount;
+            stripContrast /= (pixelCount - 1);
+            frequencyData.push(stripFreq);
+            modulationData.push(stripBrightness);
+            contrastData.push(stripContrast);
+            totalBrightness += stripBrightness;
+          }
+        }
+      } else if (mode === 'center') {
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const maxRadius = Math.min(width, height) / 2;
+        
+        for (let r = 0; r < maxRadius; r += stripWidth) {
+          let stripBrightness = 0;
+          let stripFreq = 0;
+          let stripContrast = 0;
+          let pixelCount = 0;
+          let prevBrightness = 0;
+          
+          for (let angle = 0; angle < Math.PI * 2; angle += 0.1) {
+            const x = Math.floor(centerX + r * Math.cos(angle));
+            const y = Math.floor(centerY + r * Math.sin(angle));
+            
+            if (x >= 0 && x < width && y >= 0 && y < height) {
+              const idx = (y * width + x) * 4;
+              const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3 / 255;
+              stripBrightness += brightness;
+              stripFreq += brightness * angle;
+              
+              if (pixelCount > 0) {
+                const contrast = Math.abs(brightness - prevBrightness);
+                stripContrast += contrast;
+              }
+              prevBrightness = brightness;
+              pixelCount++;
+            }
+          }
+          
+          if (pixelCount > 0) {
+            stripBrightness /= pixelCount;
+            stripFreq /= pixelCount;
+            stripContrast /= (pixelCount - 1);
+            frequencyData.push(stripFreq);
+            modulationData.push(stripBrightness);
+            contrastData.push(stripContrast);
+            totalBrightness += stripBrightness;
+          }
+        }
+      } else if (mode === 'edge') {
+        // Edge detection analysis
+        for (let y = 1; y < height - 1; y += stripWidth) {
+          let edgeStrength = 0;
+          let edgeCount = 0;
+          
+          for (let x = 1; x < width - 1; x += 2) {
+            // Sobel edge detection
+            const idx = (y * width + x) * 4;
+            const center = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+            
+            const top = ((y - 1) * width + x) * 4;
+            const bottom = ((y + 1) * width + x) * 4;
+            const left = (y * width + (x - 1)) * 4;
+            const right = (y * width + (x + 1)) * 4;
+            
+            const gx = (data[right] + data[right + 1] + data[right + 2]) / 3 - 
+                      (data[left] + data[left + 1] + data[left + 2]) / 3;
+            const gy = (data[bottom] + data[bottom + 1] + data[bottom + 2]) / 3 - 
+                      (data[top] + data[top + 1] + data[top + 2]) / 3;
+            
+            const edge = Math.sqrt(gx * gx + gy * gy) / 255;
+            edgeStrength += edge;
+            edgeCount++;
+          }
+          
+          if (edgeCount > 0) {
+            const avgEdge = edgeStrength / edgeCount;
+            edgeData.push(avgEdge);
+            frequencyData.push(avgEdge * (y / height));
+            modulationData.push(avgEdge);
+            totalBrightness += avgEdge;
+          }
+        }
+      } else if (mode === 'motion') {
+        // Motion-based analysis using frame differences
+        if (motionData && motionData.motionVectors) {
+          const motionVectors = motionData.motionVectors;
+          const chunkSize = Math.floor(motionVectors.length / 8); // Divide into 8 regions
+          
+          for (let i = 0; i < 8; i++) {
+            const start = i * chunkSize;
+            const end = Math.min(start + chunkSize, motionVectors.length);
+            let regionMotion = 0;
+            
+            for (let j = start; j < end; j++) {
+              regionMotion += motionVectors[j] || 0;
+            }
+            
+            const avgMotion = regionMotion / (end - start);
+            frequencyData.push(avgMotion * (i / 8));
+            modulationData.push(avgMotion);
+            edgeData.push(avgMotion);
+            totalBrightness += avgMotion;
+          }
+        } else {
+          // Fallback to horizontal analysis if no motion data
+          for (let y = 0; y < height; y += stripWidth) {
+            let stripBrightness = 0;
+            for (let x = 0; x < width; x++) {
+              const idx = (y * width + x) * 4;
+              const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3 / 255;
+              stripBrightness += brightness;
+            }
+            stripBrightness /= width;
+            frequencyData.push(stripBrightness * (y / height));
+            modulationData.push(stripBrightness);
+            totalBrightness += stripBrightness;
+          }
+        }
+      }
+      
+      // Calculate enhanced values with contrast and edge information
+      const avgFrequency = frequencyData.length > 0 ? 
+        frequencyData.reduce((a, b) => a + b, 0) / frequencyData.length : 0;
+      const avgModulation = modulationData.length > 0 ? 
+        modulationData.reduce((a, b) => a + b, 0) / modulationData.length : 0;
+      const avgBrightness = totalBrightness / Math.max(1, frequencyData.length);
+      const avgContrast = contrastData.length > 0 ? 
+        contrastData.reduce((a, b) => a + b, 0) / contrastData.length : 0;
+      const avgEdge = edgeData.length > 0 ? 
+        edgeData.reduce((a, b) => a + b, 0) / edgeData.length : 0;
+      
+      return {
+        frequency: Math.max(0, Math.min(1, avgFrequency)),
+        intensity: Math.max(0, Math.min(1, avgModulation)),
+        volume: Math.max(0.1, Math.min(1, avgBrightness)),
+        brightness: Math.max(0, Math.min(1, avgBrightness)),
+        contrast: Math.max(0, Math.min(1, avgContrast)),
+        edge: Math.max(0, Math.min(1, avgEdge)),
+        modulationRate: 2 + avgModulation * 8
+      };
+    }
+
+    function resize(){
+      const rect = mainCanvas.getBoundingClientRect();
+      const w = Math.max(320, Math.floor(rect.width));
+      const h = Math.max(240, Math.floor(rect.height));
+      if(mainCanvas.width !== w || mainCanvas.height !== h){
+        mainCanvas.width = w;
+        mainCanvas.height = h;
+        buffer.width = w;
+        buffer.height = h;
+      }
+    }
+
+    // MIDI Functions
+    async function initializeMIDI() {
+      if (!navigator.requestMIDIAccess) {
+        midiStatus.textContent = 'MIDI not supported in this browser';
+        return;
+      }
+
+      try {
+        const midiAccess = await navigator.requestMIDIAccess();
+        updateMIDIDeviceList(midiAccess.inputs);
+        
+        midiAccess.onstatechange = (e) => {
+          updateMIDIDeviceList(midiAccess.inputs);
+        };
+
+        midiSelect.addEventListener('change', (e) => {
+          const deviceId = e.target.value;
+          if (deviceId && midiAccess.inputs.has(deviceId)) {
+            midiInput = midiAccess.inputs.get(deviceId);
+            midiInput.onmidimessage = handleMIDIMessage;
+            midiStatus.textContent = `Connected to: ${midiInput.name}`;
+            midiStatus.style.color = 'var(--accent)';
+          } else {
+            if (midiInput) {
+              midiInput.onmidimessage = null;
+              midiInput = null;
+            }
+            midiStatus.textContent = 'MIDI not connected';
+            midiStatus.style.color = 'var(--muted)';
+          }
+        });
+
+      } catch (error) {
+        midiStatus.textContent = 'MIDI access denied: ' + error.message;
+      }
+    }
+
+    function updateMIDIDeviceList(inputs) {
+      const currentValue = midiSelect.value;
+      midiSelect.innerHTML = '<option value="">No MIDI device</option>';
+      
+      inputs.forEach((input, key) => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = input.name;
+        midiSelect.appendChild(option);
+      });
+      
+      // Try to restore previous selection if device still exists
+      if (currentValue && inputs.has(currentValue)) {
+        midiSelect.value = currentValue;
+        midiSelect.dispatchEvent(new Event('change'));
+      }
+    }
+
+    function handleMIDIMessage(message) {
+      const [command, cc, value] = message.data;
+      
+      // Only handle Control Change messages (CC)
+      if (command === 176) { // Control Change on channel 1
+        if (learnMode && learningSlider) {
+          // MIDI Learn mode - assign this CC to the learning slider
+          assignMIDICC(learningSlider, cc);
+          exitLearnMode();
+        } else {
+          // Normal mode - control sliders based on mappings
+          const sliderId = midiMappings[cc];
+          if (sliderId) {
+            const slider = document.getElementById(sliderId);
+            if (slider) {
+              const min = parseFloat(slider.min);
+              const max = parseFloat(slider.max);
+              const normalizedValue = value / 127; // MIDI values are 0-127
+              const sliderValue = min + (max - min) * normalizedValue;
+              
+              // For symmetry, round to nearest integer since it's step=1
+              if (sliderId === 'symmetry') {
+                slider.value = Math.round(sliderValue);
+              } else {
+                slider.value = sliderValue.toFixed(3);
+              }
+              
+              // Trigger input event to ensure any listeners are called
+              slider.dispatchEvent(new Event('input'));
+            }
+          }
+        }
+      }
+    }
+
+    function startLearnMode(sliderId) {
+      if (learnMode) {
+        exitLearnMode();
+      }
+      
+      learnMode = true;
+      learningSlider = sliderId;
+      
+      // Update UI
+      const learnBtn = document.querySelector(`[data-slider="${sliderId}"]`);
+      const sliderContainer = learnBtn.closest('.row').parentElement;
+      
+      learnBtn.textContent = 'Cancel';
+      learnBtn.classList.add('learning');
+      sliderContainer.classList.add('learn-mode');
+      
+      midiStatus.textContent = `Learning: ${getSliderName(sliderId)} - Move a MIDI control`;
+      midiStatus.style.color = 'var(--accent)';
+    }
+
+    function exitLearnMode() {
+      if (!learnMode) return;
+      
+      learnMode = false;
+      
+      // Update UI
+      const learnBtn = document.querySelector(`[data-slider="${learningSlider}"]`);
+      const sliderContainer = learnBtn.closest('.row').parentElement;
+      
+      learnBtn.textContent = 'Learn';
+      learnBtn.classList.remove('learning');
+      sliderContainer.classList.remove('learn-mode');
+      
+      midiStatus.textContent = midiInput ? `Connected to: ${midiInput.name}` : 'MIDI not connected';
+      midiStatus.style.color = midiInput ? 'var(--accent)' : 'var(--muted)';
+      
+      learningSlider = null;
+    }
+
+    function assignMIDICC(sliderId, cc) {
+      // Remove any existing mapping for this CC
+      Object.keys(midiMappings).forEach(key => {
+        if (midiMappings[key] === sliderId) {
+          delete midiMappings[key];
+        }
+      });
+      
+      // Assign new mapping
+      midiMappings[cc] = sliderId;
+      
+      // Save to localStorage
+      localStorage.setItem('midiMappings', JSON.stringify(midiMappings));
+      
+      // Update labels
+      clearSliderLabels();
+      updateSliderLabels();
+      
+      // Show feedback
+      const sliderName = getSliderName(sliderId);
+      midiStatus.textContent = `Assigned CC ${cc} to ${sliderName}`;
+      setTimeout(() => {
+        if (!learnMode) {
+          midiStatus.textContent = midiInput ? `Connected to: ${midiInput.name}` : 'MIDI not connected';
+        }
+      }, 2000);
+    }
+
+    function getSliderName(sliderId) {
+      const labels = {
+        'mix': 'Mix',
+        'decay': 'Feedback Decay',
+        'scale': 'Scale',
+        'rotation': 'Rotation',
+        'symmetry': 'Symmetry',
+        'hueSpeed': 'Color Shift',
+        'brightness': 'Brightness',
+        'contrast': 'Contrast',
+        'saturation': 'Saturation',
+        'blur': 'Blur',
+        'centerX': 'Feedback Center X',
+        'centerY': 'Feedback Center Y',
+        'audioVolume': 'Audio Volume',
+        'carrierFreq': 'Carrier Frequency',
+        'modDepth': 'Modulation Depth',
+        'stripWidth': 'Matrix Strip Width',
+        'audioRate': 'Audio Update Rate',
+        'freqRange': 'Frequency Range',
+        'harmonicCount': 'Harmonic Count',
+        'harmonicSpread': 'Harmonic Spread',
+        'responsiveness': 'Responsiveness',
+        'filterCutoff': 'Filter Cutoff',
+        'reverbAmount': 'Reverb Amount'
+      };
+      return labels[sliderId] || sliderId;
+    }
+
+    function loadMIDIMappings() {
+      const saved = localStorage.getItem('midiMappings');
+      if (saved) {
+        try {
+          midiMappings = JSON.parse(saved);
+        } catch (e) {
+          console.warn('Failed to load MIDI mappings:', e);
+          midiMappings = {};
+        }
+      }
+      updateSliderLabels();
+    }
+
+    function updateSliderLabels() {
+      Object.entries(midiMappings).forEach(([cc, sliderId]) => {
+        const slider = document.getElementById(sliderId);
+        if (slider) {
+          const label = slider.previousElementSibling;
+          if (label && !label.querySelector('.midi-cc')) {
+            const ccSpan = document.createElement('span');
+            ccSpan.className = 'midi-cc';
+            ccSpan.textContent = ` (CC ${cc})`;
+            ccSpan.style.color = 'var(--accent)';
+            ccSpan.style.fontSize = '11px';
+            label.appendChild(ccSpan);
+          }
+        }
+      });
+    }
+
+    function clearSliderLabels() {
+      document.querySelectorAll('.midi-cc').forEach(el => el.remove());
+    }
+
+    // Directional control functions
+    function moveUp() {
+      cameraY -= 10;
+    }
+
+    function moveDown() {
+      cameraY += 10;
+    }
+
+    function moveLeft() {
+      cameraX -= 10;
+    }
+
+    function moveRight() {
+      cameraX += 10;
+    }
+
+    async function startWebcam(){
+      stopStream();
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+        video.srcObject = stream;
+        await video.play();
+      }catch(e){alert('Could not access webcam: ' + e.message);}
+    }
+
+    function stopStream(){
+      if(stream){stream.getTracks().forEach(t=>t.stop());stream = null;video.srcObject = null;}
+    }
+
+    fileInput.addEventListener('change', async (e)=>{
+      const f = e.target.files && e.target.files[0];
+      if(!f) return;
+      stopStream();
+      const url = URL.createObjectURL(f);
+      if(f.type.startsWith('image/')){
+        video.pause();
+        video.srcObject = null;
+        video.src = url;
+        video.loop = true;
+        await video.play();
+      }else{
+        video.src = url;
+        video.loop = true;
+        await video.play();
+      }
+    });
+
+    sourceSelect.addEventListener('change', ()=>{
+      fileInput.style.display = sourceSelect.value === 'upload' ? 'block' : 'none';
+      if(sourceSelect.value === 'webcam' && running) startWebcam();
+    });
+
+    // MIDI Learn button event listeners
+    document.addEventListener('click', (e) => {
+      if (e.target.classList.contains('learn-btn')) {
+        const sliderId = e.target.getAttribute('data-slider');
+        if (learnMode && learningSlider === sliderId) {
+          // Cancel learn mode
+          exitLearnMode();
+        } else {
+          // Start learn mode
+          startLearnMode(sliderId);
+        }
+      }
+    });
+
+    // Directional control event listeners
+    upBtn.addEventListener('click', moveUp);
+    downBtn.addEventListener('click', moveDown);
+    leftBtn.addEventListener('click', moveLeft);
+    rightBtn.addEventListener('click', moveRight);
+
+    // Audio control event listeners
+    audioToggleBtn.addEventListener('click', async () => {
+      if (!audioContext) {
+        await initializeAudio();
+      }
+      
+      if (audioEnabled) {
+        // Disable audio
+        audioEnabled = false;
+        audioToggleBtn.textContent = 'Enable Audio';
+        audioToggleBtn.style.background = 'transparent';
+        
+        stopHarmonicOscillators();
+      } else {
+        // Enable audio
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        
+        audioEnabled = true;
+        audioToggleBtn.textContent = 'Disable Audio';
+        audioToggleBtn.style.background = 'rgba(125,211,252,0.25)';
+        
+        createHarmonicOscillators();
+      }
+    });
+
+    // Audio parameter change listeners
+    audioRateEl.addEventListener('input', () => {
+      audioUpdateInterval = 1000 / parseInt(audioRateEl.value);
+    });
+
+    // Window management event listeners
+    openFeedbackWindowBtn.addEventListener('click', openFeedbackWindow);
+    openControlsWindowBtn.addEventListener('click', openControlsWindow);
+    closeAllWindowsBtn.addEventListener('click', closeAllWindows);
+    arrangeWindowsBtn.addEventListener('click', arrangeWindows);
+
+    snapshotBtn.addEventListener('click', ()=>{
+      const data = mainCanvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.download = 'feedback-snapshot.png';
+      a.href = data;
+      a.click();
+    });
+
+    startStopBtn.addEventListener('click', async ()=>{
+      if(!running){
+        running = true;
+        startStopBtn.textContent = 'Stop';
+        if(sourceSelect.value === 'webcam') await startWebcam();
+        resize();
+        lastTime = performance.now();
+        requestAnimationFrame(loop);
+        
+        // Notify separate windows
+        sendToFeedbackWindow({ type: 'startFeedback', source: sourceSelect.value });
+        sendToControlsWindow({ type: 'updateButtonState', running: true, audioEnabled: audioEnabled });
+      }else{
+        running = false;
+        startStopBtn.textContent = 'Start';
+        stopStream();
+        
+        // Notify separate windows
+        sendToFeedbackWindow({ type: 'stopFeedback' });
+        sendToControlsWindow({ type: 'updateButtonState', running: false, audioEnabled: audioEnabled });
+      }
+    });
+
+    window.addEventListener('resize', resize);
+
+    // Add parameter change listeners to sync with separate windows
+    const parameterElements = [
+      mixEl, decayEl, scaleEl, rotationEl, symmetryEl, hueSpeedEl,
+      brightnessEl, contrastEl, saturationEl, blendModeEl, blurEl, centerXEl, centerYEl
+    ];
+
+    parameterElements.forEach(element => {
+      element.addEventListener('input', () => {
+        sendVisualParametersToFeedback();
+      });
+    });
+
+    function loop(now){
+      if(!running) return;
+      resize();
+      const dt = Math.min(60, now - lastTime) / 1000;
+      lastTime = now;
+
+      const mix = parseFloat(mixEl.value);
+      const decay = parseFloat(decayEl.value);
+      const scale = parseFloat(scaleEl.value);
+      const rotatePerFrame = parseFloat(rotationEl.value) * Math.PI/180;
+      const symmetry = parseInt(symmetryEl.value);
+      const hueSpeed = parseFloat(hueSpeedEl.value);
+      const brightness = parseFloat(brightnessEl.value);
+      const contrast = parseFloat(contrastEl.value);
+      const saturation = parseFloat(saturationEl.value);
+      const blur = parseInt(blurEl.value);
+      const blendMode = blendModeEl.value;
+      const centerX = parseFloat(centerXEl.value);
+      const centerY = parseFloat(centerYEl.value);
+
+      angle += rotatePerFrame;
+
+      ctx.save();
+      ctx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = decay;
+      
+      // Calculate center position based on slider values
+      const centerOffsetX = (centerX / 100) * mainCanvas.width;
+      const centerOffsetY = (centerY / 100) * mainCanvas.height;
+      const feedbackCenterX = mainCanvas.width/2 + centerOffsetX;
+      const feedbackCenterY = mainCanvas.height/2 + centerOffsetY;
+      
+      ctx.translate(feedbackCenterX, feedbackCenterY);
+      ctx.rotate(angle);
+      ctx.scale(scale, scale);
+      ctx.translate(-mainCanvas.width/2, -mainCanvas.height/2);
+      ctx.drawImage(buffer, 0, 0);
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalCompositeOperation = blendMode;
+      ctx.globalAlpha = mix;
+      if(video && (video.readyState >= 2)){
+        const iw = video.videoWidth || video.width;
+        const ih = video.videoHeight || video.height;
+        if(iw && ih){
+          const canvasRatio = mainCanvas.width / mainCanvas.height;
+          const videoRatio = iw / ih;
+          let sWidth = iw, sHeight = ih, sx=0, sy=0;
+          if(videoRatio > canvasRatio){sWidth = ih * canvasRatio; sx = (iw - sWidth)/2;} else {sHeight = iw / canvasRatio; sy = (ih - sHeight)/2;}
+          
+          // Apply camera position offset
+          const scaledWidth = mainCanvas.width * cameraZoom;
+          const scaledHeight = mainCanvas.height * cameraZoom;
+          const offsetX = cameraX + (mainCanvas.width - scaledWidth) / 2;
+          const offsetY = cameraY + (mainCanvas.height - scaledHeight) / 2;
+          
+          ctx.drawImage(video, sx, sy, sWidth, sHeight, offsetX, offsetY, scaledWidth, scaledHeight);
+        } else {
+          // Apply camera position offset for fallback case
+          const scaledWidth = mainCanvas.width * cameraZoom;
+          const scaledHeight = mainCanvas.height * cameraZoom;
+          const offsetX = cameraX + (mainCanvas.width - scaledWidth) / 2;
+          const offsetY = cameraY + (mainCanvas.height - scaledHeight) / 2;
+          
+          ctx.drawImage(video, offsetX, offsetY, scaledWidth, scaledHeight);
+        }
+      }
+      ctx.restore();
+
+      if(blur > 0){
+        const smallW = Math.max(2, Math.floor(mainCanvas.width / (1 + blur/6)));
+        const smallH = Math.max(2, Math.floor(mainCanvas.height / (1 + blur/6)));
+        const tmp = document.createElement('canvas');
+        tmp.width = smallW; tmp.height = smallH;
+        const tctx = tmp.getContext('2d');
+        tctx.drawImage(mainCanvas, 0, 0, smallW, smallH);
+        ctx.clearRect(0,0,mainCanvas.width, mainCanvas.height);
+        ctx.drawImage(tmp, 0, 0, mainCanvas.width, mainCanvas.height);
+      }
+
+      let imageData = ctx.getImageData(0,0,mainCanvas.width, mainCanvas.height);
+      applyAdjustments(imageData, brightness, contrast, saturation);
+      ctx.putImageData(imageData,0,0);
+
+      if(symmetry > 0){
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.6;
+        if(symmetry >= 1){ctx.translate(mainCanvas.width, 0);ctx.scale(-1,1);ctx.drawImage(mainCanvas, 0, 0);} 
+        if(symmetry >= 2){ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha = 0.5;ctx.translate(mainCanvas.width/2, mainCanvas.height/2);ctx.rotate(Math.PI/2);ctx.translate(-mainCanvas.width/2, -mainCanvas.height/2);ctx.drawImage(mainCanvas, 0, 0);} 
+        ctx.restore();
+      }
+
+      bctx.clearRect(0,0,buffer.width, buffer.height);
+      bctx.globalCompositeOperation = 'source-over';
+      bctx.drawImage(mainCanvas, 0, 0);
+
+      // Update audio from visual matrix
+      updateAudioFromMatrix();
+
+      requestAnimationFrame(loop);
+    }
+
+    function applyAdjustments(imageData, brightness, contrast, saturation){
+      const d = imageData.data;
+      const cFactor = (259*(contrast*255 + 255))/(255*(259 - contrast*255));
+      for(let i=0;i<d.length;i+=4){
+        // brightness and contrast
+        for(let j=0;j<3;j++){
+          d[i+j] = cFactor*(d[i+j]-128)+128;
+          d[i+j] *= brightness;
+        }
+        // saturation
+        const gray = 0.2989*d[i] + 0.5870*d[i+1] + 0.1140*d[i+2];
+        for(let j=0;j<3;j++){
+          d[i+j] = gray + (d[i+j]-gray)*saturation;
+        }
+      }
+    }
+
+    // Message handling system for window communication
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      
+      switch(data.type) {
+        case 'feedbackWindowReady':
+          feedbackWindowReady = true;
+          updateWindowStatus();
+          // Send current parameters to feedback window
+          sendVisualParametersToFeedback();
+          break;
+          
+        case 'controlsWindowReady':
+          controlsWindowReady = true;
+          updateWindowStatus();
+          // Send current state to controls window
+          sendToControlsWindow({
+            type: 'updateButtonState',
+            running: running,
+            audioEnabled: audioEnabled
+          });
+          break;
+          
+        case 'feedbackWindowClosed':
+          feedbackWindowReady = false;
+          feedbackWindow = null;
+          updateWindowStatus();
+          break;
+          
+        case 'controlsWindowClosed':
+          controlsWindowReady = false;
+          controlsWindow = null;
+          updateWindowStatus();
+          break;
+          
+        case 'parameterUpdate':
+          // Handle parameter updates from controls window
+          const element = document.getElementById(data.param);
+          if (element) {
+            element.value = data.value;
+            element.dispatchEvent(new Event('input'));
+          }
+          break;
+          
+        case 'toggleStartStop':
+          startStopBtn.click();
+          break;
+          
+        case 'toggleAudio':
+          audioToggleBtn.click();
+          break;
+          
+        case 'takeSnapshot':
+          snapshotBtn.click();
+          break;
+          
+        case 'cameraControl':
+          // Handle camera controls from controls window
+          if (data.action === 'up') moveUp();
+          else if (data.action === 'down') moveDown();
+          else if (data.action === 'left') moveLeft();
+          else if (data.action === 'right') moveRight();
+          break;
+          
+        case 'sourceChange':
+          sourceSelect.value = data.source;
+          sourceSelect.dispatchEvent(new Event('change'));
+          break;
+          
+        case 'fileUpload':
+          // Handle file upload from controls window
+          stopStream();
+          if (data.type.startsWith('image/')) {
+            video.pause();
+            video.srcObject = null;
+            video.src = data.url;
+            video.loop = true;
+            video.play();
+          } else {
+            video.src = data.url;
+            video.loop = true;
+            video.play();
+          }
+          break;
+      }
+    });
+
+    function sendVisualParametersToFeedback() {
+      if (!feedbackWindowReady) return;
+      
+      sendToFeedbackWindow({
+        type: 'updateParams',
+        params: {
+          mix: parseFloat(mixEl.value),
+          decay: parseFloat(decayEl.value),
+          scale: parseFloat(scaleEl.value),
+          rotation: parseFloat(rotationEl.value),
+          symmetry: parseInt(symmetryEl.value),
+          hueSpeed: parseFloat(hueSpeedEl.value),
+          brightness: parseFloat(brightnessEl.value),
+          contrast: parseFloat(contrastEl.value),
+          saturation: parseFloat(saturationEl.value),
+          blendMode: blendModeEl.value,
+          blur: parseInt(blurEl.value),
+          centerX: parseFloat(centerXEl.value),
+          centerY: parseFloat(centerYEl.value)
+        }
+      });
+    }
+
+    window.addEventListener('beforeunload', ()=>{ 
+      stopStream();
+      closeAllWindows();
+      if (audioEnabled) {
+        audioEnabled = false;
+        stopHarmonicOscillators();
+      }
+    });
+    resize();
+    
+    // Initialize MIDI and Audio when page loads
+    loadMIDIMappings();
+    initializeMIDI();
+    initializeAudio();
+  })();
+  </script>
+</body>
+</html>
