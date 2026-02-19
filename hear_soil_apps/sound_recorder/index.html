@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Advanced Web Recorder</title>
+
+<style>
+body {
+    background: #111;
+    color: white;
+    font-family: Arial;
+    text-align: center;
+    padding: 40px;
+}
+
+button {
+    padding: 12px 25px;
+    margin: 10px;
+    font-size: 18px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+#record { background: red; }
+#stop { background: gray; }
+
+canvas {
+    background: #222;
+    border-radius: 6px;
+    margin-top: 20px;
+}
+
+#meterContainer {
+    width: 400px;
+    height: 20px;
+    background: #333;
+    margin: 20px auto;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+#meter {
+    height: 100%;
+    width: 0%;
+    background: lime;
+}
+</style>
+</head>
+
+<body>
+
+<h1>Mic Recorder + Level Meter</h1>
+
+<div style="margin: 18px auto; max-width: 760px; text-align: left; background: #1a1a1a; padding: 14px 16px; border-radius: 10px;">
+    <div style="margin-bottom: 10px; font-size: 14px; opacity: 0.9;">
+        Source:
+        <label style="margin-left: 10px;">
+            <input type="radio" name="sourceType" value="mic" checked>
+            Microphone
+        </label>
+        <label style="margin-left: 10px;">
+            <input type="radio" name="sourceType" value="stream">
+            Stream (dropdown)
+        </label>
+    </div>
+
+    <div id="streamControls" style="display:none;">
+        <select id="streamSelect" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #333; background: #111; color: #fff;">
+        </select>
+        <div style="margin-top: 10px; font-size: 13px; opacity: 0.85; line-height: 1.4;">
+            Tip: recording a stream requires the browser to be able to capture it. If you hear audio but WAV export fails, the stream may not be capturable in your browser.
+        </div>
+    </div>
+</div>
+
+<button id="record">🔴 Record</button>
+<button id="stop" disabled>⏹ Stop</button>
+
+<div id="meterContainer">
+    <div id="meter"></div>
+</div>
+
+<canvas id="waveform" width="600" height="150"></canvas>
+
+<script>
+
+let audioContext;
+let analyser;
+let mediaRecorder;
+let audioChunks = [];
+let animationId;
+let micStream;
+let streamAudioEl;
+let streamStream;
+
+const recordBtn = document.getElementById("record");
+const stopBtn = document.getElementById("stop");
+const meter = document.getElementById("meter");
+const canvas = document.getElementById("waveform");
+const ctx = canvas.getContext("2d");
+
+const streamControls = document.getElementById("streamControls");
+const streamSelect = document.getElementById("streamSelect");
+
+const STREAMS = [
+    { label: "Bristol Lightship", url: "https://locus.creacast.com:9443/bristol_lightship.mp3" },
+    { label: "Wicken Fen", url: "https://locus.creacast.com:9443/wicken_wicken_fen.mp3" },
+];
+
+for (const s of STREAMS) {
+    const opt = document.createElement("option");
+    opt.value = s.url;
+    opt.textContent = `${s.label} — ${s.url}`;
+    streamSelect.appendChild(opt);
+}
+
+function getSelectedSourceType() {
+    const el = document.querySelector("input[name='sourceType']:checked");
+    return el ? el.value : "mic";
+}
+
+async function ensureAudioContext() {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioContext.state === "suspended") await audioContext.resume();
+    return audioContext;
+}
+
+function getSupportedMimeType() {
+    const preferred = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus",
+        "audio/ogg",
+    ];
+    if (typeof MediaRecorder === "undefined") return "";
+    return preferred.find((t) => MediaRecorder.isTypeSupported(t)) || "";
+}
+
+function setUiRecording(isRecording) {
+    recordBtn.disabled = isRecording;
+    stopBtn.disabled = !isRecording;
+}
+
+function resetMeter() {
+    meter.style.width = "0%";
+}
+
+async function startMicRecording() {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    await ensureAudioContext();
+
+    const source = audioContext.createMediaStreamSource(micStream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+
+    const mimeType = getSupportedMimeType();
+    mediaRecorder = mimeType ? new MediaRecorder(micStream, { mimeType }) : new MediaRecorder(micStream);
+    audioChunks = [];
+
+    mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+        try {
+            const recordedBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+            const wavBlob = await convertToWAV(recordedBlob);
+            downloadBlob(wavBlob, "recording.wav");
+        } catch (err) {
+            alert("Could not export WAV: " + (err?.message || err));
+        } finally {
+            if (micStream) {
+                micStream.getTracks().forEach((t) => t.stop());
+                micStream = null;
+            }
+        }
+    };
+
+    mediaRecorder.start(1000);
+    draw();
+    setUiRecording(true);
+}
+
+async function startStreamRecording() {
+    await ensureAudioContext();
+
+    const url = streamSelect.value;
+    if (!url) {
+        alert("Pick a stream first.");
+        return;
+    }
+
+    // Create/reuse audio element for stream playback.
+    if (!streamAudioEl) {
+        streamAudioEl = new Audio();
+        streamAudioEl.crossOrigin = "anonymous";
+        streamAudioEl.preload = "none";
+    }
+
+    try { streamAudioEl.pause(); } catch {}
+    streamAudioEl.src = url;
+    streamAudioEl.load();
+
+    // Try to capture the stream audio.
+    streamStream = null;
+    if (streamAudioEl.captureStream) {
+        try { streamStream = streamAudioEl.captureStream(); } catch {}
+    } else if (streamAudioEl.mozCaptureStream) {
+        try { streamStream = streamAudioEl.mozCaptureStream(); } catch {}
+    }
+
+    if (!streamStream) {
+        alert("This browser can't capture this stream audio. Try Chrome.");
+        return;
+    }
+
+    // No analyser visualization for streams by default (often blocked by CORS).
+    analyser = null;
+
+    const mimeType = getSupportedMimeType();
+    mediaRecorder = mimeType ? new MediaRecorder(streamStream, { mimeType }) : new MediaRecorder(streamStream);
+    audioChunks = [];
+
+    mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+        try {
+            const recordedBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+            const wavBlob = await convertToWAV(recordedBlob);
+            downloadBlob(wavBlob, "recording.wav");
+        } catch (err) {
+            alert("Could not export WAV: " + (err?.message || err));
+        } finally {
+            try { streamAudioEl.pause(); } catch {}
+            try { streamAudioEl.src = ""; streamAudioEl.load(); } catch {}
+            streamStream = null;
+        }
+    };
+
+    try {
+        await streamAudioEl.play(); // user gesture: clicking Record
+    } catch (err) {
+        alert("Stream couldn't start playing: " + (err?.message || err));
+        return;
+    }
+
+    mediaRecorder.start(1000);
+    setUiRecording(true);
+}
+
+recordBtn.onclick = async () => {
+    const sourceType = getSelectedSourceType();
+    if (sourceType === "stream") {
+        await startStreamRecording();
+    } else {
+        await startMicRecording();
+    }
+};
+
+// Convert blob to WAV format
+async function convertToWAV(blob) {
+    const ctx = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+    const arrayBuffer = await blob.arrayBuffer();
+    const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+    const wav = audioBufferToWav(decoded);
+    return new Blob([wav], { type: "audio/wav" });
+}
+
+// Convert AudioBuffer to WAV format
+function audioBufferToWav(buffer) {
+    const length = buffer.length;
+    const numberOfChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const bytesPerSample = 2;
+    const blockAlign = numberOfChannels * bytesPerSample;
+    
+    const arrayBuffer = new ArrayBuffer(44 + length * numberOfChannels * bytesPerSample);
+    const view = new DataView(arrayBuffer);
+    
+    // WAV header
+    const writeString = (offset, string) => {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + length * numberOfChannels * bytesPerSample, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numberOfChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, length * numberOfChannels * bytesPerSample, true);
+    
+    // Convert float samples to 16-bit PCM
+    let offset = 44;
+    for (let i = 0; i < length; i++) {
+        for (let channel = 0; channel < numberOfChannels; channel++) {
+            const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+            view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+            offset += 2;
+        }
+    }
+    
+    return arrayBuffer;
+}
+
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+stopBtn.onclick = () => {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    cancelAnimationFrame(animationId);
+    resetMeter();
+
+    setUiRecording(false);
+};
+
+function draw() {
+
+    if (!analyser) return;
+    const bufferLength = analyser.fftSize;
+    const dataArray = new Uint8Array(bufferLength);
+
+    function animate() {
+
+        analyser.getByteTimeDomainData(dataArray);
+
+        // Clear waveform
+        ctx.fillStyle = "#222";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "cyan";
+        ctx.beginPath();
+
+        const sliceWidth = canvas.width / bufferLength;
+        let x = 0;
+
+        let sum = 0;
+
+        for (let i = 0; i < bufferLength; i++) {
+
+            const v = dataArray[i] / 128.0;
+            const y = v * canvas.height / 2;
+
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+
+            x += sliceWidth;
+
+            sum += Math.abs(dataArray[i] - 128);
+        }
+
+        ctx.stroke();
+
+        // Calculate RMS level
+        const rms = sum / bufferLength;
+        const level = Math.min((rms / 50) * 100, 100);
+
+        meter.style.width = level + "%";
+
+        animationId = requestAnimationFrame(animate);
+    }
+
+    animate();
+}
+
+document.querySelectorAll("input[name='sourceType']").forEach((r) => {
+    r.addEventListener("change", () => {
+        const sourceType = getSelectedSourceType();
+        streamControls.style.display = sourceType === "stream" ? "block" : "none";
+    });
+});
+
+</script>
+</body>
+</html>

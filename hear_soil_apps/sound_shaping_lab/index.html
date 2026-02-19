@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sound Shaping Lab</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- noUiSlider -->
+<link href="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/nouislider@15.7.1/dist/nouislider.min.js"></script>
+
+<!-- RNBO -->
+<script src="https://cdn.cycling74.com/rnbo/1.3.3/rnbo.min.js"></script>
+
+<style>
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #6fb1c7;
+  color: black;
+}
+
+.header {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.header h1 {
+  display: inline-block;
+  background: #ffe600;
+  padding: 10px 30px;
+  border: 3px solid black;
+}
+
+.container {
+  width: 900px;
+  margin: 30px auto;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+#fileInput {
+  display: none;
+}
+
+.choose-btn {
+  background: orange;
+  border: 3px solid black;
+  padding: 15px 25px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.wave-container {
+  background: #e6e6e6;
+  border: 3px solid black;
+  padding: 10px;
+}
+
+#waveform {
+  width: 100%;
+  height: 120px;
+  background: white;
+}
+
+#rangeSlider {
+  margin-top: 10px;
+}
+
+.slider-section {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 40px;
+}
+
+.control-block {
+  text-align: center;
+}
+
+.control-block input[type="range"] {
+  width: 200px;
+}
+
+.yellow-dot {
+  width: 18px;
+  height: 18px;
+  background: #ffe600;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+  cursor: pointer;
+}
+
+.toggle-row {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 40px;
+}
+
+.big-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.big-toggle input {
+  width: 28px;
+  height: 28px;
+}
+
+.footer-note {
+  margin-top: 40px;
+  text-align: center;
+  font-weight: bold;
+}
+
+/* MIDI Modal */
+.midi-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.midi-modal {
+  background: #6fb1c7; /* match page background blue */
+  border: 3px solid black;
+  padding: 20px;
+  min-width: 260px;
+  color: black;
+}
+
+.midi-modal button {
+  margin: 4px 0;
+  width: 100%;
+  background: #ffe600; /* yellow labels */
+  color: black;
+  border: 2px solid black;
+  font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+  <h1>SOUND SHAPING LAB</h1>
+</div>
+
+<div class="container">
+
+  <div class="file-row">
+    <label for="fileInput" class="choose-btn">CHOOSE FILE</label>
+    <input type="file" id="fileInput" accept="audio/*">
+    <div>Select a sound file (.wav or .mp3)</div>
+  </div>
+
+  <div class="wave-container">
+    <canvas id="waveform" width="860" height="120"></canvas>
+    <div id="rangeSlider"></div>
+  </div>
+
+  <div style="text-align:center; margin-top:10px;">
+    Change the start and end point of the sample
+  </div>
+
+  <div class="slider-section">
+    <div class="control-block">
+      <div><span class="yellow-dot"></span>VOLUME</div>
+      <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.8">
+    </div>
+
+    <div class="control-block">
+      <div><span class="yellow-dot"></span>SPEED</div>
+      <input type="range" id="rateSlider" min="0.001" max="3" step="0.001" value="1.0">
+    </div>
+  </div>
+
+  <div class="toggle-row">
+    <div class="big-toggle">
+      <input type="checkbox" id="toggleStart" checked>
+      <div>START SOUND</div>
+    </div>
+
+    <div class="big-toggle">
+      <input type="checkbox" id="toggleLoop" checked>
+      <div>LOOP</div>
+    </div>
+
+    <div class="big-toggle">
+      <input type="checkbox" id="toggleBackwards">
+      <div>BACKWARDS</div>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    X = ON &nbsp;&nbsp;&nbsp; BLANK = OFF
+  </div>
+
+  <div style="text-align:center; margin-top:20px;">
+    <button id="openMidiLearnModal">MIDI CONTROL SETTINGS</button>
+  </div>
+
+</div>
+
+<!-- MIDI Learn Modal -->
+<div id="midiLearnModal" class="midi-modal-overlay">
+  <div class="midi-modal">
+    <h3>MIDI Learn</h3>
+    <button id="closeMidiLearnModal">Close</button>
+    <button id="midiLearnVolume">MIDI Learn Volume</button>
+    <button id="midiLearnRate">MIDI Learn Rate</button>
+    <button id="midiLearnPlay">MIDI Learn Play</button>
+    <button id="midiLearnBackwards">MIDI Learn Backwards</button>
+    <button id="midiLearnPosL">MIDI Learn Left Position</button>
+    <button id="midiLearnPosR">MIDI Learn Right Position</button>
+    <button id="midiLearnDragRange">MIDI Learn Move Head</button>
+  </div>
+</div>
+
+<script>
+// AUDIO / RNBO
+let device;
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let lastLoadedBuffer = null;
+
+function applyLoadedBufferToDevice() {
+  if (!lastLoadedBuffer) return;
+  if (!device || typeof device.setDataBuffer !== "function") return;
+  device.setDataBuffer("kick", lastLoadedBuffer, lastLoadedBuffer.numberOfChannels, lastLoadedBuffer.sampleRate);
+}
+
+function pulsePlayIfEnabled() {
+  const startEl = document.getElementById('toggleStart');
+  if (!startEl || !startEl.checked) return;
+  // Many RNBO patches treat play as a gate/edge; force a 0->1 transition
+  setRNBOParam('play', 0);
+  setTimeout(() => setRNBOParam('play', 1), 0);
+}
+
+async function setupRNBO() {
+  try {
+    // Use an absolute URL so paths with spaces work reliably
+    const patcherUrl = new URL("./export/patch.export.json", window.location.href);
+    const res = await fetch(patcherUrl.toString(), { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status} loading RNBO patch`);
+    const patcher = await res.json();
+    device = await RNBO.createDevice({ patcher, context: audioContext });
+    device.node.connect(audioContext.destination);
+  } catch (err) {
+    console.error("RNBO setup failed", err);
+    const isFile = window.location.protocol === "file:";
+    alert(
+      isFile
+        ? "RNBO patch couldn't be loaded because this page is opened as a local file.\n\nRun a local server in this folder (example):\npython3 -m http.server 5173\nThen open: http://localhost:5173"
+        : "RNBO patch couldn't be loaded. Check the console for details."
+    );
+    return;
+  }
+  // Initialize RNBO parameters to match current UI state
+  const volEl = document.getElementById('volumeSlider');
+  const rateEl = document.getElementById('rateSlider');
+  const startEl = document.getElementById('toggleStart');
+  const loopEl = document.getElementById('toggleLoop');
+  const backwardsEl = document.getElementById('toggleBackwards');
+
+  if (volEl) setRNBOParam('volume', parseFloat(volEl.value));
+  if (rateEl) setRNBOParam('rate', parseFloat(rateEl.value));
+  if (startEl) setRNBOParam('play', startEl.checked ? 1 : 0);
+  if (loopEl) setRNBOParam('loop', loopEl.checked ? 1 : 0);
+  if (backwardsEl) setRNBOParam('backwards', backwardsEl.checked ? 1 : 0);
+
+  // If a file was already loaded before RNBO was ready, push it in now
+  applyLoadedBufferToDevice();
+  pulsePlayIfEnabled();
+}
+setupRNBO();
+
+function setRNBOParam(id, value) {
+  const param = device?.parametersById.get(id);
+  if (param) param.value = value;
+}
+
+// WAVEFORM
+function drawWaveform(buffer) {
+  const canvas = document.getElementById("waveform");
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  const data = buffer.getChannelData(0);
+  const step = Math.ceil(data.length / width);
+  const amp = height / 2;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.beginPath();
+  for (let i = 0; i < width; i++) {
+    const slice = data.slice(i * step, (i + 1) * step);
+    const min = Math.min(...slice);
+    const max = Math.max(...slice);
+    ctx.moveTo(i, (1 + min) * amp);
+    ctx.lineTo(i, (1 + max) * amp);
+  }
+  ctx.strokeStyle = "#000000";
+  ctx.stroke();
+}
+
+// RANGE SLIDER
+const rangeSlider = document.getElementById('rangeSlider');
+noUiSlider.create(rangeSlider, {
+  start: [0, 1],
+  connect: true,
+  behaviour: 'drag',
+  range: { min: 0, max: 1 },
+  step: 0.001,
+  margin: 0.01
+});
+
+rangeSlider.noUiSlider.on('update', (values) => {
+  const [posl, posr] = values.map(parseFloat);
+  setRNBOParam('posl', posl);
+  setRNBOParam('posr', posr);
+});
+
+// FILE LOAD
+document.getElementById('fileInput').addEventListener('change', async (evt) => {
+  const file = evt.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      await audioContext.resume();
+      const buffer = await audioContext.decodeAudioData(reader.result);
+      // Always draw waveform even if RNBO device is not ready
+      drawWaveform(buffer);
+      lastLoadedBuffer = buffer;
+      applyLoadedBufferToDevice();
+      pulsePlayIfEnabled();
+    } catch (err) {
+      console.error("Error loading audio file", err);
+      alert("There was a problem loading this audio file.");
+    }
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+// CONTROLS
+volumeSlider.oninput = e => setRNBOParam('volume', parseFloat(e.target.value));
+rateSlider.oninput = e => setRNBOParam('rate', parseFloat(e.target.value));
+toggleStart.onchange = e => setRNBOParam('play', e.target.checked ? 1 : 0);
+toggleLoop.onchange = e => setRNBOParam('loop', e.target.checked ? 1 : 0);
+toggleBackwards.onchange = e => setRNBOParam('backwards', e.target.checked ? 1 : 0);
+
+// MIDI MODAL
+const modal = document.getElementById('midiLearnModal');
+openMidiLearnModal.onclick = () => modal.style.display = "flex";
+closeMidiLearnModal.onclick = () => modal.style.display = "none";
+modal.onclick = (e) => { if (e.target === modal) modal.style.display = "none"; };
+
+// MIDI LEARN
+let midiAccess = null;
+let midiMapping = {};
+
+try {
+  midiMapping = JSON.parse(localStorage.getItem('midiMapping') || '{}');
+} catch (e) {
+  midiMapping = {};
+}
+
+if (navigator.requestMIDIAccess) {
+  navigator.requestMIDIAccess().then((access) => {
+    midiAccess = access;
+    for (let input of midiAccess.inputs.values()) {
+      input.onmidimessage = handleMIDIMessage;
+    }
+  }).catch((err) => {
+    console.warn("Web MIDI access failed:", err);
+  });
+} else {
+  console.warn("Web MIDI API not supported in this browser.");
+}
+
+function handleMIDIMessage(message) {
+  const [status, data1, data2] = message.data;
+  // 176–191: CC messages on channels 1–16
+  if (status >= 176 && status <= 191) {
+    for (let id in midiMapping) {
+      if (midiMapping[id] === data1) {
+        if (id === 'posl') {
+          const values = rangeSlider.noUiSlider.get();
+          let r = parseFloat(values[1]);
+          let newL = (data2 / 127);
+          if (r - newL < 0.01) newL = r - 0.01;
+          rangeSlider.noUiSlider.set([newL, r]);
+        } else if (id === 'posr') {
+          const values = rangeSlider.noUiSlider.get();
+          let l = parseFloat(values[0]);
+          let newR = (data2 / 127);
+          if (newR - l < 0.01) newR = l + 0.01;
+          rangeSlider.noUiSlider.set([l, newR]);
+        } else if (id === 'dragZone') {
+          const windowRange = rangeSlider.noUiSlider.get();
+          const size = parseFloat(windowRange[1]) - parseFloat(windowRange[0]);
+          const dragPos = data2 / 127;
+          let newMin = Math.min(Math.max(dragPos - size / 2, 0), 1 - size);
+          let newMax = newMin + size;
+          rangeSlider.noUiSlider.set([newMin, newMax]);
+        } else {
+          const control = document.getElementById(id);
+          if (control) {
+            if (control.type === "checkbox") {
+              control.checked = (data2 >= 64);
+              control.dispatchEvent(new Event('change'));
+            } else {
+              control.value = data2 / 127;
+              control.dispatchEvent(new Event('input'));
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+function learnMIDI(id) {
+  alert(`Move a MIDI control now to assign to ${id}`);
+  function tempHandler(message) {
+    const [status, data1] = message.data;
+    if (status >= 176 && status <= 191) {
+      midiMapping[id] = data1;
+      try {
+        localStorage.setItem('midiMapping', JSON.stringify(midiMapping));
+      } catch (e) {
+        console.warn("Failed to store MIDI mapping:", e);
+      }
+      // Restore main MIDI handler
+      for (let input of midiAccess.inputs.values()) {
+        input.onmidimessage = handleMIDIMessage;
+      }
+    }
+  }
+  if (!midiAccess) return;
+  for (let input of midiAccess.inputs.values()) {
+    input.onmidimessage = tempHandler;
+  }
+}
+
+document.getElementById('midiLearnVolume').addEventListener('click', () => learnMIDI('volumeSlider'));
+document.getElementById('midiLearnRate').addEventListener('click', () => learnMIDI('rateSlider'));
+document.getElementById('midiLearnPlay').addEventListener('click', () => learnMIDI('toggleStart'));
+document.getElementById('midiLearnBackwards').addEventListener('click', () => learnMIDI('toggleBackwards'));
+document.getElementById('midiLearnPosL').addEventListener('click', () => learnMIDI('posl'));
+document.getElementById('midiLearnPosR').addEventListener('click', () => learnMIDI('posr'));
+document.getElementById('midiLearnDragRange').addEventListener('click', () => learnMIDI('dragZone'));
+</script>
+
+</body>
+</html>

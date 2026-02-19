@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Stream Recorder</title>
+
+<style>
+  body {
+    font-family: sans-serif;
+    text-align: center;
+    margin-top: 80px;
+  }
+
+  select, button {
+    padding: 10px 20px;
+    margin: 10px;
+    font-size: 16px;
+  }
+
+  audio {
+    margin-top: 20px;
+    width: 400px;
+  }
+</style>
+</head>
+
+<body>
+
+<h1>Live Stream Recorder</h1>
+
+<select id="streamSelect"></select>
+
+<br>
+
+<button id="addStreamBtn">➕ Add Custom Stream</button>
+
+<br>
+
+<audio id="audio" controls></audio>
+
+<br>
+
+<button id="recordBtn">Start Recording</button>
+<button id="stopBtn" disabled>Stop & Save</button>
+
+<script>
+
+let controller;
+let chunks = [];
+let recording = false;
+
+const streamSelect = document.getElementById("streamSelect");
+const audio = document.getElementById("audio");
+const recordBtn = document.getElementById("recordBtn");
+const stopBtn = document.getElementById("stopBtn");
+const addStreamBtn = document.getElementById("addStreamBtn");
+
+// Default Streams
+const defaultStreams = [
+  {
+    name: "Wicken Fen",
+    url: "https://locus.creacast.com:9443/wicken_wicken_fen.mp3"
+  },
+  {
+    name: "Bristol Lightship",
+    url: "https://locus.creacast.com:9443/bristol_lightship.mp3"
+  }
+];
+
+// Load streams from storage or defaults
+function loadStreams() {
+
+  let saved = JSON.parse(localStorage.getItem("customStreams")) || [];
+
+  const allStreams = [...defaultStreams, ...saved];
+
+  streamSelect.innerHTML = "";
+
+  allStreams.forEach(stream => {
+    const option = document.createElement("option");
+    option.value = stream.url;
+    option.textContent = stream.name;
+    streamSelect.appendChild(option);
+  });
+}
+
+// Load selected stream into player
+function loadStream() {
+  audio.src = streamSelect.value;
+}
+
+streamSelect.addEventListener("change", loadStream);
+
+addStreamBtn.onclick = () => {
+
+  const url = prompt("Enter stream URL (must be direct .mp3 stream):");
+
+  if (!url) return;
+
+  try {
+    new URL(url); // validate URL
+  } catch {
+    alert("Invalid URL");
+    return;
+  }
+
+  const name = prompt("Give this stream a name:") || "Custom Stream";
+
+  const newStream = { name, url };
+
+  const saved = JSON.parse(localStorage.getItem("customStreams")) || [];
+  saved.push(newStream);
+  localStorage.setItem("customStreams", JSON.stringify(saved));
+
+  loadStreams();
+  streamSelect.value = url;
+  loadStream();
+};
+
+// RECORDING
+
+recordBtn.onclick = async () => {
+
+  const streamURL = streamSelect.value;
+
+  recording = true;
+  recordBtn.disabled = true;
+  stopBtn.disabled = false;
+
+  controller = new AbortController();
+
+  const response = await fetch(streamURL, {
+    signal: controller.signal
+  });
+
+  const reader = response.body.getReader();
+
+  while (recording) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+};
+
+stopBtn.onclick = () => {
+
+  recording = false;
+  controller.abort();
+
+  const blob = new Blob(chunks, { type: "audio/mpeg" });
+  const url = URL.createObjectURL(blob);
+
+  const selectedName =
+    streamSelect.options[streamSelect.selectedIndex].text
+      .replace(/\s+/g, "_")
+      .toLowerCase();
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = selectedName + "_stream.mp3";
+  a.click();
+
+  URL.revokeObjectURL(url);
+
+  chunks = [];
+  recordBtn.disabled = false;
+  stopBtn.disabled = true;
+};
+
+// INIT
+loadStreams();
+loadStream();
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Soil Sound Keyboard</title>
+
+<style>
+body { background:#ddd; font-family: Arial, sans-serif; }
+.container { background:#6fb0c6; padding:40px; width:1100px; margin:30px auto; position:relative; }
+.title { background:#ffe800; display:inline-block; padding:10px 25px; font-weight:bold; font-size:28px; }
+.choose-btn { background:#ffa500; border:4px solid black; padding:15px 25px; font-weight:bold; font-size:20px; cursor:pointer; display:inline-block; }
+.instructions { font-size:18px; margin-left:20px; }
+.keys { margin-top:40px; }
+.key { background:#ffe800; display:inline-block; width:90px; height:90px; line-height:90px; text-align:center; font-size:48px; margin-right:10px; cursor:pointer; user-select:none; }
+.key.active { background:#ffcc00; }
+.slider-group { margin-top:40px; }
+.slider-label { font-weight:bold; font-size:18px; margin-top:10px; }
+input[type=range] { width:300px; }
+.loop-toggle { display:inline-block; margin-left:40px; }
+.loop-box { background:#ffe800; width:70px; height:70px; text-align:center; line-height:70px; font-size:40px; cursor:pointer; border:4px solid black; }
+.loop-box.active { background:#ffcc00; }
+.midi-dot { display:inline-block; width:25px; height:25px; background:#ffe800; border-radius:50%; cursor:pointer; margin-right:10px; border:2px solid black; }
+.midi-dot.learning { background:red; }
+</style>
+</head>
+
+<body>
+
+<div class="container">
+<div class="title">SOIL SOUND KEYBOARD</div>
+<br><br>
+
+<label class="choose-btn">
+  CHOOSE FILES
+  <input type="file" id="folderInput" webkitdirectory multiple hidden>
+</label>
+<span class="instructions">
+Select a folder of 10 sounds (.wav or .mp3)
+</span>
+
+<div class="keys" id="keys"></div>
+
+<div class="slider-group">
+  <div>
+    <span class="midi-dot" id="volMidi"></span>
+    <input type="range" id="volume" min="0" max="1" step="0.01" value="1">
+    <div class="slider-label">VOLUME SLIDER</div>
+  </div>
+
+  <div style="margin-top:30px;">
+    <span class="midi-dot" id="speedMidi"></span>
+    <input type="range" id="speed" min="0.25" max="2" step="0.01" value="1">
+    <div class="slider-label">SPEED SLIDER</div>
+  </div>
+
+  <div class="loop-toggle">
+    <div id="loopBtn" class="loop-box active">X</div>
+    <div style="margin-top:10px;font-weight:bold;">
+      LOOP SOUNDS<br>
+      x = looped<br>
+      o = not loops
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+const letters = ['Q','W','E','R','T','Y','U','I','O','P'];
+const keyContainer = document.getElementById("keys");
+
+let audioBuffers = {};
+let activeSources = {};
+let loopEnabled = true;
+
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+const masterGain = audioContext.createGain();
+masterGain.connect(audioContext.destination);
+
+// Unlock audio
+document.body.addEventListener("click", () => {
+  audioContext.resume();
+}, { once: true });
+
+// Create keys
+letters.forEach(letter => {
+  const div = document.createElement("div");
+  div.classList.add("key");
+  div.innerText = letter;
+  div.dataset.key = letter;
+  keyContainer.appendChild(div);
+
+  div.addEventListener("mousedown", () => startSound(letter));
+  div.addEventListener("mouseup", () => stopSound(letter));
+  div.addEventListener("mouseleave", () => stopSound(letter));
+});
+
+// Load samples
+document.getElementById("folderInput").addEventListener("change", async function(e) {
+  const files = Array.from(e.target.files).filter(f => f.type.includes("audio"));
+  for (let i = 0; i < letters.length; i++) {
+    if (files[i]) {
+      const arrayBuffer = await files[i].arrayBuffer();
+      audioBuffers[letters[i]] = await audioContext.decodeAudioData(arrayBuffer);
+    }
+  }
+  alert("Samples loaded!");
+});
+
+function startSound(letter) {
+  if (!audioBuffers[letter]) return;
+
+  const source = audioContext.createBufferSource();
+  source.buffer = audioBuffers[letter];
+  source.loop = loopEnabled;
+  source.playbackRate.value = parseFloat(speedSlider.value);
+
+  source.connect(masterGain);
+  source.start();
+
+  activeSources[letter] = source;
+  document.querySelector(`[data-key=${letter}]`).classList.add("active");
+}
+
+function stopSound(letter) {
+  if (activeSources[letter]) {
+    activeSources[letter].stop();
+    delete activeSources[letter];
+  }
+  document.querySelector(`[data-key=${letter}]`).classList.remove("active");
+}
+
+// Keyboard control
+document.addEventListener("keydown", e => {
+  const letter = e.key.toUpperCase();
+  if (letters.includes(letter) && !activeSources[letter]) startSound(letter);
+});
+document.addEventListener("keyup", e => {
+  const letter = e.key.toUpperCase();
+  if (letters.includes(letter)) stopSound(letter);
+});
+
+// Sliders
+const volumeSlider = document.getElementById("volume");
+const speedSlider = document.getElementById("speed");
+
+volumeSlider.addEventListener("input", e => {
+  masterGain.gain.value = e.target.value;
+});
+
+// LIVE speed update
+speedSlider.addEventListener("input", e => {
+  const newRate = parseFloat(e.target.value);
+  Object.values(activeSources).forEach(source => {
+    source.playbackRate.value = newRate;
+  });
+});
+
+// Loop toggle
+const loopBtn = document.getElementById("loopBtn");
+loopBtn.addEventListener("click", () => {
+  loopEnabled = !loopEnabled;
+  loopBtn.classList.toggle("active");
+  loopBtn.innerText = loopEnabled ? "X" : "O";
+});
+
+// ===== MIDI SYSTEM =====
+
+let midiLearningTarget = null;
+let midiMappings = {
+  volume: null,
+  speed: null
+};
+
+const volDot = document.getElementById("volMidi");
+const speedDot = document.getElementById("speedMidi");
+
+volDot.onclick = () => {
+  midiLearningTarget = "volume";
+  volDot.classList.add("learning");
+  speedDot.classList.remove("learning");
+};
+
+speedDot.onclick = () => {
+  midiLearningTarget = "speed";
+  speedDot.classList.add("learning");
+  volDot.classList.remove("learning");
+};
+
+if (navigator.requestMIDIAccess) {
+  navigator.requestMIDIAccess().then(midi => {
+
+    midi.inputs.forEach(input => {
+
+      input.onmidimessage = msg => {
+        const [status, cc, value] = msg.data;
+
+        if ((status & 0xf0) === 0xb0) {
+
+          // Learn phase
+          if (midiLearningTarget) {
+            midiMappings[midiLearningTarget] = cc;
+            volDot.classList.remove("learning");
+            speedDot.classList.remove("learning");
+            midiLearningTarget = null;
+            return;
+          }
+
+          // Control phase
+          Object.keys(midiMappings).forEach(param => {
+            if (midiMappings[param] === cc) {
+
+              const norm = value / 127;
+
+              if (param === "volume") {
+                volumeSlider.value = norm;
+                masterGain.gain.value = norm;
+              }
+
+              if (param === "speed") {
+                const mapped = 0.25 + norm * 1.75;
+                speedSlider.value = mapped;
+
+                // Update live playing sounds
+                Object.values(activeSources).forEach(source => {
+                  source.playbackRate.value = mapped;
+                });
+              }
+            }
+          });
+        }
+      };
+
+    });
+
+  });
+}
+</script>
+
+</body>
+</html>
