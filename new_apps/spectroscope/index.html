@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Spectroscope</title>
+
+<style>
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #6fb3c8;
+}
+
+/* HEADER */
+.header {
+  text-align: center;
+  margin-top: 20px;
+}
+.header h1 {
+  display: inline-block;
+  background: #ffe600;
+  padding: 10px 40px;
+  border: 4px solid #000;
+}
+
+/* CONTROL PANEL */
+.controls {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  margin: 30px;
+}
+
+/* LEFT OPTIONS */
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.circle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffe600;
+  border: 3px solid #000;
+}
+
+/* SLIDERS */
+.slider-group {
+  text-align: center;
+}
+input[type=range] {
+  -webkit-appearance: none;
+  width: 250px;
+  height: 10px;
+  background: #000;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 40px;
+  background: #ffe600;
+  border: 3px solid #000;
+  cursor: pointer;
+}
+
+/* SPECTROGRAM */
+#spectrogram {
+  display: block;
+  margin: 20px auto;
+  width: 90%;
+  height: 400px;
+  background: #000;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+  <h1>SPECTROSCOPE</h1>
+</div>
+
+<div class="controls">
+
+  <div class="options">
+    <div class="option" id="micOption">
+      <div class="circle"></div>
+      <span>Use Microphone input</span>
+    </div>
+
+    <div class="option" id="fileOption">
+      <div class="circle"></div>
+      <span>Choose Sound (wav or mp3)</span>
+      <input type="file" id="fileInput" accept="audio/*" style="display:none;">
+    </div>
+  </div>
+
+  <div class="slider-group">
+    <input type="range" id="gain" min="0" max="10" step="0.1" value="1">
+    <div>INPUT VOLUME</div>
+  </div>
+
+  <div class="slider-group">
+    <input type="range" id="speed">
+    <div>SCROLLING SPEED</div>
+  </div>
+
+</div>
+
+<canvas id="spectrogram"></canvas>
+
+<script>
+(async function() {
+
+  const canvas = document.getElementById('spectrogram');
+  const ctx = canvas.getContext('2d');
+
+  function resizeCanvas() {
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  const gainSlider = document.getElementById('gain');
+  const speedSlider = document.getElementById('speed');
+
+  const micOption = document.getElementById('micOption');
+  const fileOption = document.getElementById('fileOption');
+  const fileInput = document.getElementById('fileInput');
+
+  let audioCtx, analyser, source, gainNode;
+  let currentBufferSource = null;
+  let running = false;
+
+  // Slow smooth scrolling
+  speedSlider.min = 0.1;
+  speedSlider.max = 3;
+  speedSlider.step = 0.1;
+  speedSlider.value = 0.5;
+
+  function stopCurrentAudio() {
+    if (currentBufferSource) {
+      try { currentBufferSource.stop(); } catch(e) {}
+      currentBufferSource.disconnect();
+      currentBufferSource = null;
+    }
+  }
+
+  async function initMic() {
+    stopCurrentAudio();
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    if (!audioCtx) audioCtx = new AudioContext();
+
+    source = audioCtx.createMediaStreamSource(stream);
+    setupAudio(false);
+
+    start();
+  }
+
+  function initFile(file) {
+    stopCurrentAudio();
+
+    if (!audioCtx) audioCtx = new AudioContext();
+
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+      audioCtx.decodeAudioData(e.target.result, buffer => {
+
+        const bufferSource = audioCtx.createBufferSource();
+        bufferSource.buffer = buffer;
+        bufferSource.loop = true;
+
+        currentBufferSource = bufferSource;
+        source = bufferSource;
+
+        setupAudio(true);
+        bufferSource.start();
+
+        start();
+      });
+    };
+
+    reader.readAsArrayBuffer(file);
+  }
+
+  function setupAudio(sendToOutput) {
+    gainNode = audioCtx.createGain();
+    analyser = audioCtx.createAnalyser();
+
+    // 🔥 FFT UPGRADE
+    analyser.fftSize = 4096;
+
+    source.connect(gainNode);
+    gainNode.connect(analyser);
+
+    if (sendToOutput) {
+      analyser.connect(audioCtx.destination);
+    }
+  }
+
+  function start() {
+    running = true;
+
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+
+    draw();
+  }
+
+  gainSlider.oninput = () => {
+    if (gainNode) gainNode.gain.value = gainSlider.value;
+  };
+
+  fileOption.onclick = () => fileInput.click();
+  fileInput.onchange = e => initFile(e.target.files[0]);
+  micOption.onclick = () => initMic();
+
+  let dataArray;
+  let scrollOffset = 0;
+
+  function draw() {
+    if (!analyser) return;
+
+    const bufferLength = analyser.frequencyBinCount;
+    dataArray = new Uint8Array(bufferLength);
+
+    const minFreq = 40;
+    const maxFreq = audioCtx.sampleRate / 2;
+
+    function loop() {
+      requestAnimationFrame(loop);
+      if (!running) return;
+
+      const speed = parseFloat(speedSlider.value);
+      scrollOffset += speed;
+
+      if (scrollOffset >= 1) {
+        const shift = Math.floor(scrollOffset);
+        scrollOffset -= shift;
+
+        ctx.drawImage(
+          canvas,
+          shift, 0, canvas.width - shift, canvas.height,
+          0, 0, canvas.width - shift, canvas.height
+        );
+
+        for (let s = 0; s < shift; s++) {
+          analyser.getByteFrequencyData(dataArray);
+
+          let prevY = null;
+
+for (let i = 0; i < bufferLength; i++) {
+
+  const value = dataArray[i] / 255;
+
+  const freq = i * maxFreq / bufferLength;
+  if (freq < minFreq) continue;
+
+  const logMin = Math.log10(minFreq);
+  const logMax = Math.log10(maxFreq);
+  const logFreq = Math.log10(freq);
+
+  const norm = (logFreq - logMin) / (logMax - logMin);
+  const y = canvas.height - (norm * canvas.height);
+
+  ctx.fillStyle = `hsl(${(1 - value) * 240},100%,50%)`;
+
+  if (prevY !== null) {
+    const yStart = Math.min(prevY, y);
+    const yEnd = Math.max(prevY, y);
+
+    // 🔥 fill vertical gap between bins
+    ctx.fillRect(
+      canvas.width - shift + s,
+      yStart,
+      1,
+      yEnd - yStart + 1
+    );
+  }
+
+  prevY = y;
+}
+        }
+      }
+    }
+
+    loop();
+  }
+
+})();
+</script>
+
+</body>
+</html>
