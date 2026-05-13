@@ -3,36 +3,270 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camera Sound Wave Generator</title>
+    <title>Video Scan Synth</title>
+
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
+
     <div class="container">
-        <video id="videoFeed" autoplay playsinline></video>
+
+        <video
+            id="videoFeed"
+            autoplay
+            playsinline
+            muted
+            crossorigin="anonymous"
+        ></video>
+
         <canvas id="overlayCanvas"></canvas>
+
     </div>
+
     <div class="controls">
-        <label for="volumeSlider">Volume:</label>
-        <input type="range" id="volumeSlider" min="0" max="1" value="0.5" step="0.01">
 
-        <label for="frequencySlider">Playback Rate:</label>
-        <input type="range" id="frequencySlider" min="20" max="2000" value="440" step="1">
-        <span id="frequencyDisplay">440 Hz</span>
+        <label for="videoFile">
+            Load Video:
+        </label>
 
-        <fieldset id="axisChooser">
-            <legend>Scan Axis:</legend>
-            <input type="radio" id="scanY" name="scanAxis" value="y" checked>
-            <label for="scanY">Y-axis (Horizontal Line)</label>
-            <input type="radio" id="scanX" name="scanAxis" value="x">
-            <label for="scanX">X-axis (Vertical Line)</label>
+        <input
+            type="file"
+            id="videoFile"
+            accept="video/*"
+        >
+
+        <button id="cameraButton">
+            Use Camera
+        </button>
+
+        <br><br>
+
+        <label for="timelineSlider">
+            Timeline:
+        </label>
+
+        <input
+            type="range"
+            id="timelineSlider"
+            min="0"
+            max="1000"
+            value="0"
+            step="1"
+        >
+
+        <span id="timelineDisplay">
+            0:00 / 0:00
+        </span>
+
+        <br><br>
+
+        <label for="playbackSpeedSlider">
+            Video Speed:
+        </label>
+
+        <input
+            type="range"
+            id="playbackSpeedSlider"
+            min="0.25"
+            max="3"
+            value="1"
+            step="0.05"
+        >
+
+        <span id="playbackSpeedDisplay">
+            1.00x
+        </span>
+
+        <br><br>
+
+        <button id="recordButton">
+            Start Recording
+        </button>
+
+        <a id="downloadRecordingLink" style="display:none;" download="scan-synth-recording.webm">
+            Download Recording
+        </a>
+
+        <br><br>
+
+        <label for="volumeSlider">
+            Volume:
+        </label>
+
+        <input
+            type="range"
+            id="volumeSlider"
+            min="0"
+            max="1"
+            value="0.5"
+            step="0.01"
+        >
+
+        <br><br>
+
+        <label for="frequencySlider">
+            Playback Rate:
+        </label>
+
+        <input
+            type="range"
+            id="frequencySlider"
+            min="20"
+            max="2000"
+            value="440"
+            step="1"
+        >
+
+        <span id="frequencyDisplay">
+            440 Hz
+        </span>
+
+        <br><br>
+
+        <input
+            type="checkbox"
+            id="peakPitchToggle"
+        >
+
+        <label for="peakPitchToggle">
+            Peak-position pitch mapping
+        </label>
+
+        <br><br>
+
+        <label for="brightnessSlider">
+            Brightness:
+        </label>
+
+        <input
+            type="range"
+            id="brightnessSlider"
+            min="0"
+            max="2"
+            value="1"
+            step="0.01"
+        >
+
+        <span id="brightnessDisplay">
+            1.00
+        </span>
+
+        <br><br>
+
+        <label for="contrastSlider">
+            Contrast:
+        </label>
+
+        <input
+            type="range"
+            id="contrastSlider"
+            min="0"
+            max="3"
+            value="1"
+            step="0.01"
+        >
+
+        <span id="contrastDisplay">
+            1.00
+        </span>
+
+        <br><br>
+
+        <label for="saturationSlider">
+            Saturation:
+        </label>
+
+        <input
+            type="range"
+            id="saturationSlider"
+            min="0"
+            max="3"
+            value="1"
+            step="0.01"
+        >
+
+        <span id="saturationDisplay">
+            1.00
+        </span>
+
+        <br><br>
+
+        <button id="resetImageControlsButton">
+            Reset Image Controls
+        </button>
+
+        <br><br>
+
+        <input
+            type="checkbox"
+            id="invertMappingToggle"
+        >
+
+        <label for="invertMappingToggle">
+            Invert waveform mapping (black = high)
+        </label>
+
+        <br><br>
+
+        <fieldset>
+
+            <legend>
+                Scan Axis
+            </legend>
+
+            <input
+                type="radio"
+                id="scanY"
+                name="scanAxis"
+                value="y"
+                checked
+            >
+
+            <label for="scanY">
+                Y-axis
+            </label>
+
+            <input
+                type="radio"
+                id="scanX"
+                name="scanAxis"
+                value="x"
+            >
+
+            <label for="scanX">
+                X-axis
+            </label>
+
         </fieldset>
 
-        <label for="waveformColorPicker">Wave Color:</label>
-        <input type="color" id="waveformColorPicker" value="#0000FF">
+        <br>
 
-        <input type="checkbox" id="liveUpdateCheckbox">
-        <label for="liveUpdateCheckbox">Live Update</label>
+        <label for="waveformColorPicker">
+            Wave Color:
+        </label>
+
+        <input
+            type="color"
+            id="waveformColorPicker"
+            value="#00ff00"
+        >
+
+        <br><br>
+
+        <input
+            type="checkbox"
+            id="liveUpdateCheckbox"
+            checked
+        >
+
+        <label for="liveUpdateCheckbox">
+            Live Update
+        </label>
+
     </div>
+
     <script src="script.js"></script>
+
 </body>
-</html> 
+</html>
