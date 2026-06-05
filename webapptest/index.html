@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accelerometer Tone</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #111;
+      color: white;
+      text-align: center;
+      padding-top: 50px;
+    }
+    button {
+      font-size: 20px;
+      padding: 15px 25px;
+    }
+    .readout {
+      margin-top: 30px;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Motion Tone</h1>
+<button id="start">Start Sound</button>
+
+<div class="readout">
+  <div>X: <span id="x">0</span></div>
+  <div>Y: <span id="y">0</span></div>
+  <div>Frequency: <span id="f">0</span> Hz</div>
+</div>
+
+<script>
+let audioCtx;
+let osc;
+let gain;
+
+let xVal = 0;
+let yVal = 0;
+
+function startAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  osc = audioCtx.createOscillator();
+  gain = audioCtx.createGain();
+
+  osc.type = "sine";
+  osc.frequency.value = 200;
+
+  gain.gain.value = 0.2;
+
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  osc.start();
+
+  startMotion();
+}
+
+function startMotion() {
+  if (typeof DeviceMotionEvent !== "undefined" &&
+      typeof DeviceMotionEvent.requestPermission === "function") {
+
+    DeviceMotionEvent.requestPermission().then(response => {
+      if (response === "granted") {
+        window.addEventListener("devicemotion", handleMotion);
+      }
+    });
+  } else {
+    window.addEventListener("devicemotion", handleMotion);
+  }
+}
+
+function handleMotion(event) {
+  const acc = event.accelerationIncludingGravity;
+
+  if (!acc) return;
+
+  xVal = acc.x || 0;
+  yVal = acc.y || 0;
+
+  document.getElementById("x").textContent = xVal.toFixed(2);
+  document.getElementById("y").textContent = yVal.toFixed(2);
+
+  // Map tilt to frequency
+  let freq = 200 + (yVal * -100) + (xVal * 50);
+
+  // Clamp frequency
+  freq = Math.max(80, Math.min(1200, freq));
+
+  osc.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.05);
+
+  document.getElementById("f").textContent = freq.toFixed(1);
+}
+
+document.getElementById("start").addEventListener("click", startAudio);
+</script>
+
+</body>
+</html>
