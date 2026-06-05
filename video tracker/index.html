@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Clean CV Audio Instrument</title>
+
+<style>
+body {
+    margin: 0;
+    background: #000;
+    color: #0f0;
+    font-family: monospace;
+}
+
+#topbar {
+    padding: 10px;
+    background: #111;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+#topbar2 {
+    padding: 0 10px 10px;
+    background: #111;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    border-bottom: 1px solid #222;
+}
+
+canvas {
+    margin: 10px;
+    border: 1px solid #222;
+    cursor: crosshair;
+}
+
+#info {
+    margin: 10px;
+    white-space: pre;
+}
+
+#depthStatus {
+    color: #8f8;
+    font-size: 0.9em;
+}
+</style>
+
+<script src="https://docs.opencv.org/4.x/opencv.js"></script>
+</head>
+
+<body>
+
+<div id="topbar">
+
+<select id="source">
+<option value="film">Film file</option>
+<option value="live">Live feed</option>
+</select>
+
+<label id="fileLabel">
+<input type="file" id="file" accept="video/*">
+</label>
+
+<button id="startCamera" style="display:none">Start camera</button>
+
+<button id="play">Play</button>
+<button id="pause">Pause</button>
+
+<label>
+<input type="checkbox" id="audio"> Audio
+</label>
+
+<label>
+<input type="checkbox" id="showBox" checked> Tracking box
+</label>
+
+<label>
+<input type="checkbox" id="mirror"> Mirror
+</label>
+
+<select id="mode">
+<option value="tone">tone</option>
+<option value="theremin">theremin</option>
+<option value="synth">synth</option>
+</select>
+
+<span id="volControls" title="F range mapped to volume 0–127">
+<label>Vol 0 @ F <input type="number" id="volFMin" value="445" min="120" max="1320" step="1" style="width:4.5em"></label>
+<label>Vol 127 @ F <input type="number" id="volFMax" value="750" min="120" max="1320" step="1" style="width:4.5em"></label>
+</span>
+
+</div>
+
+<div id="topbar2">
+
+<label title="Monocular depth via Depth Anything (runs in browser)">
+<input type="checkbox" id="depthAI"> Depth AI
+</label>
+
+<label>
+<input type="checkbox" id="depthOverlay"> Depth heatmap
+</label>
+
+<label>
+<input type="checkbox" id="useZVolume"> Z → volume
+</label>
+
+<span id="zControls" title="Z range (0–127) mapped to volume">
+<label>Vol 0 @ Z <input type="number" id="volZMin" value="30" min="0" max="127" step="1" style="width:3em"></label>
+<label>Vol 127 @ Z <input type="number" id="volZMax" value="95" min="0" max="127" step="1" style="width:3em"></label>
+</span>
+
+<label title="Lower = smoother video, less frequent depth updates">
+Depth speed
+<select id="depthSpeed">
+<option value="fast" selected>Fast</option>
+<option value="balanced">Balanced</option>
+<option value="quality">Quality</option>
+</select>
+</label>
+
+<span id="depthStatus"></span>
+
+</div>
+
+<video id="vid" style="display:none;"></video>
+<canvas id="c"></canvas>
+
+<div id="info">waiting...</div>
+
+<script type="module">
+
+let vid = document.getElementById("vid");
+let c = document.getElementById("c");
+let ctx = c.getContext("2d", { alpha: false, desynchronized: true });
+
+const TEMPLATE_SIZE = 40;
+const HALF = TEMPLATE_SIZE / 2;
+const SEARCH_PAD = 80;
+const FREQ_MIN = 120;
+const FREQ_MAX = 1320;
+const FREQ_RANGE = FREQ_MAX - FREQ_MIN;
+const TONE_PITCH = 440;
+const MAX_VOLUME = 0.85;
+const Z_SMOOTH = 0.88;
+const INFO_EVERY_N_FRAMES = 3;
+
+let objects = [];
+let cvReady = false;
+let frameReady = false;
+let mediaStream = null;
+
+let grayFrame = null;
+let matchResult = null;
+
+let depthWorker = null;
+let depthWorkerReady = false;
+let depthInferencePending = false;
+let depthMap = null;
+let depthFrameCount = 0;
+let loopFrameCount = 0;
+let lastDepthTime = 0;
+let depthRequestId = 0;
+let depthInputW = 0;
+let depthInputH = 0;
+
+const depthInput = document.createElement("canvas");
+const depthOverlayCanvas = document.createElement("canvas");
+const depthInputCtx = depthInput.getContext("2d", { willReadFrequently: true });
+
+function isLiveSource(){
+    return document.getElementById("source").value === "live";
+}
+
+function depthEnabled(){
+    return document.getElementById("depthAI").checked;
+}
+
+function useZForVolume(){
+    return document.getElementById("useZVolume").checked;
+}
+
+function setDepthStatus(msg){
+    document.getElementById("depthStatus").textContent = msg;
+}
+
+/* ---------------- OPEN CV READY ---------------- */
+
+cv["onRuntimeInitialized"] = () => {
+    cvReady = true;
+};
+
+/* ---------------- AUDIO ---------------- */
+
+let audioCtx, master;
+
+function initAudio(){
+    if(audioCtx) return;
+
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    master = audioCtx.createGain();
+    master.gain.value = 0.6;
+    master.connect(audioCtx.destination);
+}
+
+function freqFromX(x){
+    let nx = x / c.width;
+    return FREQ_MIN + nx * FREQ_RANGE;
+}
+
+function getVolFMin(){
+    return Number(document.getElementById("volFMin").value) || 445;
+}
+
+function getVolFMax(){
+    return Number(document.getElementById("volFMax").value) || 750;
+}
+
+function getVolZMin(){
+    return Number(document.getElementById("volZMin").value) || 0;
+}
+
+function getVolZMax(){
+    return Number(document.getElementById("volZMax").value) || 127;
+}
+
+function midiVolumeFromFreq(freq){
+    let fMin = getVolFMin();
+    let fMax = getVolFMax();
+    if(fMax <= fMin) fMax = fMin + 1;
+
+    let t = (freq - fMin) / (fMax - fMin);
+    t = Math.max(0, Math.min(1, t));
+    return Math.round(t * 127);
+}
+
+function midiVolumeFromZ(z127){
+    let zMin = getVolZMin();
+    let zMax = getVolZMax();
+    if(zMax <= zMin) zMax = zMin + 1;
+
+    let t = (z127 - zMin) / (zMax - zMin);
+    t = Math.max(0, Math.min(1, t));
+    return Math.round(t * 127);
+}
+
+function gainFromMidiVol(midiVol){
+    return (midiVol / 127) * MAX_VOLUME;
+}
+
+function volumeFromFreq(freq){
+    return gainFromMidiVol(midiVolumeFromFreq(freq));
+}
+
+function setAudioParam(param, value){
+    if(audioCtx){
+        param.setValueAtTime(value, audioCtx.currentTime);
+    } else {
+        param.value = value;
+    }
+}
+
+function isMirrored(){
+    return document.getElementById("mirror").checked;
+}
+
+function canvasXFromEvent(clientX, rect){
+    let x = (clientX - rect.left) * c.width / rect.width;
+    if(isMirrored()) x = c.width - x;
+    return x;
+}
+
+/* ---------------- DEPTH AI ---------------- */
+
+function getDepthSettings(){
+    let preset = document.getElementById("depthSpeed").value;
+    if(preset === "balanced"){
+        return { maxWidth: 256, frameInterval: 10, minMs: 500 };
+    }
+    if(preset === "quality"){
+        return { maxWidth: 320, frameInterval: 6, minMs: 400 };
+    }
+    return { maxWidth: 192, frameInterval: 14, minMs: 750 };
+}
+
+function stopDepthWorker(){
+    if(depthWorker){
+        depthWorker.terminate();
+        depthWorker = null;
+    }
+    depthWorkerReady = false;
+    depthInferencePending = false;
+}
+
+function applyDepthBuffer(buffer, tw, th){
+    let raw = buffer;
+    let min = Infinity;
+    let max = -Infinity;
+
+    for(let i = 0; i < raw.length; i++){
+        if(raw[i] < min) min = raw[i];
+        if(raw[i] > max) max = raw[i];
+    }
+    let range = max - min || 1;
+
+    if(!depthMap || depthMap.width !== tw || depthMap.height !== th){
+        depthMap = { width: tw, height: th, data: new Float32Array(raw.length) };
+    }
+
+    for(let i = 0; i < raw.length; i++){
+        depthMap.data[i] = 1 - (raw[i] - min) / range;
+    }
+
+    if(document.getElementById("depthOverlay").checked){
+        buildDepthOverlay();
+    }
+}
+
+function handleDepthWorkerMessage(e){
+    let msg = e.data;
+
+    if(msg.type === "ready"){
+        depthWorkerReady = true;
+        setDepthStatus("Depth ready (" + msg.device + ")");
+        queueDepthUpdate(true);
+        return;
+    }
+
+    if(msg.type === "depth"){
+        depthInferencePending = false;
+        lastDepthTime = performance.now();
+        applyDepthBuffer(msg.buffer, msg.width, msg.height);
+        return;
+    }
+
+    if(msg.type === "error"){
+        depthInferencePending = false;
+        console.error("Depth worker:", msg.message);
+        setDepthStatus("Depth error");
+    }
+}
+
+function ensureDepthWorker(){
+    if(depthWorker) return;
+
+    setDepthStatus("Loading depth AI in background...");
+    depthWorker = new Worker("./depth-worker.js", { type: "module" });
+    depthWorker.onmessage = handleDepthWorkerMessage;
+    depthWorker.onerror = (err) => {
+        console.error(err);
+        setDepthStatus("Depth worker failed");
+        document.getElementById("depthAI").checked = false;
+        stopDepthWorker();
+    };
+    depthWorker.postMessage({ type: "init", preferWebgpu: true });
+}
+
+function drawSourceToCtx(targetCtx, w, h){
+    targetCtx.save();
+    if(isMirrored()){
+        targetCtx.translate(w, 0);
+        targetCtx.scale(-1, 1);
+    }
+    targetCtx.drawImage(vid, 0, 0, w, h);
+    targetCtx.restore();
+}
+
+function buildDepthOverlay(){
+    if(!depthMap) return;
+
+    let w = depthMap.width;
+    let h = depthMap.height;
+
+    if(depthOverlayCanvas.width !== w || depthOverlayCanvas.height !== h){
+        depthOverlayCanvas.width = w;
+        depthOverlayCanvas.height = h;
+    }
+
+    let octx = depthOverlayCanvas.getContext("2d");
+    let img = octx.createImageData(w, h);
+    let dm = depthMap.data;
+    let out = img.data;
+
+    for(let i = 0, j = 0; i < dm.length; i++, j += 4){
+        let v = dm[i];
+        out[j]     = (v * 255) | 0;
+        out[j + 1] = ((1 - v) * 80) | 0;
+        out[j + 2] = ((1 - v) * 255) | 0;
+        out[j + 3] = 170;
+    }
+
+    octx.putImageData(img, 0, 0);
+}
+
+function queueDepthUpdate(force){
+    if(!depthEnabled() || !depthWorkerReady || !depthWorker) return;
+    if(depthInferencePending) return;
+    if(vid.readyState < 2 || !c.width) return;
+
+    let cfg = getDepthSettings();
+    if(!force && performance.now() - lastDepthTime < cfg.minMs) return;
+
+    let scale = Math.min(1, cfg.maxWidth / c.width);
+    let w = Math.max(1, Math.round(c.width * scale));
+    let h = Math.max(1, Math.round(c.height * scale));
+
+    if(depthInputW !== w || depthInputH !== h){
+        depthInput.width = w;
+        depthInput.height = h;
+        depthInputW = w;
+        depthInputH = h;
+    }
+
+    drawSourceToCtx(depthInputCtx, w, h);
+    let imageData = depthInputCtx.getImageData(0, 0, w, h);
+
+    depthInferencePending = true;
+    depthRequestId++;
+    depthWorker.postMessage({
+        type: "infer",
+        id: depthRequestId,
+        width: w,
+        height: h,
+        pixels: imageData.data.buffer
+    }, [imageData.data.buffer]);
+}
+
+function sampleDepthNorm(x, y){
+    if(!depthMap) return 0.5;
+
+    let sx = x / c.width * depthMap.width;
+    let sy = y / c.height * depthMap.height;
+
+    let x0 = Math.max(0, Math.floor(sx));
+    let y0 = Math.max(0, Math.floor(sy));
+    let x1 = Math.min(depthMap.width - 1, x0 + 1);
+    let y1 = Math.min(depthMap.height - 1, y0 + 1);
+    let fx = sx - x0;
+    let fy = sy - y0;
+
+    let idx = (px, py) => py * depthMap.width + px;
+    let v00 = depthMap.data[idx(x0, y0)];
+    let v10 = depthMap.data[idx(x1, y0)];
+    let v01 = depthMap.data[idx(x0, y1)];
+    let v11 = depthMap.data[idx(x1, y1)];
+
+    return (1 - fx) * (1 - fy) * v00
+         + fx * (1 - fy) * v10
+         + (1 - fx) * fy * v01
+         + fx * fy * v11;
+}
+
+function smoothZ(o, zNorm){
+    if(o.zNorm === undefined) o.zNorm = zNorm;
+    o.zNorm = o.zNorm * Z_SMOOTH + zNorm * (1 - Z_SMOOTH);
+    return o.zNorm;
+}
+
+function zToMidi(zNorm){
+    return Math.round(Math.max(0, Math.min(1, zNorm)) * 127);
+}
+
+function drawDepthOverlay(){
+    if(!document.getElementById("depthOverlay").checked || !depthMap) return;
+    ctx.save();
+    ctx.drawImage(depthOverlayCanvas, 0, 0, c.width, c.height);
+    ctx.restore();
+}
+
+/* ---------------- OBJECT ---------------- */
+
+function makeObj(x, y){
+
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    let pan = audioCtx.createStereoPanner();
+    let filter = audioCtx.createBiquadFilter();
+
+    osc.type = "sine";
+    osc.frequency.value = 220;
+
+    gain.gain.value = 0;
+
+    filter.type = "lowpass";
+    filter.frequency.value = 800;
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(pan);
+    pan.connect(master);
+
+    osc.start();
+
+    return {
+        x, y,
+        zNorm: 0.5,
+        template: null,
+        osc, gain, pan, filter
+    };
+}
+
+function captureTemplate(x, y){
+    let src = cv.imread(c);
+    let gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+    let rect = new cv.Rect(
+        Math.max(0, Math.round(x - HALF)),
+        Math.max(0, Math.round(y - HALF)),
+        TEMPLATE_SIZE,
+        TEMPLATE_SIZE
+    );
+    let template = gray.roi(rect).clone();
+
+    src.delete();
+    gray.delete();
+
+    return template;
+}
+
+function ensureBuffers(w, h){
+    if(grayFrame && grayFrame.cols === w && grayFrame.rows === h) return;
+
+    if(grayFrame) grayFrame.delete();
+    if(matchResult) matchResult.delete();
+
+    grayFrame = new cv.Mat(h, w, cv.CV_8UC1);
+    matchResult = new cv.Mat();
+}
+
+function trackObject(gray, o){
+    let tw = o.template.cols;
+    let th = o.template.rows;
+
+    let sx = Math.max(0, Math.round(o.x - HALF - SEARCH_PAD));
+    let sy = Math.max(0, Math.round(o.y - HALF - SEARCH_PAD));
+    let sw = Math.min(gray.cols - sx, tw + SEARCH_PAD * 2);
+    let sh = Math.min(gray.rows - sy, th + SEARCH_PAD * 2);
+
+    if(sw < tw || sh < th){
+        sx = 0;
+        sy = 0;
+        sw = gray.cols;
+        sh = gray.rows;
+    }
+
+    let roi = gray.roi(new cv.Rect(sx, sy, sw, sh));
+
+    cv.matchTemplate(roi, o.template, matchResult, cv.TM_CCOEFF_NORMED);
+    roi.delete();
+
+    let mm = cv.minMaxLoc(matchResult);
+
+    o.x = sx + mm.maxLoc.x + tw / 2;
+    o.y = sy + mm.maxLoc.y + th / 2;
+}
+
+function displayX(x){
+    return isMirrored() ? c.width - x : x;
+}
+
+function drawTrackingBox(o){
+    let w = o.template.cols;
+    let h = o.template.rows;
+    let x = displayX(o.x);
+
+    ctx.strokeStyle = "#0f0";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x - w / 2, o.y - h / 2, w, h);
+
+    ctx.strokeStyle = "rgba(0,255,0,0.5)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x - 6, o.y);
+    ctx.lineTo(x + 6, o.y);
+    ctx.moveTo(x, o.y - 6);
+    ctx.lineTo(x, o.y + 6);
+    ctx.stroke();
+}
+
+function disposeObject(o){
+    if(o.template) o.template.delete();
+    o.osc.stop();
+    o.osc.disconnect();
+    o.gain.disconnect();
+    o.pan.disconnect();
+    o.filter.disconnect();
+}
+
+function clearObjects(){
+    objects.forEach(disposeObject);
+    objects = [];
+}
+
+function drawVideoFrame(){
+    if(vid.readyState < 2) return;
+    drawSourceToCtx(ctx, c.width, c.height);
+}
+
+function redrawCanvas(){
+    drawVideoFrame();
+    drawDepthOverlay();
+    if(document.getElementById("showBox").checked){
+        objects.forEach(drawTrackingBox);
+    }
+}
+
+function updateSetupInfo(){
+    let n = objects.length;
+    let src = isLiveSource() ? "Camera frozen" : "Frame frozen";
+    let msg = src + " — click to add tracker" + (n === 1 ? "" : "s");
+    if(n) msg += ` (${n} selected)`;
+    msg += ", then press Play";
+    document.getElementById("info").textContent = msg;
+}
+
+function releaseVideo(){
+    vid.pause();
+
+    if(mediaStream){
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+    }
+
+    if(vid.srcObject){
+        vid.srcObject = null;
+    }
+
+    let oldSrc = vid.src;
+    vid.removeAttribute("src");
+    vid.load();
+
+    if(oldSrc && oldSrc.startsWith("blob:")){
+        URL.revokeObjectURL(oldSrc);
+    }
+}
+
+function resetSession(){
+    clearObjects();
+    frameReady = false;
+    depthMap = null;
+    releaseVideo();
+}
+
+function setupCanvasFromVideo(){
+    c.width = vid.videoWidth;
+    c.height = vid.videoHeight;
+    ensureBuffers(c.width, c.height);
+}
+
+function finishFreezeSetup(){
+    drawVideoFrame();
+    frameReady = true;
+    updateSetupInfo();
+    queueDepthUpdate();
+}
+
+function freezeFirstFrame(){
+    frameReady = false;
+    vid.pause();
+
+    let onSeeked = () => {
+        if(frameReady) return;
+        vid.removeEventListener("seeked", onSeeked);
+        finishFreezeSetup();
+    };
+
+    vid.addEventListener("seeked", onSeeked);
+    vid.currentTime = 0;
+
+    requestAnimationFrame(() => {
+        if(!frameReady && vid.readyState >= 2) onSeeked();
+    });
+}
+
+async function startLiveFeed(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+        alert("Camera not supported in this browser.");
+        return;
+    }
+
+    resetSession();
+    document.getElementById("info").textContent = "Requesting camera...";
+
+    try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user" },
+            audio: false
+        });
+
+        vid.srcObject = mediaStream;
+        vid.muted = true;
+        await vid.play();
+
+        if(!vid.videoWidth){
+            await new Promise(resolve => {
+                vid.onloadedmetadata = resolve;
+            });
+        }
+
+        setupCanvasFromVideo();
+        vid.pause();
+        finishFreezeSetup();
+    } catch(err){
+        document.getElementById("info").textContent = "Camera access denied or unavailable.";
+        console.error(err);
+    }
+}
+
+function updateSourceUI(){
+    let live = isLiveSource();
+
+    document.getElementById("fileLabel").style.display = live ? "none" : "";
+    document.getElementById("startCamera").style.display = live ? "" : "none";
+    document.getElementById("file").value = "";
+
+    if(live){
+        document.getElementById("info").textContent = "Press Start camera";
+    } else {
+        document.getElementById("info").textContent = "Choose a video file";
+    }
+}
+
+/* ---------------- SOURCE ---------------- */
+
+document.getElementById("source").onchange = () => {
+    resetSession();
+    updateSourceUI();
+};
+
+document.getElementById("startCamera").onclick = () => {
+    startLiveFeed();
+};
+
+document.getElementById("file").onchange = (e) => {
+    let f = e.target.files[0];
+    if(!f) return;
+
+    resetSession();
+    vid.src = URL.createObjectURL(f);
+
+    vid.onloadeddata = () => {
+        setupCanvasFromVideo();
+        freezeFirstFrame();
+    };
+};
+
+function onDisplayOptionChange(){
+    if(vid.paused && frameReady) redrawCanvas();
+}
+
+document.getElementById("showBox").onchange = onDisplayOptionChange;
+document.getElementById("mirror").onchange = () => {
+    onDisplayOptionChange();
+    depthMap = null;
+    queueDepthUpdate();
+};
+
+document.getElementById("depthOverlay").onchange = () => {
+    if(depthMap && document.getElementById("depthOverlay").checked){
+        buildDepthOverlay();
+    }
+    onDisplayOptionChange();
+};
+
+document.getElementById("depthAI").onchange = () => {
+    if(depthEnabled()){
+        ensureDepthWorker();
+    } else {
+        stopDepthWorker();
+        depthMap = null;
+        setDepthStatus("");
+    }
+    onDisplayOptionChange();
+};
+
+document.getElementById("depthSpeed").onchange = () => {
+    lastDepthTime = 0;
+};
+
+document.getElementById("volFMin").onchange = () => {
+    if(getVolFMin() >= getVolFMax()){
+        document.getElementById("volFMax").value = getVolFMin() + 1;
+    }
+};
+
+document.getElementById("volFMax").onchange = () => {
+    if(getVolFMax() <= getVolFMin()){
+        document.getElementById("volFMin").value = getVolFMax() - 1;
+    }
+};
+
+document.getElementById("volZMin").onchange = () => {
+    if(getVolZMin() >= getVolZMax()){
+        document.getElementById("volZMax").value = getVolZMin() + 1;
+    }
+};
+
+document.getElementById("volZMax").onchange = () => {
+    if(getVolZMax() <= getVolZMin()){
+        document.getElementById("volZMin").value = getVolZMax() - 1;
+    }
+};
+
+updateSourceUI();
+
+/* ---------------- PLAY ---------------- */
+
+document.getElementById("play").onclick = async () => {
+    if(!frameReady) return;
+    initAudio();
+    audioCtx.resume();
+    if(depthEnabled() && !depthWorker){
+        ensureDepthWorker();
+    }
+    await vid.play();
+    loop();
+};
+
+document.getElementById("pause").onclick = () => {
+    vid.pause();
+};
+
+/* ---------------- CLICK ---------------- */
+
+c.onclick = (e) => {
+
+    if(!cvReady) {
+        alert("OpenCV still loading...");
+        return;
+    }
+
+    if(!frameReady) return;
+
+    let r = c.getBoundingClientRect();
+
+    let x = canvasXFromEvent(e.clientX, r);
+    let y = (e.clientY - r.top) * c.height / r.height;
+
+    initAudio();
+
+    let o = makeObj(x, y);
+    o.template = captureTemplate(x, y);
+
+    if(depthMap){
+        o.zNorm = sampleDepthNorm(x, y);
+    }
+
+    objects.push(o);
+
+    if(vid.paused){
+        redrawCanvas();
+        updateSetupInfo();
+    }
+};
+
+/* ---------------- LOOP ---------------- */
+
+function loop(){
+
+    if(vid.paused) return;
+
+    loopFrameCount++;
+    drawVideoFrame();
+    drawDepthOverlay();
+
+    let cfg = getDepthSettings();
+    depthFrameCount++;
+    if(depthEnabled() && depthWorkerReady && depthFrameCount % cfg.frameInterval === 0){
+        queueDepthUpdate(false);
+    }
+
+    let mode = document.getElementById("mode").value;
+    let audioOn = document.getElementById("audio").checked;
+    let showBox = document.getElementById("showBox").checked;
+    let zVol = useZForVolume() && depthMap;
+    let updateInfo = loopFrameCount % INFO_EVERY_N_FRAMES === 0;
+
+    let info = updateInfo ? "" : document.getElementById("info").textContent;
+
+    if(objects.length && cvReady){
+        ensureBuffers(c.width, c.height);
+
+        let src = cv.imread(c);
+        cv.cvtColor(src, grayFrame, cv.COLOR_RGBA2GRAY);
+        src.delete();
+
+        objects.forEach(o => {
+            trackObject(grayFrame, o);
+
+            let nx = o.x / c.width;
+            let freq = freqFromX(o.x);
+
+            let zMidi = zToMidi(o.zNorm);
+            if(depthMap){
+                let zNorm = smoothZ(o, sampleDepthNorm(o.x, o.y));
+                zMidi = zToMidi(zNorm);
+            }
+
+            let midiVol = zVol
+                ? midiVolumeFromZ(zMidi)
+                : midiVolumeFromFreq(freq);
+            let vol = gainFromMidiVol(midiVol);
+
+            if(audioOn){
+                if(mode === "tone"){
+                    setAudioParam(o.osc.frequency, TONE_PITCH);
+                    setAudioParam(o.gain.gain, vol);
+                }
+
+                if(mode === "theremin"){
+                    setAudioParam(o.osc.frequency, freq);
+                    setAudioParam(o.pan.pan, nx * 2 - 1);
+                    setAudioParam(o.gain.gain, vol);
+                }
+
+                if(mode === "synth"){
+                    setAudioParam(o.osc.frequency, freq);
+                    let bright = zVol ? midiVol : midiVolumeFromFreq(freq);
+                    setAudioParam(o.filter.frequency, 300 + (bright / 127) * 2000);
+                    setAudioParam(o.pan.pan, nx * 2 - 1);
+                    setAudioParam(o.gain.gain, vol);
+                }
+            } else {
+                setAudioParam(o.gain.gain, 0);
+            }
+
+            if(showBox){
+                drawTrackingBox(o);
+            }
+
+            if(updateInfo){
+                let zPart = depthMap ? ` Z:${zMidi}` : "";
+                let pending = depthInferencePending ? " …" : "";
+                info += `X:${o.x.toFixed(1)} Y:${o.y.toFixed(1)} F:${freq.toFixed(0)}${zPart} V:${midiVol}${pending}\n`;
+            }
+        });
+    }
+
+    if(updateInfo){
+        document.getElementById("info").textContent = info || "click video to add tracker";
+    }
+
+    requestAnimationFrame(loop);
+}
+
+</script>
+
+</body>
+</html>
