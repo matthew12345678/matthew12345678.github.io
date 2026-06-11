@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Step Gated Audio (Continuous)</title>
+</head>
+<body style="font-family:sans-serif;background:#111;color:#fff;padding:20px;">
+
+<h2>Step-Gated Continuous Audio</h2>
+
+<input type="file" id="fileInput" accept="audio/*"><br><br>
+
+<button id="startBtn">Start Motion</button>
+
+<br><br>
+
+<label>
+  Mode:
+  <select id="mode">
+    <option value="gateOnStep">Step = ON</option>
+    <option value="gateOffStep">Step = OFF</option>
+  </select>
+</label>
+
+<br><br>
+
+<div>Gate: <span id="state">OFF</span></div>
+
+<script>
+let fileInput = document.getElementById("fileInput");
+let startBtn = document.getElementById("startBtn");
+let modeSelect = document.getElementById("mode");
+let stateDisplay = document.getElementById("state");
+
+let audioCtx;
+let source;
+let gainNode;
+
+let lastStepTime = 0;
+let gateOpen = false;
+
+// Load audio file
+fileInput.addEventListener("change", async (e) => {
+  let file = e.target.files[0];
+  if (!file) return;
+
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+
+  let arrayBuffer = await file.arrayBuffer();
+  let audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+  source = audioCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.loop = true;
+
+  gainNode = audioCtx.createGain();
+  gainNode.gain.value = 0; // start muted
+
+  source.connect(gainNode).connect(audioCtx.destination);
+  source.start();
+
+  console.log("Audio started (muted until steps)");
+});
+
+// Step detection
+function handleMotion(event) {
+  let acc = event.accelerationIncludingGravity;
+  if (!acc || !gainNode) return;
+
+  let magnitude = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
+  let now = Date.now();
+
+  if (magnitude > 12 && now - lastStepTime > 300) {
+    lastStepTime = now;
+    onStep();
+  }
+}
+
+function onStep() {
+  let mode = modeSelect.value;
+
+  if (mode === "gateOnStep") {
+    gateOpen = true;
+    fadeGain(1);
+  }
+
+  if (mode === "gateOffStep") {
+    gateOpen = false;
+    fadeGain(0);
+  }
+
+  updateUI();
+}
+
+function fadeGain(target) {
+  if (!gainNode) return;
+
+  gainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+  gainNode.gain.linearRampToValueAtTime(
+    target,
+    audioCtx.currentTime + 0.05
+  );
+}
+
+function updateUI() {
+  stateDisplay.textContent = gateOpen ? "ON" : "OFF";
+}
+
+// Start motion
+startBtn.onclick = async () => {
+  if (typeof DeviceMotionEvent !== "undefined" &&
+      typeof DeviceMotionEvent.requestPermission === "function") {
+    let res = await DeviceMotionEvent.requestPermission();
+    if (res !== "granted") {
+      alert("Motion permission denied");
+      return;
+    }
+  }
+
+  window.addEventListener("devicemotion", handleMotion);
+  alert("Motion tracking active");
+};
+</script>
+
+</body>
+</html>
