@@ -314,7 +314,16 @@
     <div class="panel">
       <h2><span class="dot" id="audioDot"></span> Mouth rig</h2>
 
-      <div class="field" style="margin-top:0;">
+      <div class="toggle" style="margin-top:0;">
+        <span>🎤 Live microphone</span>
+        <label class="switch">
+          <input type="checkbox" id="micToggle">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+      <p class="hint" id="micStatus">Drives the mouth from your mic instead of the loaded clip — good for puppeteering live.</p>
+
+      <div class="field">
         <label>Mouth sensitivity <span class="val" id="mouthSensVal">1.4×</span></label>
         <input type="range" id="mouthSens" min="20" max="320" value="140">
         <p class="hint">How far the mouth stretches per unit of speech volume.</p>
@@ -391,6 +400,8 @@ const mouthSensSlider = $("mouthSens");
 const mouthSensVal = $("mouthSensVal");
 const volMeter = $("volMeter");
 const showBoxesToggle = $("showBoxes");
+const micToggle = $("micToggle");
+const micStatus = $("micStatus");
 const editModeToggle = $("editMode");
 const redetectBtn = $("redetectBtn");
 
@@ -431,6 +442,9 @@ let autoBlinkTimer = null;
 
 let audioCtx = null, analyser = null, dataArray = null, audioSource = null;
 let volumeSmoothed = 0;
+
+let micStream = null, micSource = null, micAnalyser = null, micData = null;
+let micActive = false;
 
 let rafId = null;
 let editMode = false;
@@ -523,16 +537,31 @@ function setupAudioGraph(){
 }
 player.addEventListener("play", () => { if(audioCtx && audioCtx.state === "suspended") audioCtx.resume(); });
 
-function currentVolume(){
-  if(!analyser || player.paused){ volumeSmoothed *= 0.8; return volumeSmoothed; }
-  analyser.getByteTimeDomainData(dataArray);
+function rmsOf(analyserNode, buf){
+  analyserNode.getByteTimeDomainData(buf);
   let sum = 0;
-  for(let i=0;i<dataArray.length;i++){
-    const v = (dataArray[i]-128)/128;
+  for(let i=0;i<buf.length;i++){
+    const v = (buf[i]-128)/128;
     sum += v*v;
   }
-  let rms = Math.sqrt(sum/dataArray.length); // ~0..1
-  if(rms < 0.02) rms = 0; // noise gate — keeps silence truly closed
+  let rms = Math.sqrt(sum/buf.length);
+  if(rms < 0.02) rms = 0; // noise gate
+  return rms;
+}
+
+function currentVolume(){
+  let rms = 0;
+  let live = false;
+
+  if(micActive && micAnalyser){
+    rms = rmsOf(micAnalyser, micData);
+    live = true;
+  } else if(analyser && !player.paused){
+    rms = rmsOf(analyser, dataArray);
+    live = true;
+  }
+
+  if(!live){ volumeSmoothed *= 0.8; return volumeSmoothed; }
 
   // fast attack so the jaw snaps open on a syllable, slower release so it
   // eases shut between words instead of chattering
@@ -540,6 +569,50 @@ function currentVolume(){
   volumeSmoothed += (rms - volumeSmoothed) * rate;
   return volumeSmoothed;
 }
+
+async function startMic(){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    micStatus.textContent = "This browser doesn't support microphone capture.";
+    micToggle.checked = false;
+    return;
+  }
+  try{
+    micStatus.textContent = "Requesting microphone access…";
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: {
+      echoCancellation: true, noiseSuppression: true, autoGainControl: true
+    }, video: false });
+  }catch(err){
+    console.error(err);
+    micStatus.textContent = "Microphone access denied or unavailable.";
+    micToggle.checked = false;
+    log("Microphone error: " + err.message, "mic");
+    return;
+  }
+
+  setupAudioGraph(); // ensures audioCtx + mediaStreamDest exist (harmless if no file loaded yet)
+  micSource = audioCtx.createMediaStreamSource(micStream);
+  micAnalyser = audioCtx.createAnalyser();
+  micAnalyser.fftSize = 512;
+  micData = new Uint8Array(micAnalyser.frequencyBinCount);
+  micSource.connect(micAnalyser);
+  if(mediaStreamDest) micSource.connect(mediaStreamDest); // so recordings pick up the mic too
+  // deliberately NOT connected to audioCtx.destination — avoids feeding the mic back out the speakers
+
+  micActive = true;
+  micStatus.textContent = "Live — puppet is following your microphone.";
+  log("Microphone connected.", "mic");
+}
+
+function stopMic(){
+  if(micStream) micStream.getTracks().forEach(t => t.stop());
+  micStream = null; micSource = null; micAnalyser = null; micData = null;
+  micActive = false;
+  micStatus.textContent = "Drives the mouth from your mic instead of the loaded clip — good for puppeteering live.";
+}
+
+micToggle.addEventListener("change", () => {
+  if(micToggle.checked) startMic(); else stopMic();
+});
 
 // ---------- Recording ----------
 function pickMimeType(){
