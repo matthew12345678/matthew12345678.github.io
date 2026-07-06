@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Puppet Rig — Crude Face Animator</title>
+<style>
+  :root{
+    --bg:        #12161a;
+    --panel:     #1a2027;
+    --panel-2:   #212933;
+    --line:      #2c3540;
+    --text:      #dfe6ec;
+    --text-dim:  #8b98a5;
+    --amber:     #ffb454;
+    --teal:      #55d6c2;
+    --red:       #ff6b6b;
+    --mono: ui-monospace, "SF Mono", "IBM Plex Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --body: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family: var(--body);
+    min-height:100vh;
+  }
+  header{
+    padding: 22px 28px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  header .eyebrow{
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin: 0 0 6px;
+  }
+  header h1{
+    margin: 0;
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+  }
+  header p{
+    margin: 6px 0 0;
+    color: var(--text-dim);
+    font-size: 13.5px;
+    max-width: 640px;
+    line-height: 1.5;
+  }
+  .layout{
+    display:grid;
+    grid-template-columns: minmax(0,1fr) 340px;
+    gap: 22px;
+    padding: 22px 28px 40px;
+    align-items: start;
+  }
+  @media (max-width: 880px){
+    .layout{ grid-template-columns: 1fr; }
+  }
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .panel + .panel{ margin-top: 18px; }
+  .panel h2{
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin: 0 0 14px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .panel h2 .dot{
+    width:7px; height:7px; border-radius:50%;
+    background: var(--line);
+    display:inline-block;
+  }
+  .panel h2 .dot.ok{ background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+  .panel h2 .dot.warn{ background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .panel h2 .dot.err{ background: var(--red); box-shadow: 0 0 8px var(--red); }
+
+  .canvas-wrap{
+    position:relative;
+    width:100%;
+    background:
+      linear-gradient(135deg, var(--panel-2) 25%, transparent 25%) -10px 0/ 20px 20px,
+      linear-gradient(225deg, var(--panel-2) 25%, transparent 25%) -10px 0/ 20px 20px,
+      var(--bg);
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    display:flex; align-items:center; justify-content:center;
+    min-height: 340px;
+    overflow:hidden;
+  }
+  #stage{ max-width:100%; display:block; touch-action:none; }
+  #stage.editing{ cursor: grab; }
+  #stage.editing:active{ cursor: grabbing; }
+  .placeholder{
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-dim);
+    text-align:center;
+    padding: 30px;
+  }
+  .placeholder b{ color: var(--text); }
+
+  .dropzone{
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    padding: 16px;
+    text-align:center;
+    cursor:pointer;
+    transition: border-color .15s, background .15s;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .dropzone:hover, .dropzone.drag{
+    border-color: var(--amber);
+    background: rgba(255,180,84,0.06);
+    color: var(--text);
+  }
+  .dropzone input{ display:none; }
+  .dropzone .fname{
+    display:block; margin-top:6px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--teal);
+    word-break: break-all;
+  }
+  .row{ display:flex; gap:10px; }
+  .row > .dropzone{ flex:1; }
+
+  .field{ margin-top: 16px; }
+  .field label{
+    display:flex; justify-content:space-between;
+    font-size: 12.5px; color: var(--text-dim); margin-bottom:6px;
+    font-family: var(--mono);
+  }
+  .field label span.val{ color: var(--amber); }
+  input[type=range]{
+    -webkit-appearance:none; width:100%; height:4px; border-radius:2px;
+    background: var(--line); outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:15px; height:15px; border-radius:50%;
+    background: var(--amber); cursor:pointer; border: 2px solid #17181c;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:15px; height:15px; border-radius:50%;
+    background: var(--amber); cursor:pointer; border: 2px solid #17181c;
+  }
+
+  .btn{
+    font-family: var(--mono);
+    font-size: 12.5px;
+    letter-spacing: .03em;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 7px;
+    cursor:pointer;
+    transition: border-color .15s, transform .05s;
+  }
+  .btn:hover{ border-color: var(--amber); }
+  .btn:active{ transform: scale(0.97); }
+  .btn.primary{ background: var(--amber); color:#1a1300; border-color: var(--amber); font-weight:600; }
+  .btn.primary:hover{ filter:brightness(1.06); }
+  .btn.recording{ background: var(--red); color:#2a0a0a; border-color: var(--red); font-weight:600; }
+  .btn.recording:hover{ filter:brightness(1.06); }
+  .btn:disabled{ opacity:.4; cursor:not-allowed; }
+  .btn-row{ display:flex; gap:10px; flex-wrap:wrap; margin-top: 4px; }
+
+  .toggle{
+    display:flex; align-items:center; justify-content:space-between;
+    font-size: 13px; padding: 4px 0;
+  }
+  .switch{
+    position:relative; width:38px; height:21px; flex:none;
+  }
+  .switch input{ opacity:0; width:0; height:0; }
+  .slider-toggle{
+    position:absolute; cursor:pointer; inset:0;
+    background: var(--line); border-radius:20px; transition:.15s;
+  }
+  .slider-toggle:before{
+    content:""; position:absolute; height:15px; width:15px; left:3px; top:3px;
+    background:#cfd6dc; border-radius:50%; transition:.15s;
+  }
+  input:checked + .slider-toggle{ background: var(--teal); }
+  input:checked + .slider-toggle:before{ transform: translateX(17px); background:#0b1210; }
+
+  .meter{
+    height: 8px; border-radius: 4px; background: var(--panel-2);
+    overflow:hidden; margin-top: 10px; border:1px solid var(--line);
+  }
+  .meter > i{
+    display:block; height:100%; width:0%;
+    background: linear-gradient(90deg, var(--teal), var(--amber) 70%, var(--red));
+    transition: width .05s linear;
+  }
+
+  audio{ width:100%; margin-top:10px; filter: invert(0.85) hue-rotate(160deg); border-radius:20px; }
+
+  .rec-badge{
+    position:absolute; top:10px; left:10px; z-index:5;
+    display:flex; align-items:center; gap:6px;
+    background: rgba(10,12,14,0.7);
+    color: var(--red);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    padding: 5px 9px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,107,107,0.4);
+  }
+  .rec-badge:before{
+    content:""; width:8px; height:8px; border-radius:50%;
+    background: var(--red);
+    animation: pulseRec 1s ease-in-out infinite;
+  }
+  @keyframes pulseRec{ 0%,100%{ opacity:1; } 50%{ opacity:.25; } }
+
+
+  .log{
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-dim);
+    margin-top: 14px;
+    line-height:1.6;
+    max-height: 90px;
+    overflow-y:auto;
+  }
+  .log span.tag{ color: var(--amber); }
+  .hint{ font-size:12px; color:var(--text-dim); margin:4px 0 0; }
+  footer{
+    text-align:center; color: var(--text-dim); font-size:11.5px;
+    padding: 10px 0 28px; font-family: var(--mono);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <p class="eyebrow">01 — landmark capture · 02 — crude rig · 03 — audio drive</p>
+  <h1>Puppet Rig</h1>
+  <p>Load a face photo, let MediaPipe find the eyes and mouth, then drive a crude
+  jaw-drop puppet: blink on demand, or feed in a speech clip and watch the jaw open with it.
+  MediaPipe only knows human faces — for an animal (or if detection misses), switch on
+  <b>Edit landmarks</b> and drag the dots onto its eyes and mouth yourself.</p>
+</header>
+
+<div class="layout">
+
+  <!-- LEFT: STAGE -->
+  <div>
+    <div class="panel">
+      <h2><span class="dot" id="modelDot"></span> Stage <span id="stageStatus" style="font-weight:400; text-transform:none; letter-spacing:0; margin-left:auto; color:var(--text-dim);"></span></h2>
+      <div class="canvas-wrap" id="stageWrap">
+        <div class="placeholder" id="placeholder">Load an image below to begin.<br><b>MediaPipe Face Landmarker</b> is warming up…</div>
+        <canvas id="stage" width="640" height="480" style="display:none;"></canvas>
+        <div class="rec-badge" id="recBadge" style="display:none;">● REC</div>
+      </div>
+
+      <div class="row" style="margin-top:14px;">
+        <div class="dropzone" id="imgDrop">
+          📷 Drop a face image, or click to choose
+          <input type="file" id="imgInput" accept="image/*" />
+          <span class="fname" id="imgName"></span>
+        </div>
+        <div class="dropzone" id="audDrop">
+          🎵 Drop a WAV/MP3 speech clip, or click to choose
+          <input type="file" id="audInput" accept="audio/*" />
+          <span class="fname" id="audName"></span>
+        </div>
+      </div>
+
+      <audio id="player" controls></audio>
+
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: CONTROLS -->
+  <div>
+    <div class="panel">
+      <h2><span class="dot" id="faceDot"></span> Blink rig</h2>
+
+      <div class="btn-row">
+        <button class="btn primary" id="blinkBtn" disabled>😉 Blink</button>
+      </div>
+
+      <div class="toggle" style="margin-top:14px;">
+        <span>Auto-blink</span>
+        <label class="switch">
+          <input type="checkbox" id="autoBlink">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label>Manual blink hold <span class="val" id="blinkAmtVal">0%</span></label>
+        <input type="range" id="blinkAmt" min="0" max="100" value="0">
+        <p class="hint">Drag to hold the eyelids part-shut; 100 = fully closed.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2><span class="dot" id="audioDot"></span> Mouth rig</h2>
+
+      <div class="field" style="margin-top:0;">
+        <label>Mouth sensitivity <span class="val" id="mouthSensVal">1.4×</span></label>
+        <input type="range" id="mouthSens" min="20" max="320" value="140">
+        <p class="hint">How far the mouth stretches per unit of speech volume.</p>
+      </div>
+
+      <div class="field">
+        <label>Live volume</label>
+        <div class="meter"><i id="volMeter"></i></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2><span class="dot" id="recDot"></span> Recording</h2>
+      <p class="hint" style="margin:0 0 10px;">Captures the puppet canvas plus whatever audio is playing, as a video file.</p>
+      <div class="btn-row">
+        <button class="btn primary" id="recordBtn" disabled>⏺ Start recording</button>
+      </div>
+      <p class="hint" id="recStatus"></p>
+      <a class="btn" id="downloadLink" style="display:none; text-align:center; text-decoration:none; margin-top:8px;" download="puppet-recording.webm">⬇ Download recording</a>
+    </div>
+
+    <div class="panel">
+      <h2><span class="dot" id="dbgDot"></span> Landmarks</h2>
+      <div class="toggle">
+        <span>Show landmark boxes</span>
+        <label class="switch">
+          <input type="checkbox" id="showBoxes">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+      <div class="toggle">
+        <span>Edit landmarks (drag dots)</span>
+        <label class="switch">
+          <input type="checkbox" id="editMode">
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+      <p class="hint">Doing an animal, or the auto-detect missed? Turn this on and drag the
+      two eye dots and the mouth dot into place — drag the small square handle on each
+      to resize its box.</p>
+      <div class="btn-row">
+        <button class="btn" id="redetectBtn" disabled>↻ Re-run auto detection</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>Everything runs locally in your browser — the image and audio are never uploaded anywhere. Face landmarks courtesy of Google MediaPipe.</footer>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+// ---------- DOM ----------
+const $ = (id) => document.getElementById(id);
+const stage = $("stage");
+const ctx = stage.getContext("2d", { willReadFrequently: true });
+const placeholder = $("placeholder");
+const stageWrap = $("stageWrap");
+const logEl = $("log");
+const modelDot = $("modelDot"), faceDot = $("faceDot"), audioDot = $("audioDot"), dbgDot = $("dbgDot");
+const stageStatus = $("stageStatus");
+
+const imgDrop = $("imgDrop"), imgInput = $("imgInput"), imgName = $("imgName");
+const audDrop = $("audDrop"), audInput = $("audInput"), audName = $("audName");
+const player = $("player");
+
+const blinkBtn = $("blinkBtn");
+const autoBlinkToggle = $("autoBlink");
+const blinkAmtSlider = $("blinkAmt");
+const blinkAmtVal = $("blinkAmtVal");
+
+const mouthSensSlider = $("mouthSens");
+const mouthSensVal = $("mouthSensVal");
+const volMeter = $("volMeter");
+const showBoxesToggle = $("showBoxes");
+const editModeToggle = $("editMode");
+const redetectBtn = $("redetectBtn");
+
+const recordBtn = $("recordBtn");
+const recStatus = $("recStatus");
+const downloadLink = $("downloadLink");
+const recBadge = $("recBadge");
+const recDot = $("recDot");
+
+function log(msg, tag=""){
+  const line = document.createElement("div");
+  line.innerHTML = (tag ? `<span class="tag">[${tag}]</span> ` : "") + msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ---------- Landmark index groups (MediaPipe FaceMesh topology) ----------
+const EYE_A = [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246];   // image-right eye
+const EYE_B = [263,249,390,373,374,380,381,382,362,398,384,385,386,387,388,466]; // image-left eye
+const MOUTH = [61,146,91,181,84,17,314,405,321,375,291,409,270,269,267,0,37,39,40,185];
+
+// ---------- State ----------
+let faceLandmarker = null;
+let baseImage = null;         // HTMLImageElement, natural face photo
+let landmarks = null;         // array of {x,y} normalized
+let W = 0, H = 0;             // stage pixel size
+
+let eyeA = null, eyeB = null, mouth = null; // bounding boxes in pixel space
+let skinA = "#caa080", skinB = "#caa080";   // sampled eyelid colors
+let mouthTop = null, mouthBottom = null;    // offscreen canvases: upper/lower lip halves
+let rigReady = false;                       // true once eyeA/eyeB/mouth exist (auto or manual)
+let manualMode = false;                     // true if rig came from hand-placed dots (e.g. animal)
+
+let manualBlink = 0;     // 0..1 from slider
+let animBlink = 0;       // 0..1 from button/auto tween
+let blinkTweenStart = 0, blinkTweenActive = false;
+let autoBlinkTimer = null;
+
+let audioCtx = null, analyser = null, dataArray = null, audioSource = null;
+let volumeSmoothed = 0;
+
+let rafId = null;
+let editMode = false;
+let dragTarget = null; // { box, mode: "move"|"resize" }
+
+let mediaStreamDest = null; // audioCtx MediaStreamAudioDestinationNode, tapped for recording
+let mediaRecorder = null;
+let recordedChunks = [];
+let recording = false;
+
+// ---------- Model load ----------
+async function initModel(){
+  try{
+    stageStatus.textContent = "loading model…";
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    );
+    faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        delegate: "GPU"
+      },
+      outputFaceBlendshapes: false,
+      runningMode: "IMAGE",
+      numFaces: 1
+    });
+    modelDot.classList.add("ok");
+    stageStatus.textContent = "model ready";
+    log("Face Landmarker loaded.", "model");
+  }catch(err){
+    console.error(err);
+    modelDot.classList.add("err");
+    stageStatus.textContent = "model failed to load";
+    log("Could not load MediaPipe model — check your network/CDN access. " + err.message, "model");
+  }
+}
+initModel();
+
+// ---------- Image loading ----------
+function loadImageFile(file){
+  if(!file) return;
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    baseImage = img;
+    imgName.textContent = file.name;
+    runDetection();
+  };
+  img.onerror = () => log("Could not read that image file.", "image");
+  img.src = url;
+}
+
+imgDrop.addEventListener("click", () => imgInput.click());
+imgInput.addEventListener("change", (e) => loadImageFile(e.target.files[0]));
+["dragover","dragenter"].forEach(ev => imgDrop.addEventListener(ev, (e)=>{ e.preventDefault(); imgDrop.classList.add("drag"); }));
+["dragleave","drop"].forEach(ev => imgDrop.addEventListener(ev, (e)=>{ e.preventDefault(); imgDrop.classList.remove("drag"); }));
+imgDrop.addEventListener("drop", (e) => loadImageFile(e.dataTransfer.files[0]));
+
+// ---------- Audio loading ----------
+function loadAudioFile(file){
+  if(!file) return;
+  if(recording) stopRecording();
+  const url = URL.createObjectURL(file);
+  player.src = url;
+  audName.textContent = file.name;
+  setupAudioGraph();
+  audioDot.classList.add("ok");
+}
+audDrop.addEventListener("click", () => audInput.click());
+audInput.addEventListener("change", (e) => loadAudioFile(e.target.files[0]));
+["dragover","dragenter"].forEach(ev => audDrop.addEventListener(ev, (e)=>{ e.preventDefault(); audDrop.classList.add("drag"); }));
+["dragleave","drop"].forEach(ev => audDrop.addEventListener(ev, (e)=>{ e.preventDefault(); audDrop.classList.remove("drag"); }));
+audDrop.addEventListener("drop", (e) => loadAudioFile(e.dataTransfer.files[0]));
+
+function setupAudioGraph(){
+  if(!audioCtx){
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    audioSource = audioCtx.createMediaElementSource(player);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+    audioSource.connect(analyser);
+    analyser.connect(audioCtx.destination);
+
+    mediaStreamDest = audioCtx.createMediaStreamDestination();
+    analyser.connect(mediaStreamDest); // tap the same signal for recording
+    log("Audio graph connected.", "audio");
+  }
+  if(audioCtx.state === "suspended") audioCtx.resume();
+}
+player.addEventListener("play", () => { if(audioCtx && audioCtx.state === "suspended") audioCtx.resume(); });
+
+function currentVolume(){
+  if(!analyser || player.paused){ volumeSmoothed *= 0.8; return volumeSmoothed; }
+  analyser.getByteTimeDomainData(dataArray);
+  let sum = 0;
+  for(let i=0;i<dataArray.length;i++){
+    const v = (dataArray[i]-128)/128;
+    sum += v*v;
+  }
+  let rms = Math.sqrt(sum/dataArray.length); // ~0..1
+  if(rms < 0.02) rms = 0; // noise gate — keeps silence truly closed
+
+  // fast attack so the jaw snaps open on a syllable, slower release so it
+  // eases shut between words instead of chattering
+  const rate = rms > volumeSmoothed ? 0.55 : 0.16;
+  volumeSmoothed += (rms - volumeSmoothed) * rate;
+  return volumeSmoothed;
+}
+
+// ---------- Recording ----------
+function pickMimeType(){
+  const candidates = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm"
+  ];
+  for(const c of candidates){
+    if(window.MediaRecorder && MediaRecorder.isTypeSupported(c)) return c;
+  }
+  return "";
+}
+
+function startRecording(){
+  if(!rigReady || recording) return;
+  if(!window.MediaRecorder){
+    recStatus.textContent = "This browser doesn't support MediaRecorder.";
+    return;
+  }
+  if(audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+
+  const videoTrack = stage.captureStream(30).getVideoTracks()[0];
+  const tracks = [videoTrack];
+  if(mediaStreamDest) tracks.push(...mediaStreamDest.stream.getAudioTracks());
+  const combined = new MediaStream(tracks);
+
+  recordedChunks = [];
+  const mimeType = pickMimeType();
+  try{
+    mediaRecorder = new MediaRecorder(combined, mimeType ? { mimeType } : undefined);
+  }catch(err){
+    recStatus.textContent = "Couldn't start recording: " + err.message;
+    return;
+  }
+  mediaRecorder.ondataavailable = (e) => { if(e.data && e.data.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recordedChunks, { type: "video/webm" });
+    const url = URL.createObjectURL(blob);
+    downloadLink.href = url;
+    downloadLink.style.display = "block";
+    recStatus.textContent = "Recording ready — " + (blob.size/1024/1024).toFixed(1) + " MB.";
+    log("Recording stopped, ready to download.", "rec");
+  };
+
+  downloadLink.style.display = "none";
+
+  // If there's a loaded clip, play it from the top so recording and audio line up.
+  if(player.src){
+    player.currentTime = 0;
+    player.play().catch(()=>{});
+  }
+
+  mediaRecorder.start();
+  recording = true;
+  recDot.classList.add("err"); // reuse red status dot styling while live
+  recBadge.style.display = "flex";
+  recordBtn.classList.add("recording");
+  recordBtn.textContent = "⏹ Stop recording";
+  recStatus.textContent = "Recording…";
+  log("Recording started.", "rec");
+}
+
+function stopRecording(){
+  if(!recording) return;
+  if(mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  recording = false;
+  recDot.classList.remove("err");
+  recBadge.style.display = "none";
+  recordBtn.classList.remove("recording");
+  recordBtn.textContent = "⏺ Start recording";
+  recordBtn.disabled = !rigReady;
+}
+
+recordBtn.addEventListener("click", () => { recording ? stopRecording() : startRecording(); });
+player.addEventListener("ended", () => { if(recording) stopRecording(); });
+
+
+async function runDetection(){
+  if(!baseImage) return;
+  if(!faceLandmarker){
+    log("Model still loading — will detect as soon as it's ready.", "model");
+    await new Promise(r => setTimeout(r, 400));
+    if(!faceLandmarker) return runDetection();
+  }
+  faceDot.classList.remove("ok","warn","err");
+  stageStatus.textContent = "detecting face…";
+  rigReady = false;
+  manualMode = false;
+  editModeToggle.checked = false;
+  editMode = false;
+  stage.classList.remove("editing");
+  if(recording) stopRecording();
+  recordBtn.disabled = true;
+
+  // size the stage to the image, capped for layout
+  const maxW = 640;
+  const scale = Math.min(1, maxW / baseImage.naturalWidth);
+  W = Math.round(baseImage.naturalWidth * scale);
+  H = Math.round(baseImage.naturalHeight * scale);
+  stage.width = W; stage.height = H;
+  stage.style.display = "block";
+  placeholder.style.display = "none";
+
+  ctx.drawImage(baseImage, 0, 0, W, H);
+
+  let result;
+  try{
+    result = faceLandmarker.detect(stage);
+  }catch(err){
+    console.error(err);
+    log("Detection error: " + err.message, "model");
+    enterManualMode("Detection threw an error");
+    return;
+  }
+
+  if(!result.faceLandmarks || result.faceLandmarks.length === 0){
+    faceDot.classList.add("warn");
+    stageStatus.textContent = "no face found — manual mode";
+    log("No face detected — probably not a human face (an animal, perhaps?). Switched to manual mode: drag the dots onto the eyes and mouth.", "face");
+    landmarks = null;
+    enterManualMode();
+    return;
+  }
+
+  landmarks = result.faceLandmarks[0];
+  faceDot.classList.add("ok");
+  stageStatus.textContent = "face locked";
+  log("Face detected — " + landmarks.length + " landmarks.", "face");
+  blinkBtn.disabled = false;
+  redetectBtn.disabled = false;
+  recordBtn.disabled = false;
+
+  computeRig();
+  rigReady = true;
+  startRenderLoop();
+}
+
+// Manual rig placement — used when detection fails (e.g. an animal photo) or on request.
+function enterManualMode(){
+  const ew = W*0.16, eh = H*0.075;
+  eyeA = { x: W*0.30-ew/2, y: H*0.40-eh/2, w: ew, h: eh, cx: W*0.30, cy: H*0.40 };
+  eyeB = { x: W*0.70-ew/2, y: H*0.40-eh/2, w: ew, h: eh, cx: W*0.70, cy: H*0.40 };
+  const mw = W*0.22, mh = H*0.09;
+  mouth = { x: W*0.5-mw/2, y: H*0.66-mh/2, w: mw, h: mh, cx: W*0.5, cy: H*0.66 };
+
+  ctx.drawImage(baseImage, 0, 0, W, H); // clean pixels for sampling
+  buildSkinSamples();
+  buildMouthCrops();
+
+  manualMode = true;
+  rigReady = true;
+  blinkBtn.disabled = false;
+  redetectBtn.disabled = false;
+  recordBtn.disabled = false;
+  editModeToggle.checked = true;
+  editMode = true;
+  stage.classList.add("editing");
+  showBoxesToggle.checked = true;
+  startRenderLoop();
+}
+redetectBtn.addEventListener("click", () => runDetection());
+
+function bboxFromIndices(indices, pad=0.25){
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  for(const i of indices){
+    const p = landmarks[i];
+    const x = p.x * W, y = p.y * H;
+    if(x<minX) minX=x; if(x>maxX) maxX=x;
+    if(y<minY) minY=y; if(y>maxY) maxY=y;
+  }
+  const w = maxX-minX, h = maxY-minY;
+  const px = w*pad, py = h*pad;
+  return {
+    x: minX-px, y: minY-py,
+    w: w+px*2, h: h+py*2,
+    cx: (minX+maxX)/2, cy: (minY+maxY)/2
+  };
+}
+
+function sampleColor(cx, cy, r=4){
+  const x = Math.max(0, Math.round(cx-r));
+  const y = Math.max(0, Math.round(cy-r));
+  const w = Math.min(stage.width-x, r*2) || 1;
+  const h = Math.min(stage.height-y, r*2) || 1;
+  const data = ctx.getImageData(x, y, w, h).data;
+  let rr=0, gg=0, bb=0, n=0;
+  for(let i=0;i<data.length;i+=4){ rr+=data[i]; gg+=data[i+1]; bb+=data[i+2]; n++; }
+  if(!n) return "#caa080";
+  return `rgb(${Math.round(rr/n)},${Math.round(gg/n)},${Math.round(bb/n)})`;
+}
+
+function computeRig(){
+  eyeA = bboxFromIndices(EYE_A, 0.35);
+  eyeB = bboxFromIndices(EYE_B, 0.35);
+  mouth = bboxFromIndices(MOUTH, 0.25);
+
+  // base image is already drawn on stage at this point (from runDetection)
+  buildSkinSamples();
+  buildMouthCrops();
+}
+
+function buildSkinSamples(){
+  skinA = sampleColor(eyeA.cx, eyeA.y - eyeA.h*0.9, 5);
+  skinB = sampleColor(eyeB.cx, eyeB.y - eyeB.h*0.9, 5);
+}
+
+// Split the lips into an upper and lower half so the jaw can visibly part,
+// instead of just stretching one crop (which reads as melting, not talking).
+function buildMouthCrops(){
+  const overlap = mouth.h * 0.18;
+  const midY = mouth.y + mouth.h/2;
+
+  const topH = (midY + overlap) - mouth.y;
+  const top = document.createElement("canvas");
+  top.width = Math.max(1, Math.ceil(mouth.w));
+  top.height = Math.max(1, Math.ceil(topH));
+  top.getContext("2d").drawImage(stage, mouth.x, mouth.y, mouth.w, topH, 0, 0, mouth.w, topH);
+  mouthTop = { canvas: top, h: topH };
+
+  const botY = midY - overlap;
+  const botH = (mouth.y + mouth.h) - botY;
+  const bot = document.createElement("canvas");
+  bot.width = Math.max(1, Math.ceil(mouth.w));
+  bot.height = Math.max(1, Math.ceil(botH));
+  bot.getContext("2d").drawImage(stage, mouth.x, botY, mouth.w, botH, 0, 0, mouth.w, botH);
+  mouthBottom = { canvas: bot, h: botH };
+}
+
+// ---------- Blink tween (manual button + auto) ----------
+function triggerBlink(){
+  blinkTweenActive = true;
+  blinkTweenStart = performance.now();
+}
+blinkBtn.addEventListener("click", triggerBlink);
+
+function updateAutoBlink(){
+  clearTimeout(autoBlinkTimer);
+  if(!autoBlinkToggle.checked) return;
+  const wait = 1800 + Math.random()*3200;
+  autoBlinkTimer = setTimeout(() => {
+    triggerBlink();
+    updateAutoBlink();
+  }, wait);
+}
+autoBlinkToggle.addEventListener("change", updateAutoBlink);
+
+function easeInOutCubic(x){
+  return x < 0.5 ? 4*x*x*x : 1 - Math.pow(-2*x+2, 3)/2;
+}
+
+function blinkTweenValue(){
+  if(!blinkTweenActive) return 0;
+  const t = (performance.now() - blinkTweenStart) / 260; // ~260ms full blink
+  if(t >= 1){ blinkTweenActive = false; return 0; }
+  const tri = t < 0.5 ? (t/0.5) : (1 - (t-0.5)/0.5); // 0 -> 1 -> 0
+  return easeInOutCubic(tri);
+}
+
+blinkAmtSlider.addEventListener("input", () => {
+  manualBlink = blinkAmtSlider.value/100;
+  blinkAmtVal.textContent = blinkAmtSlider.value + "%";
+});
+mouthSensSlider.addEventListener("input", () => {
+  mouthSensVal.textContent = (mouthSensSlider.value/100).toFixed(1) + "×";
+});
+
+// ---------- Render loop ----------
+function startRenderLoop(){
+  if(rafId) cancelAnimationFrame(rafId);
+  const loop = () => {
+    render();
+    rafId = requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+function drawEyelid(eye, skinColor, blinkAmt){
+  if(blinkAmt <= 0.01) return;
+  const padX = eye.w*0.15, padTop = eye.h*0.35, padBot = eye.h*0.35;
+  const fullH = eye.h + padTop + padBot;
+  const closeH = fullH * blinkAmt;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(eye.x - padX, eye.y - padTop, eye.w + padX*2, closeH);
+  ctx.clip();
+
+  ctx.fillStyle = skinColor;
+  ctx.beginPath();
+  ctx.ellipse(eye.cx, eye.cy, eye.w/2 + padX, eye.h/2 + Math.max(padTop,padBot), 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // eyelid crease line for a touch of shape
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = Math.max(1, eye.h*0.08);
+  ctx.beginPath();
+  ctx.moveTo(eye.x - padX*0.6, eye.y - padTop + closeH*0.94);
+  ctx.quadraticCurveTo(eye.cx, eye.y - padTop + closeH, eye.x+eye.w+padX*0.6, eye.y - padTop + closeH*0.94);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawMouth(volumeNorm, sensitivity){
+  if(!mouthTop || !mouthBottom) return;
+  const midY = mouth.y + mouth.h/2;
+
+  // how far the jaw parts, in px — clamped so it can't blow past the crop
+  const gap = Math.min(mouth.h * 1.35, volumeNorm * sensitivity * mouth.h * 0.9);
+  const openAmt = Math.min(1, gap / (mouth.h*0.9)); // 0..1, used for cavity + widening
+  const widen = 1 + openAmt * 0.05;
+
+  // dark cavity between the lips, drawn first so the lip halves sit on top of it
+  if(gap > 1){
+    ctx.save();
+    ctx.fillStyle = "rgba(28,8,8,0.75)";
+    ctx.beginPath();
+    ctx.ellipse(mouth.cx, midY + gap*0.12, (mouth.w/2)*widen*0.92, gap*0.62 + 1, 0, 0, Math.PI*2);
+    ctx.fill();
+    // a thin highlight so the cavity doesn't read as a flat blob
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(mouth.cx, midY + gap*0.28, (mouth.w/2)*widen*0.6, gap*0.3 + 1, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // upper lip: fixed in place, tiny lift as it opens
+  ctx.save();
+  ctx.translate(mouth.cx, mouth.y);
+  ctx.scale(widen, 1);
+  ctx.drawImage(mouthTop.canvas, -mouth.w/2, -openAmt*mouth.h*0.06, mouth.w, mouthTop.h);
+  ctx.restore();
+
+  // lower lip / jaw: slides down with the gap
+  ctx.save();
+  ctx.translate(mouth.cx, mouth.y + mouth.h - mouthBottom.h + gap);
+  ctx.scale(widen, 1);
+  ctx.drawImage(mouthBottom.canvas, -mouth.w/2, 0, mouth.w, mouthBottom.h);
+  ctx.restore();
+}
+
+function render(){
+  if(!baseImage || !rigReady) return;
+  ctx.clearRect(0,0,W,H);
+  ctx.drawImage(baseImage, 0, 0, W, H);
+
+  const vol = currentVolume();
+  volMeter.style.width = Math.min(100, vol*260) + "%";
+  const sensitivity = mouthSensSlider.value/100;
+
+  drawMouth(vol, sensitivity);
+
+  const tween = blinkTweenValue();
+  const blinkAmt = Math.max(manualBlink, tween);
+  drawEyelid(eyeA, skinA, blinkAmt);
+  drawEyelid(eyeB, skinB, blinkAmt);
+
+  if(showBoxesToggle.checked || editMode){
+    ctx.save();
+    ctx.strokeStyle = "rgba(85,214,194,0.9)";
+    ctx.lineWidth = 1.5;
+    [eyeA, eyeB, mouth].forEach(b => ctx.strokeRect(b.x, b.y, b.w, b.h));
+    ctx.restore();
+  }
+
+  if(editMode) drawHandles();
+}
+
+// ---------- Manual landmark editing (drag dots — handy for animals) ----------
+function drawHandle(box, color){
+  // center "move" dot
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = "#0d1114";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(box.cx, box.cy, 7, 0, Math.PI*2);
+  ctx.fill(); ctx.stroke();
+
+  // corner "resize" handle
+  ctx.fillStyle = color;
+  ctx.fillRect(box.x+box.w-6, box.y+box.h-6, 12, 12);
+  ctx.strokeRect(box.x+box.w-6, box.y+box.h-6, 12, 12);
+  ctx.restore();
+}
+
+function drawHandles(){
+  drawHandle(eyeA, "#55d6c2");
+  drawHandle(eyeB, "#55d6c2");
+  drawHandle(mouth, "#ffb454");
+}
+
+function canvasPointFromEvent(e){
+  const rect = stage.getBoundingClientRect();
+  const sx = stage.width / rect.width;
+  const sy = stage.height / rect.height;
+  return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
+}
+
+function dist(x1,y1,x2,y2){ return Math.hypot(x1-x2, y1-y2); }
+
+function hitTest(pt){
+  const boxes = [ {box:eyeA}, {box:eyeB}, {box:mouth} ];
+  const HANDLE_R = 14;
+  for(const {box} of boxes){
+    if(dist(pt.x, pt.y, box.x+box.w, box.y+box.h) < HANDLE_R) return {box, mode:"resize"};
+  }
+  for(const {box} of boxes){
+    if(dist(pt.x, pt.y, box.cx, box.cy) < HANDLE_R) return {box, mode:"move"};
+  }
+  return null;
+}
+
+function refreshCropsFromCleanFrame(){
+  ctx.drawImage(baseImage, 0, 0, W, H);
+  buildSkinSamples();
+  buildMouthCrops();
+}
+
+stage.addEventListener("pointerdown", (e) => {
+  if(!editMode || !rigReady) return;
+  const pt = canvasPointFromEvent(e);
+  const hit = hitTest(pt);
+  if(hit){
+    dragTarget = hit;
+    stage.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+});
+
+stage.addEventListener("pointermove", (e) => {
+  if(!dragTarget) return;
+  const pt = canvasPointFromEvent(e);
+  const box = dragTarget.box;
+  const minSize = 14;
+  if(dragTarget.mode === "move"){
+    box.cx = Math.max(0, Math.min(W, pt.x));
+    box.cy = Math.max(0, Math.min(H, pt.y));
+  } else {
+    box.w = Math.max(minSize, (pt.x - box.cx) * 2);
+    box.h = Math.max(minSize, (pt.y - box.cy) * 2);
+  }
+  box.x = box.cx - box.w/2;
+  box.y = box.cy - box.h/2;
+  e.preventDefault();
+});
+
+function endDrag(){
+  if(!dragTarget) return;
+  dragTarget = null;
+  refreshCropsFromCleanFrame();
+}
+stage.addEventListener("pointerup", endDrag);
+stage.addEventListener("pointercancel", endDrag);
+
+editModeToggle.addEventListener("change", () => {
+  editMode = editModeToggle.checked;
+  stage.classList.toggle("editing", editMode);
+  if(!editMode && rigReady) refreshCropsFromCleanFrame();
+});
+</script>
+</body>
+</html>
