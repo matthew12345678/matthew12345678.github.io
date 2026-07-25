@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Video AbsDiff Compositor — Live Sources</title>
+<style>
+  :root {
+    --bg: #12151a;
+    --panel: #1b2028;
+    --line: #2a3140;
+    --text: #e6e9ef;
+    --dim: #8b96a8;
+    --accent: #5ec8ff;
+    --accent2: #ff8a5e;
+    --bad: #ff6e6e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    padding: 24px;
+  }
+  h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin: 0 0 4px 0;
+  }
+  p.sub {
+    color: var(--dim);
+    font-size: 13px;
+    margin: 0 0 20px 0;
+    max-width: 680px;
+    line-height: 1.5;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .cell {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .cell label {
+    display: block;
+    font-size: 11px;
+    color: var(--dim);
+    margin-bottom: 6px;
+  }
+  .cell input {
+    width: 100%;
+    margin-bottom: 6px;
+    background: #10141a;
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 5px 7px;
+    font-family: inherit;
+    font-size: 11px;
+  }
+  .slot { width: 100%; }
+  .slot iframe, .slot video, .slot canvas {
+    width: 100%;
+    aspect-ratio: 4/3;
+    border-radius: 4px;
+    display: block;
+    border: none;
+    /* Required for Element Capture eligibility (RestrictionTarget.fromElement):
+       the target must form its own stacking context and be 3D-flattened,
+       or restrictTo() silently emits zero frames instead of erroring. */
+    isolation: isolate;
+    transform-style: flat;
+    background-color: #000; /* opaque, so capture isn't transparent either */
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: var(--dim); }
+  select, button, input[type=range] {
+    background: #10141a;
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-family: inherit;
+    font-size: 12px;
+  }
+  button {
+    cursor: pointer;
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  button:hover { background: rgba(94,200,255,0.1); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  #captureBtn { color: var(--accent2); border-color: var(--accent2); font-weight: 600; }
+  #captureBtn:hover { background: rgba(255,138,94,0.1); }
+  .output-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .out-cell {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .out-cell label { display:block; font-size: 11px; color: var(--dim); margin-bottom:6px; }
+  .status { font-size: 12px; color: var(--dim); margin-top: 8px; line-height: 1.5; }
+  .status b { color: var(--accent2); }
+  .status.error b { color: var(--bad); }
+  .hidden-videos { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+  .audio-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+  .audio-row .hint { font-size: 11px; color: var(--dim); max-width: 420px; line-height: 1.45; }
+</style>
+<script src="https://www.youtube.com/iframe_api"></script>
+</head>
+<body>
+
+<h1>Video AbsDiff Compositor — Live Embedded Sources</h1>
+<p class="sub">
+  Paste a YouTube video ID (or full URL) for each channel below, load it, then click
+  <b style="color:var(--accent2)">Start capture</b>. Because these are cross-origin iframes, pixels are pulled via a single
+  tab-capture (<code>getDisplayMedia</code>) that's cloned and cropped to each iframe's bounds
+  (Element/Region Capture) — <code>drawImage</code> alone cannot read cross-origin iframe content.
+  Chrome/Edge can crop each iframe with Element Capture; Safari and Firefox use
+  <b>viewport crop</b> (same tab share, software crop to each slot). MP4 and test patterns
+  use the element directly — no screen share needed.
+</p>
+
+<div class="grid" id="videoGrid"></div>
+
+<div class="controls">
+  <button id="captureBtn">Start capture</button>
+  <div class="field">
+    <label>Diff pair A</label>
+    <select id="pairA1"></select>
+  </div>
+  <div class="field">
+    <label>vs</label>
+    <select id="pairA2"></select>
+  </div>
+  <div class="field">
+    <label>Diff pair B</label>
+    <select id="pairB1"></select>
+  </div>
+  <div class="field">
+    <label>vs</label>
+    <select id="pairB2"></select>
+  </div>
+  <div class="field">
+    <label>Combine mode</label>
+    <select id="combineMode">
+      <option value="max">max(diffA, diffB)</option>
+      <option value="add">diffA + diffB</option>
+      <option value="a">diffA only</option>
+      <option value="b">diffB only</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>Threshold: <span id="threshVal">25</span></label>
+    <input type="range" id="thresh" min="0" max="255" value="25" />
+  </div>
+  <div class="field">
+    <label>&nbsp;</label>
+    <button id="openWin" disabled>Open result in new window</button>
+  </div>
+</div>
+
+<div class="audio-row">
+  <button id="audioBtn" type="button">Start audio crossfade</button>
+  <div class="field">
+    <label>Cycle speed: <span id="fadeCycleVal">20</span>s</label>
+    <input type="range" id="fadeCycle" min="8" max="60" value="20" />
+  </div>
+  <div class="field">
+    <label>Organic: <span id="organicVal">55</span>%</label>
+    <input type="range" id="organicAmt" min="0" max="100" value="55" />
+  </div>
+  <div class="field">
+    <label>Master: <span id="masterVal">80</span>%</label>
+    <input type="range" id="masterVol" min="0" max="100" value="80" />
+  </div>
+  <div class="field">
+    <label>Now audible</label>
+    <span id="audioMeter" style="font-size:12px;color:var(--accent);min-width:140px;">—</span>
+  </div>
+</div>
+<div class="audio-row" style="padding-top:10px;">
+  <div class="field">
+    <label>Timestretch: <span id="stretchVal">35</span>%</label>
+    <input type="range" id="stretchAmt" min="0" max="100" value="35" />
+  </div>
+  <div class="field">
+    <label>Echo: <span id="echoVal">40</span>%</label>
+    <input type="range" id="echoAmt" min="0" max="100" value="40" />
+  </div>
+  <div class="field">
+    <label>Reverb: <span id="reverbVal">45</span>%</label>
+    <input type="range" id="reverbAmt" min="0" max="100" value="45" />
+  </div>
+  <div class="field">
+    <label>Resonance: <span id="resVal">30</span>%</label>
+    <input type="range" id="resAmt" min="0" max="100" value="30" />
+  </div>
+  <p class="hint">Per-channel Web Audio FX on MP4 sources; YouTube gets crossfade + live playback-rate stretch. Organic adds drift, overlap, and slow modulation. Cycle speed still sets how fast rotations run.</p>
+</div>
+
+<div class="output-row" id="rawRow" style="grid-template-columns: repeat(4,1fr); margin-bottom:16px;">
+</div>
+
+<div class="output-row">
+  <div class="out-cell">
+    <label>Composited diff (rendered here)</label>
+    <canvas id="outCanvas" width="320" height="240"></canvas>
+  </div>
+  <div class="out-cell">
+    <label>Thresholded mask (binary change map)</label>
+    <canvas id="maskCanvas" width="320" height="240"></canvas>
+  </div>
+</div>
+
+<div class="status" id="status">Load 4 channels, then click "Start capture". On Safari, share <b>this browser window</b> (not the whole screen). MP4 / test patterns skip screen share.</div>
+
+<div class="hidden-videos" id="hiddenVideos"></div>
+
+<script>
+const W = 320, H = 240;
+const NAMES = ["Channel 1", "Channel 2", "Channel 3", "Channel 4"];
+
+// --- Build 4 iframe cells with an ID/URL input each ---
+const grid = document.getElementById('videoGrid');
+const iframes = [];
+NAMES.forEach((name, i) => {
+  const cell = document.createElement('div');
+  cell.className = 'cell';
+  cell.innerHTML = `
+    <label>${name}</label>
+    <select id="preset-${i}">
+      <option value="">— choose example —</option>
+      <optgroup label="Direct MP4 (no DRM — should capture fine)">
+        <option value="mp4:BigBuckBunny.mp4">Big Buck Bunny</option>
+        <option value="mp4:ElephantsDream.mp4">Elephants Dream</option>
+        <option value="mp4:ForBiggerBlazes.mp4">For Bigger Blazes</option>
+        <option value="mp4:ForBiggerEscapes.mp4">For Bigger Escapes</option>
+        <option value="mp4:ForBiggerFun.mp4">For Bigger Fun</option>
+        <option value="mp4:ForBiggerJoyrides.mp4">For Bigger Joyrides</option>
+        <option value="mp4:ForBiggerMeltdowns.mp4">For Bigger Meltdowns</option>
+        <option value="mp4:Sintel.mp4">Sintel</option>
+        <option value="mp4:SubaruOutbackOnStreetAndDirt.mp4">Subaru Outback</option>
+        <option value="mp4:TearsOfSteel.mp4">Tears of Steel</option>
+      </optgroup>
+      <optgroup label="YouTube live (DRM likely — expect black)">
+        <option value="ytchannel:UCNye-wNBqNL5ZzHSJj3l8Bg">Al Jazeera English (live)</option>
+        <option value="ytchannel:UCO0akufu9MOzyz3nvGIXAAw">Sky News Australia (live)</option>
+      </optgroup>
+      <optgroup label="Generated (guaranteed capturable — control)">
+        <option value="pattern">Animated test pattern</option>
+      </optgroup>
+    </select>
+    <input type="text" placeholder="...or paste your own YouTube ID/URL/mp4 URL" id="url-${i}" />
+    <div class="slot" id="slot-${i}"></div>
+  `;
+  grid.appendChild(cell);
+  const preset = cell.querySelector(`#preset-${i}`);
+  const input = cell.querySelector('input');
+  preset.addEventListener('change', () => { if (preset.value) loadChannel(i, preset.value); });
+  input.addEventListener('change', () => loadChannel(i, input.value));
+  iframes.push(null); // filled in by loadChannel with whatever element type is active
+});
+
+function extractVideoId(raw) {
+  raw = raw.trim();
+  const m = raw.match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);
+  if (m) return m[1];
+  if (/^[A-Za-z0-9_-]{11}$/.test(raw)) return raw;
+  return null;
+}
+
+function loadChannel(i, raw) {
+  const slot = document.getElementById(`slot-${i}`);
+  slot.innerHTML = '';
+  ytPlayers[i] = null;
+  disposeChannelFx(i);
+  let el;
+
+  if (raw === 'pattern') {
+    el = document.createElement('canvas');
+    el.width = 320; el.height = 240;
+    slot.appendChild(el);
+    animatePattern(el, i);
+  } else if (raw.startsWith('mp4:')) {
+    const url = `https://storage.googleapis.com/gtv-videos-bucket/sample/${raw.slice(4)}`;
+    el = document.createElement('video');
+    el.src = url; el.autoplay = true; el.muted = true; el.loop = true; el.playsInline = true;
+    slot.appendChild(el);
+  } else if (raw.startsWith('ytchannel:')) {
+    const channelId = raw.slice('ytchannel:'.length);
+    el = document.createElement('iframe');
+    el.src = youtubeEmbedSrc({ channelId });
+    el.allow = 'autoplay; encrypted-media';
+    slot.appendChild(el);
+    registerYoutubeIframe(el, i);
+  } else {
+    // free-typed custom value: mp4 URL, YouTube ID/URL, or channel ID
+    if (/\.(mp4|webm)(\?|$)/i.test(raw)) {
+      el = document.createElement('video');
+      el.src = raw; el.autoplay = true; el.muted = true; el.loop = true; el.playsInline = true;
+      slot.appendChild(el);
+    } else {
+      const id = extractVideoId(raw);
+      if (!id) { setStatus(`Channel ${i + 1}: couldn't parse that input.`, true); return; }
+      el = document.createElement('iframe');
+      el.src = youtubeEmbedSrc({ videoId: id });
+      el.allow = 'autoplay; encrypted-media';
+      slot.appendChild(el);
+      registerYoutubeIframe(el, i);
+    }
+  }
+  iframes[i] = el;
+  channelAudioKinds[i] = classifyAudioKind(el);
+  if (audioMixActive && channelAudioKinds[i] === 'video') connectVideoChannel(i);
+}
+
+function youtubeEmbedSrc({ videoId, channelId }) {
+  const origin = encodeURIComponent(location.origin);
+  const base = channelId
+    ? `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(channelId)}`
+    : `https://www.youtube.com/embed/${encodeURIComponent(videoId)}`;
+  return `${base}?autoplay=1&mute=1&controls=0&modestbranding=1&enablejsapi=1&origin=${origin}`;
+}
+
+const ytPlayers = [null, null, null, null];
+const channelAudioKinds = ['none', 'none', 'none', 'none'];
+let ytApiReady = false;
+const ytWrapQueue = [];
+
+window.onYouTubeIframeAPIReady = function () {
+  ytApiReady = true;
+  ytWrapQueue.splice(0).forEach((fn) => fn());
+};
+
+function registerYoutubeIframe(iframe, index) {
+  const wrap = () => {
+    try {
+      ytPlayers[index] = new YT.Player(iframe, {
+        events: {
+          onReady: (ev) => {
+            ev.target.mute();
+            if (audioMixActive) applyChannelGain(index, lastChannelGains[index] ?? 0);
+          }
+        }
+      });
+    } catch (e) {
+      console.warn('[absdiff] YT.Player wrap failed ch', index + 1, e);
+    }
+  };
+  if (ytApiReady && window.YT && YT.Player) wrap();
+  else ytWrapQueue.push(wrap);
+}
+
+function classifyAudioKind(el) {
+  if (!el) return 'none';
+  if (el instanceof HTMLVideoElement) return 'video';
+  if (el.tagName === 'IFRAME') return 'youtube';
+  return 'none';
+}
+
+function animatePattern(canvas, index) {
+  const ctx = canvas.getContext('2d');
+  const colors = ['#5ec8ff', '#ff8a5e', '#8aff8a', '#c88aff'];
+  function draw() {
+    const t = performance.now() / 1000;
+    ctx.fillStyle = '#0a0c10';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = colors[index % colors.length];
+    const x = canvas.width/2 + Math.sin(t * (0.6 + index*0.3) + index) * (canvas.width/2 - 40);
+    const y = canvas.height/2 + Math.cos(t * (0.8 + index*0.2) + index) * (canvas.height/2 - 40);
+    ctx.beginPath(); ctx.arc(x, y, 28, 0, Math.PI * 2); ctx.fill();
+    if (canvas.isConnected) requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+function setStatus(msg, isError) {
+  const el = document.getElementById('status');
+  el.innerHTML = msg;
+  el.className = 'status' + (isError ? ' error' : '');
+}
+
+// --- Pair selectors ---
+const selectors = ['pairA1','pairA2','pairB1','pairB2'].map(id => document.getElementById(id));
+selectors.forEach((sel, si) => {
+  NAMES.forEach((name, i) => {
+    const opt = document.createElement('option');
+    opt.value = i; opt.textContent = name;
+    sel.appendChild(opt);
+  });
+  sel.selectedIndex = si;
+});
+
+const combineModeEl = document.getElementById('combineMode');
+const threshEl = document.getElementById('thresh');
+const threshVal = document.getElementById('threshVal');
+threshEl.addEventListener('input', () => threshVal.textContent = threshEl.value);
+
+const outCanvas = document.getElementById('outCanvas');
+const outCtx = outCanvas.getContext('2d');
+const maskCanvas = document.getElementById('maskCanvas');
+const maskCtx = maskCanvas.getContext('2d');
+
+// --- Capture pipeline ---
+let capturedTrack = null;
+let tabCaptureVideo = null;       // full-tab stream (Safari / crop fallback)
+let restrictedVideos = [null, null, null, null]; // per-channel when Element/Region Capture works
+let channelMethods = ['no-element', 'no-element', 'no-element', 'no-element'];
+let captureSessionActive = false;
+let readCanvases = [];
+let readCtxs = [];
+let renderLoopStarted = false;
+
+/** Maps viewport CSS coords → tab-capture pixel coords (handles chrome + letterboxing). */
+let captureMap = null;
+let warnedScreenShare = false;
+let lastMapCalibrateMs = 0;
+
+function recalibrateCaptureMap(tabVideo) {
+  const vw = tabVideo.videoWidth;
+  const vh = tabVideo.videoHeight;
+  if (!vw || !vh) return;
+
+  const vv = window.visualViewport;
+  const vpW = vv ? vv.width : window.innerWidth;
+  const vpH = vv ? vv.height : window.innerHeight;
+  const vpOffX = vv ? vv.offsetLeft : 0;
+  const vpOffY = vv ? vv.offsetTop : 0;
+
+  const vpAspect = vpW / vpH;
+  const capAspect = vw / vh;
+  let mapW = vw;
+  let mapH = vh;
+  let padX = 0;
+  let padY = 0;
+
+  if (capAspect > vpAspect * 1.02) {
+    mapH = vw / vpAspect;
+    padY = (vh - mapH) / 2;
+  } else if (capAspect < vpAspect * 0.98) {
+    mapW = vh * vpAspect;
+    padX = (vw - mapW) / 2;
+  }
+
+  captureMap = {
+    vw,
+    vh,
+    vpW,
+    vpH,
+    vpOffX,
+    vpOffY,
+    padX,
+    padY,
+    mapW,
+    mapH,
+    screenShareLikely: Math.abs(capAspect - vpAspect) > 0.25 && vw > vpW * 1.5
+  };
+}
+
+function maybeRecalibrateCaptureMap(tabVideo) {
+  const now = performance.now();
+  if (now - lastMapCalibrateMs < 120) return;
+  lastMapCalibrateMs = now;
+  recalibrateCaptureMap(tabVideo);
+}
+
+function bindCaptureMapRecalibration() {
+  const bump = () => {
+    if (tabCaptureVideo && tabCaptureVideo.readyState >= 2) recalibrateCaptureMap(tabCaptureVideo);
+  };
+  window.addEventListener('resize', bump);
+  if (window.visualViewport) {
+    visualViewport.addEventListener('resize', bump);
+    visualViewport.addEventListener('scroll', bump);
+  }
+}
+bindCaptureMapRecalibration();
+
+function isDirectCapturable(el) {
+  return el instanceof HTMLVideoElement || el instanceof HTMLCanvasElement;
+}
+
+function channelNeedsTabCapture(el) {
+  return el && el.tagName === 'IFRAME';
+}
+
+async function getTabCaptureStream() {
+  const opts = { video: true };
+  // Safari ignores/rejects unknown keys — only pass Chrome tab-picker hints when supported.
+  if (typeof CropTarget !== 'undefined') {
+    opts.preferCurrentTab = true;
+    opts.selfBrowserSurface = 'include';
+  }
+  return navigator.mediaDevices.getDisplayMedia(opts);
+}
+
+function attachTrackToHiddenVideo(track, container) {
+  const v = document.createElement('video');
+  v.autoplay = true;
+  v.muted = true;
+  v.playsInline = true;
+  v.srcObject = new MediaStream([track]);
+  container.appendChild(v);
+  return v;
+}
+
+async function startCapture() {
+  const btn = document.getElementById('captureBtn');
+  btn.disabled = true;
+  try {
+    const hiddenContainer = document.getElementById('hiddenVideos');
+    hiddenContainer.innerHTML = '';
+    tabCaptureVideo = null;
+    restrictedVideos = [null, null, null, null];
+    readCanvases = [];
+    readCtxs = [];
+
+    const rawRow = document.getElementById('rawRow');
+    rawRow.innerHTML = '';
+    const methodsUsed = [];
+
+    const needsTab = iframes.some(channelNeedsTabCapture);
+
+    if (needsTab) {
+      const stream = await getTabCaptureStream();
+      capturedTrack = stream.getVideoTracks()[0];
+      capturedTrack.addEventListener('ended', () => {
+        captureSessionActive = false;
+        setStatus('Capture stopped (user ended sharing). Click "Start capture" to resume.', true);
+        btn.disabled = false;
+      });
+      tabCaptureVideo = attachTrackToHiddenVideo(capturedTrack, hiddenContainer);
+      tabCaptureVideo.addEventListener('loadedmetadata', () => recalibrateCaptureMap(tabCaptureVideo));
+      tabCaptureVideo.addEventListener('resize', () => recalibrateCaptureMap(tabCaptureVideo));
+    } else {
+      capturedTrack = null;
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const el = iframes[i];
+      let method;
+
+      if (!el) {
+        method = 'no-element';
+      } else if (isDirectCapturable(el)) {
+        method = 'direct';
+      } else if (channelNeedsTabCapture(el)) {
+        if (!tabCaptureVideo) {
+          method = 'no-tab-stream';
+        } else if (typeof RestrictionTarget !== 'undefined' || typeof CropTarget !== 'undefined') {
+          const clone = capturedTrack.clone();
+          method = await restrictToElement(clone, el, i);
+          if (method === 'ElementCapture' || method === 'RegionCapture') {
+            restrictedVideos[i] = attachTrackToHiddenVideo(clone, hiddenContainer);
+          } else {
+            clone.stop();
+            method = 'viewport-crop';
+          }
+        } else {
+          method = 'viewport-crop';
+        }
+      } else {
+        method = 'unknown-element';
+      }
+
+      channelMethods[i] = method;
+      methodsUsed.push(`Ch${i + 1}:${method}`);
+
+      const c = document.createElement('canvas');
+      c.width = W;
+      c.height = H;
+      readCanvases.push(c);
+      readCtxs.push(c.getContext('2d', { willReadFrequently: true }));
+
+      const cell = document.createElement('div');
+      cell.className = 'out-cell';
+      const bEl = document.createElement('div');
+      bEl.style.fontSize = '10px';
+      bEl.style.color = 'var(--dim)';
+      bEl.style.marginBottom = '4px';
+      bEl.textContent = `Ch${i + 1} raw · avg brightness: —`;
+      bEl.id = `bright-${i}`;
+      cell.appendChild(bEl);
+      cell.appendChild(c);
+      rawRow.appendChild(cell);
+    }
+
+    captureSessionActive = true;
+    warnedScreenShare = false;
+    console.log('[absdiff] restriction methods used:', methodsUsed.join(', '));
+    document.getElementById('openWin').disabled = false;
+
+    const tabHint = needsTab
+      ? ' Share <b>this tab/window</b> when prompted.'
+      : '';
+    setStatus(
+      `Capture <b>live</b> — ${methodsUsed.join(', ')}.${tabHint} Watch the raw preview row for pixel output.`
+    );
+    if (!renderLoopStarted) {
+      renderLoopStarted = true;
+      requestAnimationFrame(render);
+    }
+  } catch (err) {
+    console.error('[absdiff] capture failed:', err);
+    setStatus('Capture failed or was cancelled: ' + err.message, true);
+    btn.disabled = false;
+  }
+}
+
+/** Crop the visible media slot (not only the iframe) for stable alignment. */
+function getSlotElement(channelIndex) {
+  const slot = document.getElementById(`slot-${channelIndex}`);
+  return slot || iframes[channelIndex];
+}
+
+/** Map a slot element's viewport rect onto the tab-capture video frame and draw into read canvas. */
+function drawViewportCrop(el, tabVideo, ctx) {
+  if (!el) return false;
+  const vw = tabVideo.videoWidth;
+  const vh = tabVideo.videoHeight;
+  if (!vw || !vh) return false;
+
+  if (!captureMap || captureMap.vw !== vw || captureMap.vh !== vh) {
+    recalibrateCaptureMap(tabVideo);
+  }
+  if (!captureMap) return false;
+
+  const rect = el.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return false;
+
+  const m = captureMap;
+  const vv = window.visualViewport;
+  const vpOffX = vv ? vv.offsetLeft : 0;
+  const vpOffY = vv ? vv.offsetTop : 0;
+  const relLeft = rect.left - vpOffX;
+  const relTop = rect.top - vpOffY;
+  const sx = m.padX + relLeft * (m.mapW / m.vpW);
+  const sy = m.padY + relTop * (m.mapH / m.vpH);
+  const sw = rect.width * (m.mapW / m.vpW);
+  const sh = rect.height * (m.mapH / m.vpH);
+
+  const x0 = Math.max(0, Math.min(vw - 1, sx));
+  const y0 = Math.max(0, Math.min(vh - 1, sy));
+  const x1 = Math.max(x0 + 1, Math.min(vw, sx + sw));
+  const y1 = Math.max(y0 + 1, Math.min(vh, sy + sh));
+  ctx.drawImage(tabVideo, x0, y0, x1 - x0, y1 - y0, 0, 0, W, H);
+  return true;
+}
+
+function drawChannelFrame(i) {
+  const el = iframes[i];
+  const method = channelMethods[i];
+  const ctx = readCtxs[i];
+
+  if (method === 'direct') {
+    if (!el) return false;
+    if (el instanceof HTMLVideoElement) {
+      if (el.readyState < 2) return false;
+      ctx.drawImage(el, 0, 0, W, H);
+      return true;
+    }
+    if (el instanceof HTMLCanvasElement) {
+      ctx.drawImage(el, 0, 0, W, H);
+      return true;
+    }
+    return false;
+  }
+
+  if (method === 'ElementCapture' || method === 'RegionCapture') {
+    const v = restrictedVideos[i];
+    if (!v || v.readyState < 2) return false;
+    ctx.drawImage(v, 0, 0, W, H);
+    return true;
+  }
+
+  if (method === 'viewport-crop') {
+    const v = tabCaptureVideo;
+    if (!v || v.readyState < 2) return false;
+    return drawViewportCrop(getSlotElement(i), v, ctx);
+  }
+
+  return false;
+}
+
+// Prefer Element Capture (restrictTo), fall back to Region Capture (cropTo).
+// Returns a short string describing what actually happened, for diagnostics.
+async function restrictToElement(track, el, i) {
+  if (!el) return 'no-element';
+  try {
+    if (typeof RestrictionTarget !== 'undefined' && track.restrictTo) {
+      const target = await RestrictionTarget.fromElement(el);
+      await track.restrictTo(target);
+      console.log(`[absdiff] ch${i+1}: Element Capture applied`, el);
+      return 'ElementCapture';
+    } else if (typeof CropTarget !== 'undefined' && track.cropTo) {
+      const target = await CropTarget.fromElement(el);
+      await track.cropTo(target);
+      console.log(`[absdiff] ch${i+1}: Region Capture applied`, el);
+      return 'RegionCapture';
+    } else {
+      console.warn(`[absdiff] ch${i+1}: no Element/Region Capture — will viewport-crop from tab stream`);
+      return 'viewport-crop';
+    }
+  } catch (err) {
+    console.error(`[absdiff] ch${i+1}: restrict/crop failed —`, err);
+    return 'FAILED:' + err.name;
+  }
+}
+
+document.getElementById('captureBtn').addEventListener('click', startCapture);
+
+// --- Audio crossfade mixer + per-channel Web Audio FX ---
+let audioCtx = null;
+const videoGainNodes = [null, null, null, null];
+const channelFxNodes = [null, null, null, null];
+let audioMixActive = false;
+const lastChannelGains = [0, 0, 0, 0];
+
+const channelFxProfile = Array.from({ length: 4 }, (_, i) => ({
+  phaseDrift: Math.random() * 0.2,
+  stretchPhase: Math.random() * Math.PI * 2,
+  resonancePhase: Math.random() * Math.PI * 2,
+  echoPhase: Math.random() * Math.PI * 2,
+  reverbPhase: Math.random() * Math.PI * 2,
+  baseDelay: 0.18 + i * 0.09,
+  baseResHz: 320 + i * 140,
+  lfoStretch: 0.025 + Math.random() * 0.035,
+  lfoRes: 0.04 + Math.random() * 0.05,
+  lfoEcho: 0.03 + Math.random() * 0.04,
+  lfoReverb: 0.015 + Math.random() * 0.02
+}));
+
+const fadeCycleEl = document.getElementById('fadeCycle');
+const fadeCycleVal = document.getElementById('fadeCycleVal');
+const organicEl = document.getElementById('organicAmt');
+const organicVal = document.getElementById('organicVal');
+const stretchEl = document.getElementById('stretchAmt');
+const stretchVal = document.getElementById('stretchVal');
+const echoEl = document.getElementById('echoAmt');
+const echoVal = document.getElementById('echoVal');
+const reverbEl = document.getElementById('reverbAmt');
+const reverbVal = document.getElementById('reverbVal');
+const resEl = document.getElementById('resAmt');
+const resVal = document.getElementById('resVal');
+const masterVolEl = document.getElementById('masterVol');
+const masterValEl = document.getElementById('masterVal');
+const audioMeterEl = document.getElementById('audioMeter');
+const audioBtn = document.getElementById('audioBtn');
+
+function bindFxSlider(el, labelEl) {
+  el.addEventListener('input', () => { labelEl.textContent = el.value; });
+}
+bindFxSlider(fadeCycleEl, fadeCycleVal);
+bindFxSlider(organicEl, organicVal);
+bindFxSlider(stretchEl, stretchVal);
+bindFxSlider(echoEl, echoVal);
+bindFxSlider(reverbEl, reverbVal);
+bindFxSlider(resEl, resVal);
+masterVolEl.addEventListener('input', () => { masterValEl.textContent = masterVolEl.value; });
+
+function fxAmount(id) {
+  return Math.max(0, Math.min(1, +id.value / 100));
+}
+
+function ensureAudioContext() {
+  if (!audioCtx) audioCtx = new AudioContext();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function createReverbIR(ctx, seconds = 2.8, decay = 2.8) {
+  const rate = ctx.sampleRate;
+  const len = Math.floor(rate * seconds);
+  const buf = ctx.createBuffer(2, len, rate);
+  for (let c = 0; c < 2; c++) {
+    const ch = buf.getChannelData(c);
+    for (let n = 0; n < len; n++) {
+      ch[n] = (Math.random() * 2 - 1) * Math.pow(1 - n / len, decay);
+    }
+  }
+  return buf;
+}
+
+function disposeChannelFx(i) {
+  const fx = channelFxNodes[i];
+  if (!fx) return;
+  try {
+    fx.source?.disconnect();
+    fx.dryGain?.disconnect();
+    fx.wetGain?.disconnect();
+    fx.crossfadeGain?.disconnect();
+    fx.filter?.disconnect();
+    fx.delay?.disconnect();
+    fx.delayFb?.disconnect();
+    fx.convolver?.disconnect();
+  } catch (_) { /* already torn down */ }
+  channelFxNodes[i] = null;
+  videoGainNodes[i] = null;
+}
+
+function connectVideoChannel(i) {
+  const el = iframes[i];
+  if (!(el instanceof HTMLVideoElement) || channelFxNodes[i]) return;
+  ensureAudioContext();
+
+  el.muted = true;
+  el.preservesPitch = true;
+  el.playbackRate = 1;
+
+  const p = channelFxProfile[i];
+  const fx = {
+    source: audioCtx.createMediaElementSource(el),
+    crossfadeGain: audioCtx.createGain(),
+    dryGain: audioCtx.createGain(),
+    wetGain: audioCtx.createGain(),
+    filter: audioCtx.createBiquadFilter(),
+    delay: audioCtx.createDelay(2.5),
+    delayFb: audioCtx.createGain(),
+    convolver: audioCtx.createConvolver()
+  };
+
+  fx.crossfadeGain.gain.value = 0;
+  fx.dryGain.gain.value = 0.65;
+  fx.wetGain.gain.value = 0.35;
+  fx.filter.type = 'bandpass';
+  fx.filter.frequency.value = p.baseResHz;
+  fx.filter.Q.value = 4;
+  fx.delay.delayTime.value = p.baseDelay;
+  fx.delayFb.gain.value = 0.38;
+  fx.convolver.buffer = createReverbIR(audioCtx);
+  fx.convolver.normalize = true;
+
+  // Wet: resonance -> echo (feedback) -> reverb
+  fx.source.connect(fx.filter);
+  fx.filter.connect(fx.delay);
+  fx.delay.connect(fx.convolver);
+  fx.delay.connect(fx.delayFb);
+  fx.delayFb.connect(fx.delay);
+  fx.convolver.connect(fx.wetGain);
+  fx.wetGain.connect(fx.crossfadeGain);
+
+  // Dry path
+  fx.source.connect(fx.dryGain);
+  fx.dryGain.connect(fx.crossfadeGain);
+
+  fx.crossfadeGain.connect(audioCtx.destination);
+
+  channelFxNodes[i] = fx;
+  videoGainNodes[i] = fx.crossfadeGain;
+}
+
+function applyChannelGain(i, g01) {
+  const clamped = Math.max(0, Math.min(1, g01));
+  lastChannelGains[i] = clamped;
+  const master = fxAmount(masterVolEl);
+  const kind = channelAudioKinds[i];
+
+  if (kind === 'video' && videoGainNodes[i]) {
+    ensureAudioContext();
+    videoGainNodes[i].gain.setTargetAtTime(clamped * master, audioCtx.currentTime, 0.12);
+  } else if (kind === 'youtube' && ytPlayers[i] && typeof ytPlayers[i].setVolume === 'function') {
+    const vol = Math.round(clamped * master * 100);
+    if (clamped > 0.02) {
+      if (typeof ytPlayers[i].unMute === 'function') ytPlayers[i].unMute();
+      ytPlayers[i].setVolume(vol);
+    } else {
+      ytPlayers[i].setVolume(0);
+      if (typeof ytPlayers[i].mute === 'function') ytPlayers[i].mute();
+    }
+  }
+}
+
+function updateChannelLiveFx(nowSec) {
+  if (!audioMixActive) return;
+
+  const organic = fxAmount(organicEl);
+  const stretch = fxAmount(stretchEl);
+  const echo = fxAmount(echoEl);
+  const reverb = fxAmount(reverbEl);
+  const res = fxAmount(resEl);
+  const t = audioCtx ? audioCtx.currentTime : nowSec;
+
+  for (let i = 0; i < 4; i++) {
+    const p = channelFxProfile[i];
+    const kind = channelAudioKinds[i];
+
+    if (organic > 0) {
+      p.phaseDrift += (Math.random() - 0.5) * 0.00035 * organic;
+      p.phaseDrift = Math.max(-0.35, Math.min(0.35, p.phaseDrift));
+    }
+
+    const wobble = 1 + organic * 0.07 * Math.sin(nowSec * (1.4 + i * 0.17) + p.stretchPhase);
+    const rateLfo = Math.sin(nowSec * p.lfoStretch + p.stretchPhase);
+    const stretchDepth = stretch * (0.06 + organic * 0.1);
+    const playbackRate = Math.max(0.72, Math.min(1.35, wobble + rateLfo * stretchDepth));
+
+    if (kind === 'video') {
+      const el = iframes[i];
+      if (el instanceof HTMLVideoElement) {
+        el.playbackRate = playbackRate;
+      }
+      const fx = channelFxNodes[i];
+      if (fx && audioCtx) {
+        const resHz = p.baseResHz + res * 900 * (0.35 + 0.65 * (0.5 + 0.5 * Math.sin(nowSec * p.lfoRes + p.resonancePhase)));
+        const q = 2 + res * (10 + organic * 6);
+        fx.filter.frequency.setTargetAtTime(resHz, t, 0.15);
+        fx.filter.Q.setTargetAtTime(q, t, 0.15);
+
+        const delayT = p.baseDelay + echo * 0.55 * (0.5 + 0.5 * Math.sin(nowSec * p.lfoEcho + p.echoPhase));
+        fx.delay.delayTime.setTargetAtTime(Math.max(0.03, delayT), t, 0.12);
+        fx.delayFb.gain.setTargetAtTime(echo * (0.15 + organic * 0.35), t, 0.12);
+
+        const wet = Math.min(0.92, 0.08 + echo * 0.35 + reverb * 0.4 + res * 0.22);
+        const dry = 1 - wet * 0.85;
+        fx.wetGain.gain.setTargetAtTime(wet, t, 0.18);
+        fx.dryGain.gain.setTargetAtTime(dry, t, 0.18);
+
+        fx.convolver.normalize = true;
+      }
+    } else if (kind === 'youtube' && ytPlayers[i]?.setPlaybackRate) {
+      try {
+        ytPlayers[i].setPlaybackRate(playbackRate);
+      } catch (_) { /* live edge */ }
+    }
+  }
+}
+
+/** Organic equal-power rotation with drift and soft overlap. */
+function computeCrossfadeGains(nowSec) {
+  const cycle = Math.max(8, +fadeCycleEl.value);
+  const organic = fxAmount(organicEl);
+  const n = 4;
+  const out = [0, 0, 0, 0];
+
+  for (let i = 0; i < n; i++) {
+    const p = channelFxProfile[i];
+    const phase = (nowSec / cycle + i / n + p.phaseDrift * organic) % 1;
+    const x = phase * Math.PI * 2;
+    let g = Math.max(0, Math.cos(x - Math.PI / 2));
+    g = Math.pow(g, 1.05 - organic * 0.35);
+
+    if (organic > 0.05) {
+      const neighbor = Math.max(0, Math.cos(x - Math.PI / 2 + Math.PI / 2));
+      g = g * (1 - organic * 0.15) + neighbor * organic * 0.12;
+      g += organic * 0.05 * Math.max(0, Math.sin(nowSec * 0.9 + i * 1.7 + p.echoPhase));
+    }
+    out[i] = g;
+  }
+
+  const sumSq = out.reduce((s, v) => s + v * v, 0) || 1;
+  const norm = Math.sqrt(2 / sumSq);
+  return out.map((v, i) => {
+    let g = Math.min(1, v * norm);
+    if (organic > 0) {
+      const flutter = 1 + organic * 0.05 * Math.sin(nowSec * (2.1 + i * 0.23) + channelFxProfile[i].resonancePhase);
+      g *= flutter;
+    }
+    return Math.max(0, g);
+  });
+}
+
+function updateAudioCrossfade() {
+  if (!audioMixActive) return;
+  const nowSec = performance.now() / 1000;
+  updateChannelLiveFx(nowSec);
+  const gains = computeCrossfadeGains(nowSec);
+  for (let i = 0; i < 4; i++) applyChannelGain(i, gains[i]);
+
+  const top = gains
+    .map((g, i) => ({ g, i }))
+    .filter(({ g }) => g > 0.1)
+    .sort((a, b) => b.g - a.g)
+    .slice(0, 2)
+    .map(({ g, i }) => `${NAMES[i]} ${Math.round(g * 100)}%`)
+    .join(' · ');
+  audioMeterEl.textContent = top || '—';
+}
+
+async function startAudioMix() {
+  ensureAudioContext();
+  for (let i = 0; i < 4; i++) {
+    if (channelAudioKinds[i] === 'video') connectVideoChannel(i);
+  }
+  audioMixActive = true;
+  audioBtn.textContent = 'Audio crossfade running';
+  audioBtn.disabled = true;
+  setStatus(document.getElementById('status').innerHTML + ' · Audio crossfade <b>on</b>.');
+}
+
+audioBtn.addEventListener('click', () => startAudioMix());
+
+masterVolEl.addEventListener('input', () => {
+  if (!audioMixActive) return;
+  for (let i = 0; i < 4; i++) applyChannelGain(i, lastChannelGains[i]);
+});
+
+// --- AbsDiff math (unchanged) ---
+function absDiff(dataA, dataB, out) {
+  for (let i = 0; i < dataA.length; i += 4) {
+    out[i]     = Math.abs(dataA[i]     - dataB[i]);
+    out[i + 1] = Math.abs(dataA[i + 1] - dataB[i + 1]);
+    out[i + 2] = Math.abs(dataA[i + 2] - dataB[i + 2]);
+    out[i + 3] = 255;
+  }
+}
+function combine(diffA, diffB, out, mode) {
+  for (let i = 0; i < out.length; i += 4) {
+    for (let c = 0; c < 3; c++) {
+      let v;
+      if (mode === 'a') v = diffA[i + c];
+      else if (mode === 'b') v = diffB[i + c];
+      else if (mode === 'add') v = Math.min(255, diffA[i + c] + diffB[i + c]);
+      else v = Math.max(diffA[i + c], diffB[i + c]);
+      out[i + c] = v;
+    }
+    out[i + 3] = 255;
+  }
+}
+function threshold(src, out, t) {
+  for (let i = 0; i < src.length; i += 4) {
+    const lum = (src[i] + src[i+1] + src[i+2]) / 3;
+    const v = lum > t ? 255 : 0;
+    out[i] = out[i+1] = out[i+2] = v;
+    out[i+3] = 255;
+  }
+}
+
+const diffAData = new Uint8ClampedArray(W * H * 4);
+const diffBData = new Uint8ClampedArray(W * H * 4);
+const combinedData = new Uint8ClampedArray(W * H * 4);
+const maskData = new Uint8ClampedArray(W * H * 4);
+
+function render() {
+  if (captureSessionActive && readCtxs.length === 4) {
+    if (tabCaptureVideo && tabCaptureVideo.readyState >= 2) {
+      maybeRecalibrateCaptureMap(tabCaptureVideo);
+    }
+
+    for (let i = 0; i < 4; i++) {
+      const label = document.getElementById(`bright-${i}`);
+      const ok = drawChannelFrame(i);
+      if (ok) {
+        const d = readCtxs[i].getImageData(0, 0, W, H).data;
+        let sum = 0, n = 0;
+        for (let p = 0; p < d.length; p += 40) { sum += d[p] + d[p + 1] + d[p + 2]; n++; }
+        const avg = (sum / (n * 3)).toFixed(1);
+        if (label) {
+          label.textContent = `Ch${i + 1} raw · ${channelMethods[i]} · avg brightness: ${avg} / 255`;
+        }
+      } else if (label) {
+        label.textContent = `Ch${i + 1} raw · ${channelMethods[i]} · waiting for frames…`;
+      }
+    }
+
+    const a1 = readCtxs[+selectors[0].value].getImageData(0, 0, W, H).data;
+    const a2 = readCtxs[+selectors[1].value].getImageData(0, 0, W, H).data;
+    const b1 = readCtxs[+selectors[2].value].getImageData(0, 0, W, H).data;
+    const b2 = readCtxs[+selectors[3].value].getImageData(0, 0, W, H).data;
+
+    absDiff(a1, a2, diffAData);
+    absDiff(b1, b2, diffBData);
+    combine(diffAData, diffBData, combinedData, combineModeEl.value);
+
+    outCtx.putImageData(new ImageData(combinedData, W, H), 0, 0);
+    threshold(combinedData, maskData, +threshEl.value);
+    maskCtx.putImageData(new ImageData(maskData, W, H), 0, 0);
+
+    if (captureMap?.screenShareLikely && !warnedScreenShare) {
+      warnedScreenShare = true;
+      setStatus(
+        'Capture live — crops drift if you share the full <b>screen</b> and move the window. Share <b>this browser window</b> instead.',
+        true
+      );
+    }
+  }
+  updateAudioCrossfade();
+  requestAnimationFrame(render);
+}
+
+// --- Separate output window ---
+document.getElementById('openWin').addEventListener('click', () => {
+  const outStream = outCanvas.captureStream(30);
+  const popup = window.open('', 'absdiff-output', 'width=420,height=380');
+  if (!popup) { setStatus('Popup blocked — allow popups for this page.', true); return; }
+  popup.document.write(`
+    <!DOCTYPE html><html><head><title>AbsDiff Output</title>
+    <style>
+      body{margin:0;background:#0a0c10;display:flex;align-items:center;justify-content:center;height:100vh;}
+      video{width:100%;image-rendering:pixelated;}
+    </style></head>
+    <body><video autoplay playsinline></video></body></html>
+  `);
+  popup.document.close();
+  popup.document.querySelector('video').srcObject = outStream;
+});
+</script>
+</body>
+</html>
