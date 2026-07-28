@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beacon — a whistle that listens back</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root{
+    --bg-0:#0a0e14;
+    --bg-1:#10161f;
+    --teal:#4ce0d2;
+    --teal-dim:#1f5a56;
+    --coral:#ff6b52;
+    --coral-dim:#5c2c24;
+    --ink:#eaf2f5;
+    --mute:#7a8ba1;
+    --line:#1c2733;
+  }
+
+  *{ box-sizing:border-box; }
+
+  body{
+    margin:0;
+    min-height:100vh;
+    background:
+      radial-gradient(ellipse 900px 500px at 50% -10%, #142132 0%, var(--bg-0) 60%),
+      var(--bg-0);
+    color:var(--ink);
+    font-family:'Inter', sans-serif;
+    display:flex;
+    justify-content:center;
+    padding:48px 20px 80px;
+  }
+
+  .stage{
+    width:100%;
+    max-width:560px;
+  }
+
+  header{
+    text-align:center;
+    margin-bottom:8px;
+  }
+
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    color:var(--mute);
+    margin:0 0 10px;
+  }
+
+  h1{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-optical-sizing:auto;
+    font-size:clamp(32px, 7vw, 46px);
+    line-height:1.05;
+    margin:0 0 12px;
+    letter-spacing:-0.01em;
+  }
+
+  h1 em{
+    font-style:italic;
+    color:var(--teal);
+  }
+
+  .sub{
+    color:var(--mute);
+    font-size:14.5px;
+    line-height:1.55;
+    max-width:440px;
+    margin:0 auto 40px;
+  }
+
+  /* ---- signature visual: the beacon ---- */
+  .beacon-wrap{
+    position:relative;
+    width:100%;
+    aspect-ratio:1/1;
+    max-width:320px;
+    margin:0 auto 18px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+
+  #ringCanvas{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+  }
+
+  .core{
+    position:relative;
+    width:88px;
+    height:88px;
+    border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #1a2530, #0c1218 70%);
+    border:1px solid var(--line);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 0 40px rgba(76,224,210,0.08);
+    transition:box-shadow .4s ease, border-color .4s ease;
+  }
+
+  .core.calling{ box-shadow:0 0 60px rgba(76,224,210,0.35); border-color:var(--teal-dim); }
+  .core.excited{ box-shadow:0 0 70px rgba(255,107,82,0.4); border-color:var(--coral-dim); }
+
+  .core svg{ width:30px; height:30px; opacity:0.85; }
+
+  .status-line{
+    text-align:center;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    color:var(--teal);
+    letter-spacing:0.02em;
+    min-height:20px;
+    margin-bottom:6px;
+    transition:color .3s ease;
+  }
+  .status-line.excited{ color:var(--coral); }
+  .status-line.idle{ color:var(--mute); }
+
+  .status-sub{
+    text-align:center;
+    font-size:12px;
+    color:var(--mute);
+    margin-bottom:34px;
+  }
+
+  /* ---- pitch trace strip ---- */
+  .trace-panel{
+    background:var(--bg-1);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:14px 16px 10px;
+    margin-bottom:28px;
+  }
+  .trace-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--mute);
+    margin-bottom:8px;
+    display:flex;
+    justify-content:space-between;
+  }
+  #traceCanvas{ width:100%; height:70px; display:block; border-radius:4px; }
+
+  /* ---- controls ---- */
+  .panel{
+    background:var(--bg-1);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:22px 22px 8px;
+    margin-bottom:20px;
+  }
+
+  .buttons{
+    display:flex;
+    gap:10px;
+    margin-bottom:24px;
+  }
+
+  button{
+    font-family:'Inter', sans-serif;
+    font-weight:600;
+    font-size:13.5px;
+    border-radius:8px;
+    border:1px solid transparent;
+    padding:12px 16px;
+    cursor:pointer;
+    transition:background .2s ease, border-color .2s ease, opacity .2s ease;
+  }
+  button:focus-visible{ outline:2px solid var(--teal); outline-offset:2px; }
+
+  #startBtn{
+    flex:1;
+    background:var(--teal);
+    color:#06201d;
+  }
+  #startBtn:hover{ background:#63e9dc; }
+  #startBtn:disabled{ opacity:0.4; cursor:default; }
+
+  #stopBtn{
+    background:transparent;
+    border-color:var(--line);
+    color:var(--mute);
+  }
+  #stopBtn:hover:not(:disabled){ border-color:var(--coral-dim); color:var(--coral); }
+  #stopBtn:disabled{ opacity:0.35; cursor:default; }
+
+  #testBtn{
+    background:transparent;
+    border-color:var(--line);
+    color:var(--ink);
+  }
+  #testBtn:hover:not(:disabled){ border-color:var(--teal-dim); }
+  #testBtn:disabled{ opacity:0.35; cursor:default; }
+
+  #resetBtn{
+    background:transparent;
+    border-color:var(--line);
+    color:var(--ink);
+  }
+  #resetBtn:hover:not(:disabled){ border-color:var(--coral-dim); color:var(--coral); }
+  #resetBtn:disabled{ opacity:0.35; cursor:default; }
+
+  .field{
+    margin-bottom:20px;
+  }
+  .field-row{
+    display:flex;
+    justify-content:space-between;
+    font-size:12.5px;
+    margin-bottom:8px;
+  }
+  .field-row label{ color:var(--ink); }
+  .field-row .val{
+    font-family:'IBM Plex Mono', monospace;
+    color:var(--teal);
+  }
+
+  input[type=range]{
+    width:100%;
+    -webkit-appearance:none;
+    height:4px;
+    border-radius:2px;
+    background:var(--line);
+    outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:15px; height:15px;
+    border-radius:50%;
+    background:var(--teal);
+    cursor:pointer;
+    border:2px solid #06201d;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:15px; height:15px;
+    border-radius:50%;
+    background:var(--teal);
+    cursor:pointer;
+    border:2px solid #06201d;
+  }
+
+  .hint{
+    font-size:11.5px;
+    color:var(--mute);
+    line-height:1.5;
+    padding-bottom:18px;
+  }
+
+  /* ---- log ---- */
+  .log-panel{
+    background:var(--bg-1);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:16px 20px;
+  }
+  .log-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--mute);
+    margin-bottom:10px;
+  }
+  #log{
+    list-style:none;
+    margin:0;
+    padding:0;
+    max-height:180px;
+    overflow-y:auto;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+  }
+  #log li{
+    display:flex;
+    gap:10px;
+    padding:6px 0;
+    border-bottom:1px solid var(--line);
+    color:var(--mute);
+  }
+  #log li:last-child{ border-bottom:none; }
+  #log li .t{ color:#4a5b6e; flex-shrink:0; }
+  #log li.call .m{ color:var(--teal); }
+  #log li.heard .m{ color:var(--coral); }
+  #log li.system .m{ color:var(--ink); }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ transition:none !important; animation:none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <header>
+    <p class="eyebrow">Call &amp; Response</p>
+    <h1>A beacon that <em>whistles</em><br>into the dark</h1>
+    <p class="sub">It calls out on a timer. It listens the rest of the time.
+    If it hears another glissando whistle answer back, it lights up and calls wildly for a while — then settles back into its rhythm.</p>
+  </header>
+
+  <div class="beacon-wrap">
+    <canvas id="ringCanvas"></canvas>
+    <div class="core" id="core">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path id="coreIcon" d="M4 12c2-5 6-8 8-8s6 3 8 8c-2 5-6 8-8 8s-6-3-8-8z" stroke="#4ce0d2"/>
+        <circle cx="12" cy="12" r="2.4" fill="#4ce0d2" stroke="none" id="coreDot"/>
+      </svg>
+    </div>
+  </div>
+
+  <p class="status-line idle" id="statusLine">Press start to open its ears</p>
+  <p class="status-sub" id="statusSub">Needs microphone access, and works best served over https:// or localhost</p>
+
+  <div class="trace-panel">
+    <div class="trace-label"><span>Live pitch trace</span><span id="freqReadout">— Hz</span></div>
+    <canvas id="traceCanvas" width="600" height="140"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="buttons">
+      <button id="startBtn">Start listening</button>
+      <button id="testBtn" disabled>Whistle now</button>
+      <button id="resetBtn" disabled>Stop responding</button>
+      <button id="stopBtn" disabled>Stop</button>
+    </div>
+
+    <div class="field">
+      <div class="field-row"><label>Call interval</label><span class="val" id="intervalVal">45 s</span></div>
+      <input type="range" id="intervalSlider" min="10" max="120" step="1" value="45">
+    </div>
+
+    <div class="field">
+      <div class="field-row"><label>Whistle length</label><span class="val" id="whistleVal">1.5 s</span></div>
+      <input type="range" id="whistleSlider" min="0.5" max="5" step="0.1" value="1.5">
+    </div>
+
+    <div class="field">
+      <div class="field-row"><label>Excited duration</label><span class="val" id="excitedVal">30 s</span></div>
+      <input type="range" id="excitedSlider" min="5" max="60" step="1" value="30">
+    </div>
+
+    <div class="field">
+      <div class="field-row"><label>Listening sensitivity</label><span class="val" id="sensVal">Medium</span></div>
+      <input type="range" id="sensSlider" min="1" max="3" step="1" value="2">
+    </div>
+
+    <p class="hint">Sensitivity controls how big a pitch sweep counts as "a whistle" — Low ignores small wobbles, High catches subtler glissandos (but risks false triggers from other noise).</p>
+  </div>
+
+  <div class="log-panel">
+    <div class="log-label">Event log</div>
+    <ul id="log"><li><span class="t">--:--:--</span><span class="m">Waiting to start…</span></li></ul>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ---------- state ----------
+  let audioCtx, masterGain, analyser, micSource, stream, buf;
+  let running = false;
+  let state = 'IDLE'; // IDLE | LISTENING | CALLING | EXCITED
+  let nextCallTime = 0;
+  let callEndTime = 0;
+  let excitedEndTime = 0;
+  let nextExcitedWhistleTime = 0;
+  let emitGateUntil = 0; // mic analysis ignored until this timestamp (avoid hearing itself)
+  let pitchHistory = []; // {t, f}
+  let ripples = []; // {start, color}
+  let traceHistory = []; // scrolling pitch values for canvas, {f (or null)}
+  const TRACE_LEN = 240;
+  for (let i=0;i<TRACE_LEN;i++) traceHistory.push(null);
+
+  const els = {
+    startBtn: document.getElementById('startBtn'),
+    stopBtn: document.getElementById('stopBtn'),
+    testBtn: document.getElementById('testBtn'),
+    resetBtn: document.getElementById('resetBtn'),
+    intervalSlider: document.getElementById('intervalSlider'),
+    whistleSlider: document.getElementById('whistleSlider'),
+    excitedSlider: document.getElementById('excitedSlider'),
+    sensSlider: document.getElementById('sensSlider'),
+    intervalVal: document.getElementById('intervalVal'),
+    whistleVal: document.getElementById('whistleVal'),
+    excitedVal: document.getElementById('excitedVal'),
+    sensVal: document.getElementById('sensVal'),
+    statusLine: document.getElementById('statusLine'),
+    statusSub: document.getElementById('statusSub'),
+    core: document.getElementById('core'),
+    log: document.getElementById('log'),
+    freqReadout: document.getElementById('freqReadout'),
+    ringCanvas: document.getElementById('ringCanvas'),
+    traceCanvas: document.getElementById('traceCanvas'),
+  };
+
+  function cfg(){
+    return {
+      interval: parseFloat(els.intervalSlider.value),
+      whistle: parseFloat(els.whistleSlider.value),
+      excited: parseFloat(els.excitedSlider.value),
+      sens: parseInt(els.sensSlider.value, 10),
+    };
+  }
+
+  const sensLabels = {1:'Low', 2:'Medium', 3:'High'};
+  const sensThreshold = {1:320, 2:220, 3:140}; // Hz swing required to count as a glissando
+
+  function refreshLabels(){
+    const c = cfg();
+    els.intervalVal.textContent = c.interval + ' s';
+    els.whistleVal.textContent = c.whistle.toFixed(1) + ' s';
+    els.excitedVal.textContent = c.excited + ' s';
+    els.sensVal.textContent = sensLabels[c.sens];
+  }
+  [els.intervalSlider, els.whistleSlider, els.excitedSlider, els.sensSlider].forEach(s=>{
+    s.addEventListener('input', refreshLabels);
+  });
+  refreshLabels();
+
+  function log(kind, msg){
+    const li = document.createElement('li');
+    li.className = kind;
+    const now = new Date();
+    const t = now.toTimeString().slice(0,8);
+    li.innerHTML = `<span class="t">${t}</span><span class="m">${msg}</span>`;
+    els.log.prepend(li);
+    while (els.log.children.length > 40) els.log.removeChild(els.log.lastChild);
+  }
+
+  function setStatus(text, mood){
+    els.statusLine.textContent = text;
+    els.statusLine.className = 'status-line ' + (mood || '');
+    els.core.className = 'core ' + (mood === 'excited' ? 'excited' : (mood === '' ? 'calling' : ''));
+  }
+
+  // ---------- audio: emitting a whistle ----------
+  function playWhistle(duration, variant){
+    if (!audioCtx) return;
+    const t0 = audioCtx.currentTime + 0.02;
+    const jitter = variant === 'excited' ? (Math.random()*160-80) : 0;
+    const f0 = 600 + jitter;
+    const f1 = 1850 + jitter*1.3;
+    const f2 = 1050 + jitter;
+
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    const gain = audioCtx.createGain();
+    osc.connect(gain).connect(masterGain);
+
+    const attack = Math.min(0.07, duration*0.15);
+    const release = Math.min(0.16, duration*0.2);
+    const peakT = t0 + duration*0.58;
+    const endT = t0 + duration;
+
+    osc.frequency.setValueAtTime(f0, t0);
+    osc.frequency.exponentialRampToValueAtTime(f1, peakT);
+    osc.frequency.exponentialRampToValueAtTime(f2, endT);
+
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.85, t0+attack);
+    gain.gain.setValueAtTime(0.85, Math.max(t0+attack, endT-release));
+    gain.gain.exponentialRampToValueAtTime(0.0001, endT);
+
+    osc.start(t0);
+    osc.stop(endT + 0.05);
+
+    const gateMs = (t0 - audioCtx.currentTime)*1000 + duration*1000 + 450;
+    emitGateUntil = performance.now() + gateMs;
+
+    spawnRipple(variant === 'excited' ? 'coral' : 'teal');
+  }
+
+  // ---------- mic: pitch detection ----------
+  function autoCorrelate(buffer, sampleRate){
+    const SIZE = buffer.length;
+    let rms = 0;
+    for (let i=0;i<SIZE;i++){ const v = buffer[i]; rms += v*v; }
+    rms = Math.sqrt(rms/SIZE);
+    if (rms < 0.012) return -1;
+
+    let r1 = 0, r2 = SIZE-1;
+    const thres = 0.2;
+    for (let i=0;i<SIZE/2;i++){ if (Math.abs(buffer[i]) < thres){ r1=i; break; } }
+    for (let i=1;i<SIZE/2;i++){ if (Math.abs(buffer[SIZE-i]) < thres){ r2=SIZE-i; break; } }
+    const trimmed = buffer.slice(r1, r2);
+    const n = trimmed.length;
+    if (n < 8) return -1;
+
+    const c = new Array(n).fill(0);
+    for (let i=0;i<n;i++){
+      for (let j=0;j<n-i;j++){ c[i] += trimmed[j]*trimmed[j+i]; }
+    }
+    let d = 0;
+    while (d < n-1 && c[d] > c[d+1]) d++;
+    let maxVal = -1, maxPos = -1;
+    for (let i=d;i<n;i++){
+      if (c[i] > maxVal){ maxVal = c[i]; maxPos = i; }
+    }
+    let T0 = maxPos;
+    if (T0 > 0 && T0 < n-1){
+      const x1=c[T0-1], x2=c[T0], x3=c[T0+1];
+      const a=(x1+x3-2*x2)/2, b=(x3-x1)/2;
+      if (a) T0 = T0 - b/(2*a);
+    }
+    if (T0 <= 0) return -1;
+    return sampleRate / T0;
+  }
+
+  function spawnRipple(color){
+    ripples.push({ start: performance.now(), color });
+  }
+
+  // ---------- canvases ----------
+  const ringCtx = els.ringCanvas.getContext('2d');
+  const traceCtx = els.traceCanvas.getContext('2d');
+
+  function resizeRingCanvas(){
+    const wrap = els.ringCanvas.parentElement;
+    const size = wrap.clientWidth * (window.devicePixelRatio || 1);
+    els.ringCanvas.width = size;
+    els.ringCanvas.height = size;
+  }
+  window.addEventListener('resize', resizeRingCanvas);
+  resizeRingCanvas();
+
+  function drawRings(now){
+    const w = els.ringCanvas.width, h = els.ringCanvas.height;
+    ringCtx.clearRect(0,0,w,h);
+    const cx = w/2, cy = h/2;
+    const maxR = w/2;
+    ripples = ripples.filter(r => (now - r.start) < 1600);
+    for (const r of ripples){
+      const age = (now - r.start) / 1600;
+      const radius = 44 + age * (maxR - 44);
+      const alpha = (1-age) * 0.55;
+      ringCtx.beginPath();
+      ringCtx.arc(cx, cy, radius, 0, Math.PI*2);
+      ringCtx.strokeStyle = r.color === 'coral'
+        ? `rgba(255,107,82,${alpha})`
+        : `rgba(76,224,210,${alpha})`;
+      ringCtx.lineWidth = 2 * (window.devicePixelRatio || 1);
+      ringCtx.stroke();
+    }
+  }
+
+  function drawTrace(){
+    const w = els.traceCanvas.width, h = els.traceCanvas.height;
+    traceCtx.clearRect(0,0,w,h);
+    traceCtx.strokeStyle = 'rgba(76,224,210,0.15)';
+    traceCtx.lineWidth = 1;
+    for (let i=1;i<4;i++){
+      const y = (h/4)*i;
+      traceCtx.beginPath();
+      traceCtx.moveTo(0,y);
+      traceCtx.lineTo(w,y);
+      traceCtx.stroke();
+    }
+    const minF = 300, maxF = 2400;
+    const stepX = w / TRACE_LEN;
+    traceCtx.beginPath();
+    let started = false;
+    const col = state === 'EXCITED' ? '#ff6b52' : '#4ce0d2';
+    traceCtx.strokeStyle = col;
+    traceCtx.lineWidth = 2;
+    for (let i=0;i<TRACE_LEN;i++){
+      const f = traceHistory[i];
+      const x = i*stepX;
+      if (f == null){ started = false; continue; }
+      const norm = Math.min(1, Math.max(0, (f-minF)/(maxF-minF)));
+      const y = h - norm*h;
+      if (!started){ traceCtx.moveTo(x,y); started = true; }
+      else traceCtx.lineTo(x,y);
+    }
+    traceCtx.stroke();
+  }
+
+  // ---------- main loop ----------
+  function frame(now){
+    if (!running) return;
+
+    // pitch detection (gated while we're emitting our own whistle)
+    let freq = -1;
+    if (analyser && now > emitGateUntil){
+      analyser.getFloatTimeDomainData(buf);
+      freq = autoCorrelate(buf, audioCtx.sampleRate);
+    }
+
+    if (freq > 0 && freq > 300 && freq < 3200){
+      pitchHistory.push({ t: now, f: freq });
+      traceHistory.push(freq);
+      els.freqReadout.textContent = Math.round(freq) + ' Hz';
+    } else {
+      traceHistory.push(null);
+      if (freq <= 0) els.freqReadout.textContent = '— Hz';
+    }
+    while (traceHistory.length > TRACE_LEN) traceHistory.shift();
+
+    // trim pitch history window to last 1.7s
+    pitchHistory = pitchHistory.filter(p => now - p.t < 1700);
+
+    // detect a foreign glissando
+    if (state === 'LISTENING' && pitchHistory.length >= 6){
+      const span = pitchHistory[pitchHistory.length-1].t - pitchHistory[0].t;
+      if (span > 250 && span < 1700){
+        const freqs = pitchHistory.map(p=>p.f);
+        const swing = Math.max(...freqs) - Math.min(...freqs);
+        const th = sensThreshold[cfg().sens];
+        if (swing > th){
+          triggerExcited();
+          pitchHistory = [];
+        }
+      }
+    }
+
+    // state machine
+    const c = cfg();
+    if (state === 'LISTENING' && now >= nextCallTime){
+      state = 'CALLING';
+      callEndTime = now + c.whistle*1000;
+      playWhistle(c.whistle, 'call');
+      setStatus('Calling out…', '');
+      log('call', `Sent a ${c.whistle.toFixed(1)}s glissando call`);
+    } else if (state === 'CALLING' && now >= callEndTime){
+      state = 'LISTENING';
+      nextCallTime = now + c.interval*1000;
+      setStatus('Listening…', 'idle');
+    } else if (state === 'EXCITED'){
+      if (now >= excitedEndTime){
+        state = 'LISTENING';
+        nextCallTime = now + c.interval*1000;
+        setStatus('Listening…', 'idle');
+        log('system', 'Settling back down');
+      } else if (now >= nextExcitedWhistleTime){
+        const wd = Math.min(c.whistle, 1.1);
+        playWhistle(wd, 'excited');
+        nextExcitedWhistleTime = now + wd*1000 + 350;
+      }
+    }
+
+    drawRings(now);
+    drawTrace();
+    requestAnimationFrame(frame);
+  }
+
+  function resetToListening(){
+    if (!running) return;
+    const wasExcited = state === 'EXCITED';
+    state = 'LISTENING';
+    pitchHistory = [];
+    const c = cfg();
+    nextCallTime = performance.now() + c.interval*1000;
+    setStatus('Listening…', 'idle');
+    log('system', wasExcited ? 'Cut the excitement short — back to listening' : 'Reset to listening');
+  }
+
+  function triggerExcited(){
+    const c = cfg();
+    state = 'EXCITED';
+    excitedEndTime = performance.now() + c.excited*1000;
+    nextExcitedWhistleTime = performance.now();
+    setStatus('Heard a whistle! Answering wildly…', 'excited');
+    log('heard', `Detected an answering glissando — going wild for ${c.excited}s`);
+  }
+
+  // ---------- start / stop ----------
+  async function start(){
+    try{
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = 0.4;
+      masterGain.connect(audioCtx.destination);
+
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false }
+      });
+      micSource = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      micSource.connect(analyser);
+      buf = new Float32Array(analyser.fftSize);
+
+      running = true;
+      state = 'LISTENING';
+      const c = cfg();
+      nextCallTime = performance.now() + c.interval*1000;
+      setStatus('Listening…', 'idle');
+      els.statusSub.textContent = 'Microphone live — it will call every ' + c.interval + 's and answer back if it hears a whistle';
+      log('system', 'Started listening');
+
+      els.startBtn.disabled = true;
+      els.stopBtn.disabled = false;
+      els.testBtn.disabled = false;
+      els.resetBtn.disabled = false;
+
+      requestAnimationFrame(frame);
+    } catch(err){
+      setStatus('Microphone access was blocked or failed', 'idle');
+      log('system', 'Error: ' + err.message + ' (try serving over https:// or localhost)');
+    }
+  }
+
+  function stop(){
+    running = false;
+    state = 'IDLE';
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (audioCtx) audioCtx.close();
+    audioCtx = null; analyser = null; micSource = null; stream = null;
+    setStatus('Stopped', 'idle');
+    els.statusSub.textContent = 'Press start to open its ears again';
+    els.startBtn.disabled = false;
+    els.stopBtn.disabled = true;
+    els.testBtn.disabled = true;
+    els.resetBtn.disabled = true;
+    log('system', 'Stopped');
+  }
+
+  els.startBtn.addEventListener('click', start);
+  els.stopBtn.addEventListener('click', stop);
+  els.resetBtn.addEventListener('click', resetToListening);
+  els.testBtn.addEventListener('click', ()=>{
+    if (!audioCtx) return;
+    const c = cfg();
+    playWhistle(c.whistle, 'call');
+    log('call', 'Manual test whistle');
+  });
+})();
+</script>
+</body>
+</html>
