@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Stable Sequencer</title>
+
+<style>
+body {
+  margin: 0;
+  padding: 20px;
+  background: #0b0b0b;
+  color: #eee;
+  font-family: monospace;
+}
+
+#controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+button, input, select {
+  padding: 6px;
+  font-size: 14px;
+}
+
+/* ---------------- GRID ---------------- */
+#grid {
+  display: grid;
+  gap: 2px;
+  user-select: none;
+  padding: 10px;
+  background: #111;
+  border: 1px solid #333;
+  position: relative;
+  width: fit-content;
+  overflow-x: auto;
+}
+
+.cell {
+  width: 12px;
+  height: 12px;
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+}
+
+.cell.active { background: #00ff99; }
+.cell.playhead { outline: 1px solid red; }
+
+.note-bar {
+  position: absolute;
+  background: #00ff99;
+  border-radius: 5px;
+  box-shadow: 0 0 4px rgba(0,255,153,0.8);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* LOOP */
+.handle {
+  position: absolute;
+  top: 0;
+  width: 4px;
+  height: 100%;
+  background: #3aa0ff;
+  cursor: ew-resize;
+  z-index: 10;
+}
+
+/* ---------------- VOLUME ---------------- */
+#volume {
+  margin-top: 18px;
+  display: grid;
+  gap: 2px;
+  background: #111;
+  border: 1px solid #333;
+  padding: 10px;
+  width: fit-content;
+}
+
+.vcol {
+  width: 12px;
+  height: 60px;
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+  position: relative;
+}
+
+.vfill {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  background: #ffcc00;
+}
+
+.recording {
+  color: red;
+}
+</style>
+</head>
+
+<body>
+
+<div id="controls">
+  <label for="file">Choose Audio File</label> <input type="file" id="file" accept="audio/*" />
+  <button id="start">Start</button>
+  <button id="stop">Stop</button>
+  <button id="record">Record</button>
+  <button id="clear">Clear</button>
+  <label><input type="checkbox" id="deleteMode" /> Delete mode</label>
+
+  <label>BPM <input id="bpm" type="number" value="120"></label>
+  <label>Master <input id="master" type="range" min="0" max="3" step="0.01" value="1"></label>
+
+  <span id="recStatus"></span>
+</div>
+
+<div id="controls">
+  <label>Width (steps) <input id="gridWidth" type="number" min="1" max="4096" value="64"></label>
+  <label>Height (rows, max 128) <input id="gridHeight" type="number" min="1" max="128" value="36"></label>
+  <label>Step length
+    <select id="noteLength">
+      <option value="4">1/1 (whole)</option>
+      <option value="2">1/2</option>
+      <option value="1">1/4</option>
+      <option value="0.5">1/8</option>
+      <option value="0.25" selected>1/16</option>
+      <option value="0.125">1/32</option>
+    </select>
+  </label>
+  <button id="rebuildGrid">Rebuild Grid</button>
+</div>
+
+<div id="controls">
+  <label>Image <input type="file" id="imageFile" accept="image/*" /></label>
+  <label>Threshold <input id="threshold" type="range" min="0" max="255" step="1" value="128"></label>
+  <label><input type="checkbox" id="invert" /> Invert (dark = on)</label>
+  <label><input type="checkbox" id="imgVolume" checked /> Brightness → Volume</label>
+</div>
+
+<div id="controls">
+  <label>Root
+    <select id="root">
+      <option value="0">C</option>
+      <option value="1">C#</option>
+      <option value="2">D</option>
+      <option value="3">D#</option>
+      <option value="4">E</option>
+      <option value="5">F</option>
+      <option value="6">F#</option>
+      <option value="7">G</option>
+      <option value="8">G#</option>
+      <option value="9">A</option>
+      <option value="10">A#</option>
+      <option value="11">B</option>
+    </select>
+  </label>
+  <label>Scale
+    <select id="scale">
+      <option value="chromatic">Chromatic (off)</option>
+      <option value="major" selected>Major (Ionian)</option>
+      <option value="minor">Natural Minor (Aeolian)</option>
+      <option value="harmonicMinor">Harmonic Minor</option>
+      <option value="melodicMinor">Melodic Minor</option>
+      <option value="dorian">Dorian</option>
+      <option value="phrygian">Phrygian</option>
+      <option value="lydian">Lydian</option>
+      <option value="mixolydian">Mixolydian</option>
+      <option value="locrian">Locrian</option>
+      <option value="majorPentatonic">Major Pentatonic</option>
+      <option value="minorPentatonic">Minor Pentatonic</option>
+      <option value="blues">Blues</option>
+      <option value="wholeTone">Whole Tone</option>
+      <option value="hirajoshi">Hirajoshi (Japanese)</option>
+      <option value="inSen">In Sen (Japanese)</option>
+      <option value="hungarianMinor">Hungarian Minor</option>
+      <option value="phrygianDominant">Phrygian Dominant</option>
+    </select>
+  </label>
+  <label><input type="checkbox" id="combineNotes" checked /> Combine adjacent notes</label>
+  <button id="exportMidi">Export MIDI</button>
+</div>
+
+<div id="grid"></div>
+<div id="volume"></div>
+
+<script>
+// Grid dimensions are now configurable at runtime (see buildGrid()).
+let ROWS = 36;
+let COLS = 64;
+
+// Must match the CSS: .cell size, #grid gap, and #grid padding.
+const CELL_SIZE = 12;
+const CELL_GAP = 2;
+const GRID_PADDING = 10;
+const CELL_STEP = CELL_SIZE + CELL_GAP;
+
+let audioCtx;
+let buffer;
+let timer;
+let step = 0;
+let sources = [];
+
+let mouseDown = false;
+let dragAction = null; // "on" or "off", locked in for the current drag stroke
+
+// loop
+let loopStart = 0;
+let loopEnd = COLS - 1;
+
+// note combining
+let stepSeconds = 0.125;   // duration of one step, set in start()
+let previousColPlayed = null; // last column actually played, used to detect true adjacency
+
+// volume
+let volumeCurve = [];
+
+// record
+let recording = false;
+let recordBuffer = [];
+
+// state
+let state = [];
+
+const grid = document.getElementById("grid");
+const volumeDiv = document.getElementById("volume");
+const recStatus = document.getElementById("recStatus");
+
+// loop-handle elements + drag flags (elements recreated on each rebuild)
+let handleA, handleB;
+let dragA = false;
+let dragB = false;
+let volMouse = false;
+
+// ================= AUDIO =================
+async function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state !== "running") await audioCtx.resume();
+}
+
+// ================= GRID BUILD =================
+// (Re)builds the whole grid + volume row from the Width/Height inputs.
+// Wipes the current pattern - call stop() first if the transport is running.
+function buildGrid() {
+  ROWS = Math.max(1, Math.min(128, Math.round(+document.getElementById("gridHeight").value) || 36));
+  COLS = Math.max(1, Math.round(+document.getElementById("gridWidth").value) || 64);
+
+  state = Array.from({length: ROWS}, () => Array.from({length: COLS}, () => false));
+  volumeCurve = Array.from({length: COLS}, () => 1);
+  loopStart = 0;
+  loopEnd = COLS - 1;
+  previousColPlayed = null;
+
+  grid.innerHTML = "";
+  volumeDiv.innerHTML = "";
+
+  grid.style.gridTemplateColumns = `repeat(${COLS}, ${CELL_SIZE}px)`;
+  grid.style.gridTemplateRows = `repeat(${ROWS}, ${CELL_SIZE}px)`;
+  volumeDiv.style.gridTemplateColumns = `repeat(${COLS}, ${CELL_SIZE}px)`;
+
+  // ---- cells ----
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+
+      const c = document.createElement("div");
+      c.className = "cell";
+
+      const on = () => {
+        state[y][x] = true;
+        c.classList.add("active");
+        if (recording) recordBuffer.push({y,x,v:1});
+        updateNoteBars();
+      };
+
+      const off = () => {
+        state[y][x] = false;
+        c.classList.remove("active");
+        if (recording) recordBuffer.push({y,x,v:0});
+        updateNoteBars();
+      };
+
+      c.onmousedown = (e) => {
+        mouseDown = true;
+
+        const deleteMode = document.getElementById("deleteMode").checked;
+
+        // Decide the action for this whole drag stroke up front, so painting
+        // across multiple cells is consistent instead of toggling each one.
+        if (deleteMode || e.shiftKey) {
+          dragAction = "off";
+        } else {
+          dragAction = state[y][x] ? "off" : "on"; // toggle: empty -> add, filled -> delete
+        }
+
+        dragAction === "on" ? on() : off();
+      };
+
+      c.onmouseenter = () => {
+        if (!mouseDown) return;
+        dragAction === "on" ? on() : off();
+      };
+
+      grid.appendChild(c);
+    }
+  }
+
+  // ---- loop handles ----
+  handleA = document.createElement("div");
+  handleB = document.createElement("div");
+  handleA.className = handleB.className = "handle";
+  grid.appendChild(handleA);
+  grid.appendChild(handleB);
+
+  handleA.onmousedown = () => dragA = true;
+  handleB.onmousedown = () => dragB = true;
+
+  updateLoop();
+
+  // ---- volume row ----
+  for (let i = 0; i < COLS; i++) {
+    const col = document.createElement("div");
+    col.className = "vcol";
+
+    const fill = document.createElement("div");
+    fill.className = "vfill";
+    fill.style.height = "50%";
+
+    col.appendChild(fill);
+
+    const set = (e) => {
+      const r = col.getBoundingClientRect();
+      let v = 1 - (e.clientY - r.top) / r.height;
+      v = Math.max(0, Math.min(1, v));
+
+      volumeCurve[i] = v;
+      fill.style.height = (v * 100) + "%";
+    };
+
+    col.onmousedown = (e) => {
+      volMouse = true;
+      set(e);
+    };
+
+    col.onmouseenter = (e) => {
+      if (volMouse) set(e);
+    };
+
+    volumeDiv.appendChild(col);
+  }
+
+  updateNoteBars();
+}
+
+window.addEventListener("mouseup", () => { mouseDown = false; dragA = dragB = false; volMouse = false; });
+
+// ================= VISUAL NOTE JOINING =================
+function updateNoteBars() {
+  document.querySelectorAll(".note-bar").forEach(el => el.remove());
+
+  const combine = document.getElementById("combineNotes").checked;
+  if (!combine) return;
+
+  for (let row = 0; row < ROWS; row++) {
+    let col = 0;
+    while (col < COLS) {
+      if (!state[row][col]) { col++; continue; }
+
+      let runEnd = col;
+      while (runEnd + 1 < COLS && state[row][runEnd + 1]) runEnd++;
+      const runLength = runEnd - col + 1;
+
+      if (runLength > 1) {
+        const bar = document.createElement("div");
+        bar.className = "note-bar";
+        bar.style.left = (GRID_PADDING + col * CELL_STEP) + "px";
+        bar.style.top = (GRID_PADDING + row * CELL_STEP) + "px";
+        bar.style.width = (runLength * CELL_SIZE + (runLength - 1) * CELL_GAP) + "px";
+        bar.style.height = CELL_SIZE + "px";
+        grid.appendChild(bar);
+      }
+
+      col = runEnd + 1;
+    }
+  }
+}
+
+document.getElementById("combineNotes").addEventListener("change", updateNoteBars);
+
+// ================= LOOP =================
+grid.addEventListener("mousemove", (e) => {
+  if (!dragA && !dragB) return;
+
+  const rect = grid.getBoundingClientRect();
+  const colWidth = rect.width / COLS;
+  const x = Math.floor((e.clientX - rect.left) / colWidth);
+
+  if (dragA) loopStart = Math.max(0, Math.min(loopEnd - 1, x));
+  if (dragB) loopEnd = Math.min(COLS - 1, Math.max(loopStart + 1, x));
+
+  updateLoop();
+});
+
+function updateLoop() {
+  const rect = grid.getBoundingClientRect();
+  const colWidth = rect.width / COLS;
+
+  handleA.style.left = loopStart * colWidth + "px";
+  handleB.style.left = loopEnd * colWidth + "px";
+}
+
+// ================= SCALES =================
+// Each scale is a set of semitone offsets from the root, within one octave (0-11).
+const SCALES = {
+  chromatic:        [0,1,2,3,4,5,6,7,8,9,10,11],
+  major:            [0,2,4,5,7,9,11],
+  minor:            [0,2,3,5,7,8,10],
+  harmonicMinor:    [0,2,3,5,7,8,11],
+  melodicMinor:     [0,2,3,5,7,9,11],
+  dorian:           [0,2,3,5,7,9,10],
+  phrygian:         [0,1,3,5,7,8,10],
+  lydian:           [0,2,4,6,7,9,11],
+  mixolydian:       [0,2,4,5,7,9,10],
+  locrian:          [0,1,3,5,6,8,10],
+  majorPentatonic:  [0,2,4,7,9],
+  minorPentatonic:  [0,3,5,7,10],
+  blues:            [0,3,5,6,7,10],
+  wholeTone:        [0,2,4,6,8,10],
+  hirajoshi:        [0,2,3,7,8],
+  inSen:            [0,1,5,7,10],
+  hungarianMinor:   [0,2,3,6,7,8,11],
+  phrygianDominant: [0,1,4,5,7,8,10],
+};
+
+const scaleSelect = document.getElementById("scale");
+const rootSelect = document.getElementById("root");
+
+// Snap an arbitrary semitone value to the nearest note in the chosen scale/root.
+function quantizeSemitone(semitone) {
+  const pattern = SCALES[scaleSelect.value] || SCALES.chromatic;
+  const root = +rootSelect.value;
+
+  const shifted = semitone - root;
+  const octave = Math.floor(shifted / 12);
+  const local = shifted - octave * 12; // 0..11
+
+  let best = pattern[0];
+  let bestDist = Infinity;
+
+  for (const v of pattern) {
+    for (const wrap of [-12, 0, 12]) {
+      const cand = v + wrap;
+      const dist = Math.abs(cand - local);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = cand;
+      }
+    }
+  }
+
+  return root + octave * 12 + best;
+}
+
+// Row -> raw (pre-quantize) semitone offset. Centered on the grid's middle
+// row so the pattern is roughly centered on middle C regardless of height.
+function rowToRawSemitone(row) {
+  const center = Math.floor(ROWS / 2);
+  const inverted = ROWS - 1 - row;
+  return inverted - center;
+}
+
+// ================= AUDIO =================
+function stopAll() {
+  sources.forEach(s => { try { s.stop(); } catch {} });
+  sources = [];
+}
+
+function play(col) {
+  if (!buffer) return;
+
+  const master = +document.getElementById("master").value;
+  const combine = document.getElementById("combineNotes").checked;
+
+  if (!combine) {
+    // Original behaviour: cut everything and retrigger each active cell fresh.
+    stopAll();
+
+    for (let row = 0; row < ROWS; row++) {
+      if (!state[row][col]) continue;
+
+      const src = audioCtx.createBufferSource();
+      src.buffer = buffer;
+
+      const semitone = quantizeSemitone(rowToRawSemitone(row));
+      src.playbackRate.value = Math.pow(2, semitone / 12);
+
+      const gain = audioCtx.createGain();
+      gain.gain.value = volumeCurve[col] * master;
+
+      src.connect(gain).connect(audioCtx.destination);
+      src.start();
+
+      sources.push(src);
+    }
+
+    draw(col);
+    return;
+  }
+
+  // Combine mode: consecutive lit cells in the same row become one held note.
+  const prevCol = col === loopStart ? loopEnd : col - 1;
+
+  for (let row = 0; row < ROWS; row++) {
+    if (!state[row][col]) continue;
+
+    // Was this row already sounding from the immediately preceding step?
+    // (previousColPlayed guards against false positives on the very first step,
+    // or when the loop wraps back to a column that hasn't actually played yet.)
+    const isContinuation = previousColPlayed === prevCol && state[row][prevCol];
+    if (isContinuation) continue; // already sustaining, don't retrigger
+
+    // Measure how many consecutive cells (within the loop range) this note spans.
+    let runLength = 1;
+    let c = col;
+    while (true) {
+      const nextCol = c === loopEnd ? loopStart : c + 1;
+      if (nextCol === col) break; // wrapped the whole loop
+      if (!state[row][nextCol]) break;
+      runLength++;
+      c = nextCol;
+    }
+
+    const src = audioCtx.createBufferSource();
+    src.buffer = buffer;
+
+    const semitone = quantizeSemitone(rowToRawSemitone(row));
+    src.playbackRate.value = Math.pow(2, semitone / 12);
+
+    const gain = audioCtx.createGain();
+    const targetVol = volumeCurve[col] * master;
+    gain.gain.value = targetVol;
+
+    src.connect(gain).connect(audioCtx.destination);
+
+    const now = audioCtx.currentTime;
+    const noteDuration = runLength * stepSeconds;
+    const fadeTime = Math.min(0.02, noteDuration * 0.3); // short fade avoids clicks
+
+    gain.gain.setValueAtTime(targetVol, now + Math.max(0, noteDuration - fadeTime));
+    gain.gain.linearRampToValueAtTime(0.0001, now + noteDuration);
+
+    src.start();
+    src.stop(now + noteDuration + 0.01);
+
+    sources.push(src);
+    src.onended = () => {
+      sources = sources.filter(s => s !== src);
+    };
+  }
+
+  draw(col);
+}
+
+function draw(col) {
+  document.querySelectorAll(".cell").forEach(c => c.classList.remove("playhead"));
+
+  for (let y = 0; y < ROWS; y++) {
+    const i = y * COLS + col;
+    grid.children[i]?.classList.add("playhead");
+  }
+}
+
+// ================= TRANSPORT =================
+// "Step length" dropdown value is in quarter-note units (1 = quarter, 0.25 = sixteenth, etc.)
+function getStepQuarterFraction() {
+  return +document.getElementById("noteLength").value || 0.25;
+}
+
+async function start() {
+  await initAudio();
+  if (!buffer) return alert("Load sample first");
+
+  const bpm = +document.getElementById("bpm").value;
+  const interval = (60000 / bpm) * getStepQuarterFraction();
+  stepSeconds = interval / 1000;
+  previousColPlayed = null;
+
+  step = loopStart;
+  clearInterval(timer);
+
+  timer = setInterval(() => {
+    play(step);
+    previousColPlayed = step;
+    step++;
+    if (step > loopEnd) step = loopStart;
+  }, interval);
+}
+
+function stop() {
+  clearInterval(timer);
+  stopAll();
+}
+
+
+// ================= AUTO LOAD DEFAULT SAMPLE =================
+async function loadDefaultSample() {
+  try {
+    await initAudio();
+    const response = await fetch("sounds/sample.wav");
+    if (!response.ok) return;
+    const arrayBuffer = await response.arrayBuffer();
+    buffer = await audioCtx.decodeAudioData(arrayBuffer);
+    console.log("Default sample loaded");
+  } catch(e){console.log(e);}
+}
+
+// ================= FILE LOAD =================
+document.getElementById("file").onchange = async (e) => {
+  await initAudio();
+  const buf = await e.target.files[0].arrayBuffer();
+  buffer = await audioCtx.decodeAudioData(buf);
+};
+
+// ================= IMAGE TO GRID =================
+let lastImage = null; // holds decoded Image for re-analysis on threshold change
+
+const imgFileInput = document.getElementById("imageFile");
+const thresholdInput = document.getElementById("threshold");
+const invertInput = document.getElementById("invert");
+const imgVolumeInput = document.getElementById("imgVolume");
+
+function analyzeImage() {
+  if (!lastImage) return;
+
+  // Draw the image onto an offscreen canvas sized to the current grid,
+  // stretching it to fill so every column/row maps to one cell.
+  const off = document.createElement("canvas");
+  off.width = COLS;
+  off.height = ROWS;
+  const ctx = off.getContext("2d");
+  ctx.drawImage(lastImage, 0, 0, COLS, ROWS);
+
+  const { data } = ctx.getImageData(0, 0, COLS, ROWS);
+
+  const threshold = +thresholdInput.value;
+  const invert = invertInput.checked;
+  const useVolume = imgVolumeInput.checked;
+
+  // Track per-column average brightness for the volume row
+  const colBrightnessSum = new Array(COLS).fill(0);
+
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const i = (y * COLS + x) * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const luminance = 0.299 * r + 0.587 * g + 0.114 * b; // 0 (black) - 255 (white)
+
+      colBrightnessSum[x] += luminance;
+
+      const on = invert ? luminance < threshold : luminance > threshold;
+
+      const cellIndex = y * COLS + x;
+      const cell = grid.children[cellIndex];
+
+      state[y][x] = on;
+      if (cell) cell.classList.toggle("active", on);
+    }
+  }
+
+  if (useVolume) {
+    for (let x = 0; x < COLS; x++) {
+      const avg = colBrightnessSum[x] / ROWS; // 0-255
+      let v = avg / 255;
+      if (invert) v = 1 - v;
+      v = Math.max(0, Math.min(1, v));
+
+      volumeCurve[x] = v;
+      const col = volumeDiv.children[x];
+      const fill = col?.querySelector(".vfill");
+      if (fill) fill.style.height = (v * 100) + "%";
+    }
+  }
+
+  updateNoteBars();
+}
+
+imgFileInput.onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    lastImage = img;
+    analyzeImage();
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+};
+
+thresholdInput.oninput = analyzeImage;
+invertInput.onchange = analyzeImage;
+imgVolumeInput.onchange = analyzeImage;
+
+// ================= RECORD =================
+document.getElementById("record").onclick = () => {
+  recording = !recording;
+
+  recStatus.textContent = recording ? "● REC" : "";
+  recStatus.className = recording ? "recording" : "";
+
+  if (recording) recordBuffer = [];
+  else console.log("REC:", recordBuffer);
+};
+
+// ================= CLEAR =================
+document.getElementById("clear").onclick = () => {
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      state[y][x] = false;
+    }
+  }
+  document.querySelectorAll(".cell").forEach(c => c.classList.remove("active"));
+  updateNoteBars();
+};
+
+// ================= REBUILD GRID =================
+document.getElementById("rebuildGrid").onclick = () => {
+  stop(); // playback indices would be invalid mid-rebuild
+  buildGrid();
+loadDefaultSample();
+};
+
+// ================= MIDI EXPORT =================
+const PPQN = 480; // ticks per quarter note
+
+function writeVarLen(value) {
+  const bytes = [value & 0x7f];
+  value >>= 7;
+  while (value > 0) {
+    bytes.push((value & 0x7f) | 0x80);
+    value >>= 7;
+  }
+  return bytes.reverse();
+}
+
+// Walk the loop range and collect notes, merging consecutive same-row
+// cells into single longer notes when "Combine adjacent notes" is on.
+function collectMidiNotes() {
+  const combine = document.getElementById("combineNotes").checked;
+  const notes = [];
+
+  for (let row = 0; row < ROWS; row++) {
+    let col = loopStart;
+    while (col <= loopEnd) {
+      if (!state[row][col]) { col++; continue; }
+
+      let runEnd = col;
+      if (combine) {
+        while (runEnd + 1 <= loopEnd && state[row][runEnd + 1]) runEnd++;
+      }
+
+      notes.push({ startStep: col - loopStart, length: runEnd - col + 1, row });
+      col = runEnd + 1;
+    }
+  }
+
+  return notes;
+}
+
+function buildMidiFile() {
+  const bpm = +document.getElementById("bpm").value;
+  const ticksPerStep = Math.round(PPQN * getStepQuarterFraction());
+  const notes = collectMidiNotes();
+
+  const events = [];
+  notes.forEach(n => {
+    const semitone = quantizeSemitone(rowToRawSemitone(n.row));
+    const pitch = Math.max(0, Math.min(127, 60 + semitone)); // 60 = middle C reference
+
+    const tickStart = n.startStep * ticksPerStep;
+    const tickEnd = tickStart + n.length * ticksPerStep;
+
+    events.push({ tick: tickStart, type: 1, pitch }); // note on
+    events.push({ tick: tickEnd, type: 0, pitch });   // note off
+  });
+
+  // Note-offs before note-ons at the same tick, to avoid stuck/overlapping notes.
+  events.sort((a, b) => a.tick - b.tick || a.type - b.type);
+
+  const trackBytes = [];
+
+  // Tempo meta event at time 0
+  const microsPerQuarter = Math.round(60000000 / bpm);
+  trackBytes.push(...writeVarLen(0), 0xFF, 0x51, 0x03,
+    (microsPerQuarter >> 16) & 0xff,
+    (microsPerQuarter >> 8) & 0xff,
+    microsPerQuarter & 0xff);
+
+  let prevTick = 0;
+  events.forEach(e => {
+    trackBytes.push(...writeVarLen(e.tick - prevTick));
+    if (e.type === 1) trackBytes.push(0x90, e.pitch, 100);
+    else trackBytes.push(0x80, e.pitch, 0);
+    prevTick = e.tick;
+  });
+
+  // End of track
+  trackBytes.push(...writeVarLen(0), 0xFF, 0x2F, 0x00);
+
+  const trackLength = trackBytes.length;
+
+  const header = [
+    0x4D, 0x54, 0x68, 0x64,       // "MThd"
+    0, 0, 0, 6,                   // header chunk length
+    0, 0,                         // format 0
+    0, 1,                         // 1 track
+    (PPQN >> 8) & 0xff, PPQN & 0xff,
+  ];
+
+  const trackHeader = [
+    0x4D, 0x54, 0x72, 0x6B,       // "MTrk"
+    (trackLength >> 24) & 0xff,
+    (trackLength >> 16) & 0xff,
+    (trackLength >> 8) & 0xff,
+    trackLength & 0xff,
+  ];
+
+  return new Uint8Array([...header, ...trackHeader, ...trackBytes]);
+}
+
+document.getElementById("exportMidi").onclick = () => {
+  const bytes = buildMidiFile();
+  const blob = new Blob([bytes], { type: "audio/midi" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "sequence.mid";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+// ================= BUTTONS =================
+document.getElementById("start").onclick = start;
+document.getElementById("stop").onclick = stop;
+
+// ================= INIT =================
+buildGrid();
+</script>
+</body>
+</html>
