@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pentatonic Echo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0a0e17;
+    --panel: #111826;
+    --panel-line: rgba(255,255,255,0.07);
+    --amber: #f2a93b;
+    --amber-dim: rgba(242,169,59,0.25);
+    --teal: #43d9c8;
+    --teal-dim: rgba(67,217,200,0.25);
+    --text: #e7ecf3;
+    --muted: #6b7686;
+    --mono: 'IBM Plex Mono', monospace;
+    --display: 'Space Grotesk', sans-serif;
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0; background: var(--bg); color: var(--text);
+    font-family: var(--display);
+    min-height:100vh;
+  }
+  body{
+    display:flex; justify-content:center;
+    padding: 40px 20px 80px;
+  }
+  .app{ width:100%; max-width: 640px; }
+
+  header{ margin-bottom: 28px; }
+  .eyebrow{
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em;
+    color: var(--teal); text-transform: uppercase; margin-bottom: 10px;
+  }
+  h1{ font-size: 34px; font-weight: 700; margin: 0 0 10px; letter-spacing: -0.01em; }
+  .sub{ color: var(--muted); font-size: 15px; line-height: 1.5; margin: 0; max-width: 46ch; }
+
+  .sonar-wrap{
+    position: relative; width: 100%; max-width: 480px; margin: 32px auto 8px;
+  }
+  #sonar{ width: 100%; height: auto; display:block; }
+
+  .readout{
+    display:flex; flex-direction:column; gap: 6px;
+    font-family: var(--mono); font-size: 12.5px;
+    background: var(--panel); border: 1px solid var(--panel-line);
+    border-radius: 10px; padding: 14px 16px; margin-top: 18px;
+  }
+  .readout-row{ display:flex; justify-content: space-between; gap: 12px; }
+  .readout-row span:first-child{ color: var(--muted); letter-spacing: 0.08em; }
+  .readout-row span:last-child{ color: var(--text); font-weight: 500; }
+  #statusText.active{ color: var(--teal); }
+
+  .scope-wrap{
+    background: var(--panel); border: 1px solid var(--panel-line);
+    border-radius: 10px; margin-top: 14px; padding: 10px 12px;
+  }
+  #scope{ width: 100%; height: 72px; display:block; }
+
+  .controls{
+    display:flex; flex-wrap:wrap; gap: 12px; margin-top: 22px; align-items: center;
+  }
+  .btn{
+    font-family: var(--display); font-weight: 600; font-size: 14.5px;
+    padding: 13px 22px; border-radius: 999px; border: 1px solid transparent;
+    cursor: pointer; transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+    background: none; color: var(--text);
+  }
+  .btn:active{ transform: scale(0.97); }
+  .btn-amber{ background: var(--amber); color: #1a1200; }
+  .btn-amber:hover{ box-shadow: 0 0 0 4px var(--amber-dim); }
+  .btn-teal{ background: transparent; border-color: var(--teal); color: var(--teal); }
+  .btn-teal:hover{ box-shadow: 0 0 0 4px var(--teal-dim); }
+  .btn-teal.on{ background: var(--teal); color: #06201c; }
+  .btn:focus-visible{ outline: 2px solid var(--text); outline-offset: 3px; }
+  .btn:disabled{ opacity: 0.4; cursor: not-allowed; }
+
+  .bpm-control{
+    display:flex; flex-direction:column; gap: 4px; margin-left: auto;
+    font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    min-width: 180px;
+  }
+  .bpm-control label{ letter-spacing: 0.06em; }
+  .bpm-control span{ color: var(--text); }
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; width:100%; height: 3px;
+    background: var(--panel-line); border-radius: 2px; outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width: 14px; height:14px; border-radius:50%;
+    background: var(--teal); cursor:pointer; border: none;
+  }
+  input[type=range]:focus-visible::-webkit-slider-thumb{ outline: 2px solid var(--text); outline-offset: 2px; }
+
+  .log{
+    margin-top: 20px; font-family: var(--mono); font-size: 12px; line-height: 1.7;
+    color: var(--muted); max-height: 220px; overflow-y: auto;
+    background: var(--panel); border: 1px solid var(--panel-line); border-radius: 10px;
+    padding: 12px 16px;
+  }
+  .log div{ white-space: pre-wrap; }
+  .log .t{ color: #3d4656; margin-right: 8px; }
+  .log .amber{ color: var(--amber); }
+  .log .teal{ color: var(--teal); }
+
+  .note{
+    margin-top: 16px; font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    line-height: 1.6;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .btn{ transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="eyebrow">Sine · Call &amp; Response</div>
+    <h1>Pentatonic Echo</h1>
+    <p class="sub">Send a plain sine tone from a 3-octave pentatonic scale. Turn on listening and it will wait for something close, then answer back after half a beat, a beat, two, or four.</p>
+  </header>
+
+  <div class="sonar-wrap">
+    <canvas id="sonar" width="600" height="600"></canvas>
+  </div>
+
+  <div class="readout">
+    <div class="readout-row"><span>LAST SENT</span><span id="lastSent">—</span></div>
+    <div class="readout-row"><span>LAST HEARD</span><span id="lastHeard">—</span></div>
+    <div class="readout-row"><span>STATUS</span><span id="statusText">Idle</span></div>
+  </div>
+
+  <div class="scope-wrap">
+    <canvas id="scope" width="800" height="140"></canvas>
+  </div>
+
+  <div class="controls">
+    <button id="pingBtn" class="btn btn-amber">Send tone</button>
+    <button id="listenBtn" class="btn btn-teal">Start listening</button>
+    <div class="bpm-control">
+      <label for="bpm">TEMPO — <span id="bpmVal">100</span> BPM</label>
+      <input type="range" id="bpm" min="40" max="200" value="100">
+    </div>
+  </div>
+
+  <div class="log" id="log"></div>
+
+  <p class="note">Listening uses your microphone to detect an incoming sine tone by pitch, so it works best over speakers with some distance, or in a quiet room. Headphones will stop it from ever hearing itself, but the app also mutes its own ear for a moment every time it plays a tone so it doesn't reply to its own voice.</p>
+</div>
+
+<script>
+(function(){
+  // ---------- Pentatonic scale, 3 octaves ----------
+  const ROOT_MIDI = 48; // C3
+  const STEPS = [0,2,4,7,9]; // major pentatonic
+  const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  function midiToFreq(m){ return 440 * Math.pow(2, (m-69)/12); }
+  const scale = [];
+  for(let oct=0; oct<3; oct++){
+    STEPS.forEach((step, i)=>{
+      const midi = ROOT_MIDI + oct*12 + step;
+      scale.push({
+        midi, freq: midiToFreq(midi),
+        name: NAMES[midi%12] + (Math.floor(midi/12)-1),
+        ring: oct, angleIdx: i
+      });
+    });
+  }
+
+  // ---------- Audio setup ----------
+  let audioCtx = null;
+  let outputAnalyser, inputAnalyser;
+  let micStream = null;
+  let listening = false;
+  let scopeSource = 'idle'; // 'idle' | 'output' | 'input'
+  let suppressUntil = 0;
+  let lastHeardAt = 0;
+  let bpm = 100;
+
+  function ensureAudio(){
+    if(!audioCtx){
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      outputAnalyser = audioCtx.createAnalyser();
+      outputAnalyser.fftSize = 2048;
+    }
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function pickRandomNote(exclude){
+    let n;
+    do { n = scale[Math.floor(Math.random()*scale.length)]; }
+    while (exclude && n === exclude && scale.length > 1);
+    return n;
+  }
+
+  function playTone(note, origin){
+    ensureAudio();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = note.freq;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.3, now + 0.015);
+    gain.gain.setValueAtTime(0.3, now + 0.32);
+    gain.gain.linearRampToValueAtTime(0, now + 0.55);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    gain.connect(outputAnalyser);
+    osc.start(now);
+    osc.stop(now + 0.6);
+
+    scopeSource = 'output';
+    suppressUntil = performance.now() + 620 + 350;
+    setTimeout(()=>{ if(performance.now() >= suppressUntil) scopeSource = listening ? 'input' : 'idle'; }, 620+360);
+
+    lastSentNote = note;
+    document.getElementById('lastSent').textContent = `${note.name}  (${note.freq.toFixed(1)} Hz)`;
+    triggerRipple(note, origin === 'manual' ? 'amber' : 'teal');
+    logLine(`${origin === 'manual' ? 'Sent' : 'Responded with'} ${note.name} — ${note.freq.toFixed(1)} Hz`, origin === 'manual' ? 'amber' : 'teal');
+  }
+
+  let lastSentNote = null;
+
+  // ---------- Pitch detection (autocorrelation) ----------
+  let inputBuf = null;
+
+  function autoCorrelate(buf, sampleRate){
+    const SIZE = buf.length;
+    let rms = 0;
+    for(let i=0;i<SIZE;i++) rms += buf[i]*buf[i];
+    rms = Math.sqrt(rms/SIZE);
+    if(rms < 0.012) return -1;
+
+    let r1 = 0, r2 = SIZE-1;
+    const thresh = 0.2;
+    for(let i=0;i<SIZE/2;i++){ if(Math.abs(buf[i]) < thresh){ r1 = i; break; } }
+    for(let i=1;i<SIZE/2;i++){ if(Math.abs(buf[SIZE-i]) < thresh){ r2 = SIZE-i; break; } }
+    const trimmed = buf.slice(r1, r2);
+    const n = trimmed.length;
+    if(n < 8) return -1;
+
+    const c = new Float32Array(n);
+    for(let lag=0; lag<n; lag++){
+      let sum = 0;
+      for(let i=0;i<n-lag;i++) sum += trimmed[i]*trimmed[i+lag];
+      c[lag] = sum;
+    }
+    let d = 0;
+    while(d < n-1 && c[d] > c[d+1]) d++;
+    let maxVal = -1, maxPos = -1;
+    for(let i=d;i<n;i++){ if(c[i] > maxVal){ maxVal = c[i]; maxPos = i; } }
+    let T0 = maxPos;
+    if(T0 > 0 && T0 < n-1){
+      const x1=c[T0-1], x2=c[T0], x3=c[T0+1];
+      const a=(x1+x3-2*x2)/2, b=(x3-x1)/2;
+      if(a) T0 = T0 - b/(2*a);
+    }
+    if(T0 <= 0) return -1;
+    return sampleRate / T0;
+  }
+
+  function closestNote(freq){
+    let best = null, bestCents = Infinity;
+    for(const n of scale){
+      const cents = 1200 * Math.log2(freq / n.freq);
+      if(Math.abs(cents) < Math.abs(bestCents)){ bestCents = cents; best = n; }
+    }
+    return { note: best, cents: bestCents };
+  }
+
+  let detectTimer = null;
+  function detectTick(){
+    if(!listening || !inputAnalyser) return;
+    inputAnalyser.getFloatTimeDomainData(inputBuf);
+    const now = performance.now();
+    if(now < suppressUntil) return;
+    const freq = autoCorrelate(inputBuf, audioCtx.sampleRate);
+    if(freq === -1) return;
+    if(freq < 100 || freq > 1200) return;
+    const { note, cents } = closestNote(freq);
+    if(Math.abs(cents) <= 40 && now - lastHeardAt > 900){
+      lastHeardAt = now;
+      document.getElementById('lastHeard').textContent = `${note.name}  (${freq.toFixed(1)} Hz, ${cents>=0?'+':''}${cents.toFixed(0)}¢)`;
+      triggerRipple(note, 'teal');
+      const beatOptions = [0.5, 1, 2, 4];
+      const beats = beatOptions[Math.floor(Math.random()*beatOptions.length)];
+      const delayMs = beats * (60/bpm) * 1000;
+      const statusEl = document.getElementById('statusText');
+      statusEl.textContent = `Heard it — replying in ${beats} beat${beats===1?'':'s'}…`;
+      statusEl.classList.add('active');
+      logLine(`Heard ${note.name} — ${freq.toFixed(1)} Hz (${cents>=0?'+':''}${cents.toFixed(0)}¢) → replying in ${beats} beat${beats===1?'':'s'}`, 'teal');
+      setTimeout(()=>{
+        if(!listening) return;
+        playTone(pickRandomNote(note), 'response');
+        statusEl.textContent = 'Listening…';
+      }, delayMs);
+    }
+  }
+
+  // ---------- Sonar (signature visual) ----------
+  const sonarCanvas = document.getElementById('sonar');
+  const sctx = sonarCanvas.getContext('2d');
+  const CX = 300, CY = 300;
+  const ringRadii = [95, 155, 215];
+  let sweepAngle = 0;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function nodePos(note){
+    const angle = (-90 + note.angleIdx * 72) * Math.PI/180;
+    const r = ringRadii[note.ring];
+    return { x: CX + r*Math.cos(angle), y: CY + r*Math.sin(angle), r, angle };
+  }
+
+  let ripples = [];
+  function triggerRipple(note, color){
+    const pos = nodePos(note);
+    ripples.push({ x: pos.x, y: pos.y, start: performance.now(), color, note });
+  }
+
+  function drawSonar(){
+    sctx.clearRect(0,0,600,600);
+
+    // rings
+    sctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    sctx.lineWidth = 1;
+    ringRadii.forEach(r=>{
+      sctx.beginPath();
+      sctx.arc(CX, CY, r, 0, Math.PI*2);
+      sctx.stroke();
+    });
+
+    // radial guides
+    for(let i=0;i<5;i++){
+      const angle = (-90 + i*72) * Math.PI/180;
+      sctx.beginPath();
+      sctx.moveTo(CX + 60*Math.cos(angle), CY + 60*Math.sin(angle));
+      sctx.lineTo(CX + 230*Math.cos(angle), CY + 230*Math.sin(angle));
+      sctx.strokeStyle = 'rgba(255,255,255,0.04)';
+      sctx.stroke();
+    }
+
+    // sweep
+    if(!reducedMotion) sweepAngle += 0.006;
+    const grad = sctx.createConicGradient ? sctx.createConicGradient(sweepAngle - Math.PI/2, CX, CY) : null;
+    sctx.save();
+    if(grad){
+      grad.addColorStop(0, 'rgba(67,217,200,0.18)');
+      grad.addColorStop(0.06, 'rgba(67,217,200,0)');
+      grad.addColorStop(1, 'rgba(67,217,200,0)');
+      sctx.fillStyle = grad;
+      sctx.beginPath();
+      sctx.arc(CX, CY, 230, 0, Math.PI*2);
+      sctx.fill();
+    }
+    sctx.restore();
+
+    // nodes
+    scale.forEach(note=>{
+      const pos = nodePos(note);
+      sctx.beginPath();
+      sctx.arc(pos.x, pos.y, 4.5, 0, Math.PI*2);
+      sctx.fillStyle = 'rgba(255,255,255,0.28)';
+      sctx.fill();
+    });
+
+    // center label
+    sctx.fillStyle = 'rgba(255,255,255,0.25)';
+    sctx.font = '11px "IBM Plex Mono", monospace';
+    sctx.textAlign = 'center';
+    sctx.fillText('OCT 3', CX, CY - ringRadii[0] + 14);
+    sctx.fillText('OCT 4', CX, CY - ringRadii[1] + 14);
+    sctx.fillText('OCT 5', CX, CY - ringRadii[2] + 14);
+
+    // ripples
+    const now = performance.now();
+    ripples = ripples.filter(rp => now - rp.start < 900);
+    ripples.forEach(rp=>{
+      const progress = (now - rp.start) / 900;
+      const radius = 6 + progress * 34;
+      const alpha = 1 - progress;
+      sctx.beginPath();
+      sctx.arc(rp.x, rp.y, radius, 0, Math.PI*2);
+      sctx.strokeStyle = rp.color === 'amber'
+        ? `rgba(242,169,59,${alpha})`
+        : `rgba(67,217,200,${alpha})`;
+      sctx.lineWidth = 2;
+      sctx.stroke();
+
+      // solid core node while active
+      sctx.beginPath();
+      sctx.arc(rp.x, rp.y, 5.5, 0, Math.PI*2);
+      sctx.fillStyle = rp.color === 'amber' ? '#f2a93b' : '#43d9c8';
+      sctx.shadowColor = rp.color === 'amber' ? '#f2a93b' : '#43d9c8';
+      sctx.shadowBlur = 12 * (1-progress);
+      sctx.fill();
+      sctx.shadowBlur = 0;
+    });
+  }
+
+  // ---------- Oscilloscope ----------
+  const scopeCanvas = document.getElementById('scope');
+  const scx = scopeCanvas.getContext('2d');
+  const outputBuf = new Float32Array(2048);
+
+  function drawScope(){
+    const w = scopeCanvas.width, h = scopeCanvas.height;
+    scx.clearRect(0,0,w,h);
+    scx.strokeStyle = 'rgba(255,255,255,0.05)';
+    scx.beginPath(); scx.moveTo(0,h/2); scx.lineTo(w,h/2); scx.stroke();
+
+    let data = null;
+    if(scopeSource === 'output' && outputAnalyser){ outputAnalyser.getFloatTimeDomainData(outputBuf); data = outputBuf; }
+    else if(scopeSource === 'input' && inputBuf){ data = inputBuf; }
+    if(!data) return;
+
+    scx.beginPath();
+    const step = w / data.length;
+    for(let i=0;i<data.length;i++){
+      const x = i*step;
+      const y = h/2 + data[i]*(h/2-6);
+      if(i===0) scx.moveTo(x,y); else scx.lineTo(x,y);
+    }
+    scx.strokeStyle = scopeSource === 'output' ? '#f2a93b' : '#43d9c8';
+    scx.lineWidth = 1.6;
+    scx.stroke();
+  }
+
+  function renderLoop(){
+    drawSonar();
+    drawScope();
+    requestAnimationFrame(renderLoop);
+  }
+  requestAnimationFrame(renderLoop);
+
+  // ---------- Log ----------
+  function logLine(text, cls){
+    const log = document.getElementById('log');
+    const row = document.createElement('div');
+    const t = new Date();
+    const ts = t.toTimeString().slice(0,8);
+    row.innerHTML = `<span class="t">${ts}</span><span class="${cls||''}">${text}</span>`;
+    log.prepend(row);
+    while(log.children.length > 40) log.removeChild(log.lastChild);
+  }
+
+  // ---------- Controls ----------
+  document.getElementById('pingBtn').addEventListener('click', ()=>{
+    playTone(pickRandomNote(lastSentNote), 'manual');
+  });
+
+  const listenBtn = document.getElementById('listenBtn');
+  listenBtn.addEventListener('click', async ()=>{
+    if(listening){
+      listening = false;
+      listenBtn.textContent = 'Start listening';
+      listenBtn.classList.remove('on');
+      if(micStream) micStream.getTracks().forEach(t=>t.stop());
+      if(detectTimer) clearInterval(detectTimer);
+      scopeSource = 'idle';
+      const statusEl = document.getElementById('statusText');
+      statusEl.textContent = 'Idle';
+      statusEl.classList.remove('active');
+      logLine('Stopped listening.');
+      return;
+    }
+    ensureAudio();
+    try{
+      listenBtn.disabled = true;
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      });
+      const source = audioCtx.createMediaStreamSource(micStream);
+      inputAnalyser = audioCtx.createAnalyser();
+      inputAnalyser.fftSize = 2048;
+      inputBuf = new Float32Array(inputAnalyser.fftSize);
+      source.connect(inputAnalyser);
+
+      listening = true;
+      scopeSource = 'input';
+      listenBtn.textContent = 'Stop listening';
+      listenBtn.classList.add('on');
+      const statusEl = document.getElementById('statusText');
+      statusEl.textContent = 'Listening…';
+      statusEl.classList.add('active');
+      logLine('Listening for a matching tone…');
+      detectTimer = setInterval(detectTick, 60);
+    }catch(err){
+      logLine('Microphone access was blocked or unavailable.');
+    }finally{
+      listenBtn.disabled = false;
+    }
+  });
+
+  const bpmSlider = document.getElementById('bpm');
+  const bpmVal = document.getElementById('bpmVal');
+  bpmSlider.addEventListener('input', ()=>{
+    bpm = parseInt(bpmSlider.value, 10);
+    bpmVal.textContent = bpm;
+  });
+
+  logLine('Ready. Press "Send tone" or turn on listening.');
+})();
+</script>
+</body>
+</html>
