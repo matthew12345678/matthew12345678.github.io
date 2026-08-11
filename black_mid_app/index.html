@@ -1,0 +1,1792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Colour Sequencer</title>
+
+<style>
+body {
+  margin: 0;
+  padding: 20px;
+  background: #0b0b0b;
+  color: #eee;
+  font-family: monospace;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+button, input, select {
+  padding: 6px;
+  font-size: 14px;
+}
+
+/* ---------------- TRACKS ---------------- */
+#tracks {
+  display: flex;
+  gap: 14px;
+  align-items: stretch;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.track {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #141414;
+  border: 1px solid #333;
+  border-left: 6px solid var(--tcolor, #666);
+  min-width: 170px;
+}
+
+.track .trow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.track .fname {
+  font-size: 11px;
+  color: #999;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------- MAIN LAYOUT ---------------- */
+#mainBar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+#mainBar .spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+#paperStatus {
+  font-size: 13px;
+  color: #7fd0ff;
+}
+
+#scoreArea {
+  overflow-x: auto;
+}
+
+/* ---------------- EXPERT MODE MODAL ---------------- */
+#expertOverlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+#expertOverlay.open {
+  display: flex;
+}
+
+#expertModal {
+  background: #121212;
+  border: 1px solid #333;
+  max-width: 920px;
+  width: 100%;
+  max-height: min(90vh, 900px);
+  overflow: auto;
+  padding: 16px 18px 20px;
+  box-sizing: border-box;
+}
+
+#expertModal header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+#expertModal header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: normal;
+  letter-spacing: 0.04em;
+}
+
+#expertModal .section {
+  margin-bottom: 16px;
+}
+
+#expertModal .section h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: normal;
+}
+
+/* ---------------- PAPER SCAN ---------------- */
+#paperPreviewWrap {
+  margin-bottom: 14px;
+  background: #111;
+  border: 1px solid #333;
+  padding: 10px;
+  width: fit-content;
+}
+
+#paperPreview {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  cursor: crosshair;
+}
+
+#paperCameraWrap {
+  margin-bottom: 14px;
+  background: #111;
+  border: 1px solid #333;
+  padding: 10px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+#paperVideo {
+  display: block;
+  max-width: 100%;
+  width: min(480px, 100%);
+  background: #000;
+}
+
+/* ---------------- GRID ---------------- */
+#grid {
+  display: grid;
+  gap: 2px;
+  user-select: none;
+  padding: 10px;
+  background: #111;
+  border: 1px solid #333;
+  position: relative;
+  width: fit-content;
+  overflow-x: auto;
+}
+
+.cell {
+  width: 12px;
+  height: 12px;
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+}
+
+.cell.active { background: #00ff99; }
+.cell.playhead { outline: 1px solid red; }
+
+.note-bar {
+  position: absolute;
+  background: #00ff99;
+  border-radius: 5px;
+  box-shadow: 0 0 4px rgba(0,255,153,0.8);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* LOOP */
+.handle {
+  position: absolute;
+  top: 0;
+  width: 4px;
+  height: 100%;
+  background: #3aa0ff;
+  cursor: ew-resize;
+  z-index: 10;
+}
+
+/* ---------------- VOLUME ---------------- */
+#volume {
+  margin-top: 18px;
+  display: grid;
+  gap: 2px;
+  background: #111;
+  border: 1px solid #333;
+  padding: 10px;
+  width: fit-content;
+}
+
+.vcol {
+  width: 12px;
+  height: 60px;
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+  position: relative;
+}
+
+.vfill {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  background: #ffcc00;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="mainBar">
+  <button type="button" id="importPhotoBtn">Import photo</button>
+  <input type="file" id="paperPhoto" accept="image/*" hidden />
+  <button type="button" id="paperCameraBtn">Take photo</button>
+  <button type="button" id="playToggle">Play</button>
+  <button type="button" id="exportMidi">Export MIDI</button>
+  <span class="spacer"></span>
+  <button type="button" id="expertOpen">Expert mode</button>
+</div>
+
+<div id="scoreArea">
+  <div id="grid"></div>
+  <div id="volume"></div>
+</div>
+
+<!-- ============ Expert mode ============ -->
+<div id="expertOverlay" aria-hidden="true">
+  <div id="expertModal" role="dialog" aria-labelledby="expertTitle">
+    <header>
+      <h2 id="expertTitle">Expert mode</h2>
+      <button type="button" id="expertClose">Close</button>
+    </header>
+
+    <div class="section" id="paperSection">
+      <h3>Score photo</h3>
+      <div class="controls">
+        <span id="paperStatus"></span>
+        <button type="button" id="paperReset" style="display:none;">Redo corners</button>
+        <button type="button" id="paperConfirm" style="display:none;">Re-import</button>
+      </div>
+      <div id="paperCameraWrap" style="display:none;">
+        <video id="paperVideo" autoplay playsinline></video>
+        <div class="controls">
+          <button type="button" id="paperCaptureBtn">Capture</button>
+          <button type="button" id="paperCameraCancel">Cancel</button>
+        </div>
+      </div>
+      <div id="paperPreviewWrap" style="display:none;">
+        <canvas id="paperPreview"></canvas>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Transport</h3>
+      <div class="controls">
+        <button type="button" id="clear">Clear</button>
+        <label>BPM <input id="bpm" type="number" value="120"></label>
+        <label>Master <input id="master" type="range" min="0" max="3" step="0.01" value="1"></label>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Tracks</h3>
+      <div id="tracks"></div>
+    </div>
+
+    <div class="section">
+      <h3>Grid</h3>
+      <div class="controls">
+        <label>Width (steps) <input id="gridWidth" type="number" min="1" max="4096" value="64"></label>
+        <label>Height (rows, max 128) <input id="gridHeight" type="number" min="1" max="128" value="36"></label>
+        <label>Step length
+          <select id="noteLength">
+            <option value="4">1/1 (whole)</option>
+            <option value="2">1/2</option>
+            <option value="1">1/4</option>
+            <option value="0.5">1/8</option>
+            <option value="0.25" selected>1/16</option>
+            <option value="0.125">1/32</option>
+          </select>
+        </label>
+        <button type="button" id="rebuildGrid">Rebuild Grid</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Image analysis</h3>
+      <div class="controls">
+        <label>Image <input type="file" id="imageFile" accept="image/*" /></label>
+        <label>Sensitivity <input id="threshold" type="range" min="0" max="255" step="1" value="100"></label>
+        <label><input type="checkbox" id="invert" /> Invert (dark background, light marks = on)</label>
+        <label><input type="checkbox" id="imgVolume" checked /> Brightness → Volume</label>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Pitch</h3>
+      <div class="controls">
+        <label>Root
+          <select id="root">
+            <option value="0">C</option>
+            <option value="1">C#</option>
+            <option value="2">D</option>
+            <option value="3">D#</option>
+            <option value="4">E</option>
+            <option value="5">F</option>
+            <option value="6">F#</option>
+            <option value="7">G</option>
+            <option value="8">G#</option>
+            <option value="9">A</option>
+            <option value="10">A#</option>
+            <option value="11">B</option>
+          </select>
+        </label>
+        <label>Scale
+          <select id="scale">
+            <option value="chromatic">Chromatic (off)</option>
+            <option value="major" selected>Major (Ionian)</option>
+            <option value="minor">Natural Minor (Aeolian)</option>
+            <option value="harmonicMinor">Harmonic Minor</option>
+            <option value="melodicMinor">Melodic Minor</option>
+            <option value="dorian">Dorian</option>
+            <option value="phrygian">Phrygian</option>
+            <option value="lydian">Lydian</option>
+            <option value="mixolydian">Mixolydian</option>
+            <option value="locrian">Locrian</option>
+            <option value="majorPentatonic">Major Pentatonic</option>
+            <option value="minorPentatonic">Minor Pentatonic</option>
+            <option value="blues">Blues</option>
+            <option value="wholeTone">Whole Tone</option>
+            <option value="hirajoshi">Hirajoshi (Japanese)</option>
+            <option value="inSen">In Sen (Japanese)</option>
+            <option value="hungarianMinor">Hungarian Minor</option>
+            <option value="phrygianDominant">Phrygian Dominant</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="combineNotes" checked /> Combine adjacent notes</label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ================= TRACKS (4 user-defined colours) =================
+// Tracks 0,1,2 = melodic instruments (pitched by row + scale/root).
+// Track 3      = drum track (always plays at normal pitch, no scale quantizing).
+const TRACK_DEFS = [
+  { name: "Instrument 1", color: "#f652f5" },
+  { name: "Instrument 2", color: "#f4f426" },
+  { name: "Instrument 3", color: "#2cf2f3" },
+  { name: "Instrument 4", color: "#ee3b1f" },
+  { name: "Drums",        color: "#24ed21" },
+];
+const TRACK_COUNT = TRACK_DEFS.length;
+const DRUM_TRACK = TRACK_COUNT - 1;
+
+let trackColors = TRACK_DEFS.map(t => t.color); // live colour per track, refreshed from the colour pickers
+let trackBuffers = new Array(TRACK_COUNT).fill(null); // decoded AudioBuffer per track
+let currentDrawTrack = 0; // which track new clicks/drags paint with
+
+// Build the track control panel (colour picker + sample loader + "draw with this" radio)
+const tracksDiv = document.getElementById("tracks");
+TRACK_DEFS.forEach((def, i) => {
+  const wrap = document.createElement("div");
+  wrap.className = "track";
+  wrap.style.setProperty("--tcolor", def.color);
+
+  wrap.innerHTML = `
+    <div class="trow">
+      <label><input type="radio" name="drawTrack" value="${i}" ${i === 0 ? "checked" : ""}> ${def.name}${i === DRUM_TRACK ? " (drum)" : ""}</label>
+    </div>
+    <div class="trow">
+      Colour <input type="color" id="trackColor${i}" value="${def.color}">
+    </div>
+    <div class="trow">
+      <input type="file" id="trackFile${i}" accept="audio/*">
+    </div>
+    <div class="fname" id="trackFileName${i}">no sample loaded</div>
+  `;
+  tracksDiv.appendChild(wrap);
+});
+
+// Wire up colour pickers, sample loaders, and the draw-track radios
+for (let i = 0; i < TRACK_COUNT; i++) {
+  const colorInput = document.getElementById(`trackColor${i}`);
+  const fileInput = document.getElementById(`trackFile${i}`);
+  const fileName = document.getElementById(`trackFileName${i}`);
+  const trackEl = fileInput.closest(".track");
+
+  colorInput.oninput = () => {
+    trackColors[i] = colorInput.value;
+    trackEl.style.setProperty("--tcolor", colorInput.value);
+    repaintTrack(i);
+  };
+
+  fileInput.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    await initAudio();
+    const buf = await file.arrayBuffer();
+    trackBuffers[i] = await audioCtx.decodeAudioData(buf);
+    fileName.textContent = file.name;
+  };
+}
+
+document.querySelectorAll('input[name="drawTrack"]').forEach(r => {
+  r.onchange = (e) => { if (e.target.checked) currentDrawTrack = +e.target.value; };
+});
+
+// Re-colour every already-painted cell/note-bar belonging to a track
+// (used when the user tweaks a colour picker after drawing).
+function repaintTrack(trackIndex) {
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      if (state[y][x] === trackIndex) {
+        const cell = grid.children[y * COLS + x];
+        if (cell) cell.style.background = trackColors[trackIndex];
+      }
+    }
+  }
+  updateNoteBars();
+}
+
+// Nearest-colour match: given an [r,g,b], find which track colour it's closest to.
+function hexToRgb(hex) {
+  const v = hex.replace("#", "");
+  return [parseInt(v.substr(0, 2), 16), parseInt(v.substr(2, 2), 16), parseInt(v.substr(4, 2), 16)];
+}
+
+function nearestTrackForColor(r, g, b) {
+  let best = 0, bestDist = Infinity;
+  for (let i = 0; i < TRACK_COUNT; i++) {
+    const [tr, tg, tb] = hexToRgb(trackColors[i]);
+    const dist = (r - tr) ** 2 + (g - tg) ** 2 + (b - tb) ** 2;
+    if (dist < bestDist) { bestDist = dist; best = i; }
+  }
+  return best;
+}
+
+// Grid dimensions are now configurable at runtime (see buildGrid()).
+let ROWS = 36;
+let COLS = 64;
+
+// Must match the CSS: .cell size, #grid gap, and #grid padding.
+const CELL_SIZE = 12;
+const CELL_GAP = 2;
+const GRID_PADDING = 10;
+const CELL_STEP = CELL_SIZE + CELL_GAP;
+
+let audioCtx;
+let timer;
+let step = 0;
+let sources = [];
+
+let mouseDown = false;
+let dragAction = null; // "on" or "off", locked in for the current drag stroke
+let dragTrack = 0;     // track locked in for the current drag stroke
+
+// loop
+let loopStart = 0;
+let loopEnd = COLS - 1;
+
+// note combining
+let stepSeconds = 0.125;   // duration of one step, set in start()
+let previousColPlayed = null; // last column actually played, used to detect true adjacency
+
+// volume
+let volumeCurve = [];
+
+// state: state[y][x] holds the track index (0..3) painted there, or -1 if empty
+let state = [];
+
+const grid = document.getElementById("grid");
+const volumeDiv = document.getElementById("volume");
+
+// loop-handle elements + drag flags (elements recreated on each rebuild)
+let handleA, handleB;
+let dragA = false;
+let dragB = false;
+let volMouse = false;
+
+// ================= AUDIO =================
+async function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state !== "running") await audioCtx.resume();
+}
+
+// ================= GRID BUILD =================
+// (Re)builds the whole grid + volume row from the Width/Height inputs.
+// Wipes the current pattern - call stop() first if the transport is running.
+function buildGrid() {
+  ROWS = Math.max(1, Math.min(128, Math.round(+document.getElementById("gridHeight").value) || 36));
+  COLS = Math.max(1, Math.round(+document.getElementById("gridWidth").value) || 64);
+
+  state = Array.from({length: ROWS}, () => Array.from({length: COLS}, () => -1));
+  volumeCurve = Array.from({length: COLS}, () => 1);
+  loopStart = 0;
+  loopEnd = COLS - 1;
+  previousColPlayed = null;
+
+  grid.innerHTML = "";
+  volumeDiv.innerHTML = "";
+
+  grid.style.gridTemplateColumns = `repeat(${COLS}, ${CELL_SIZE}px)`;
+  grid.style.gridTemplateRows = `repeat(${ROWS}, ${CELL_SIZE}px)`;
+  volumeDiv.style.gridTemplateColumns = `repeat(${COLS}, ${CELL_SIZE}px)`;
+
+  // ---- cells ----
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+
+      const c = document.createElement("div");
+      c.className = "cell";
+
+      const on = (track) => {
+        state[y][x] = track;
+        c.classList.add("active");
+        c.style.background = trackColors[track];
+        updateNoteBars();
+      };
+
+      const off = () => {
+        state[y][x] = -1;
+        c.classList.remove("active");
+        c.style.background = "";
+        updateNoteBars();
+      };
+
+      c.onmousedown = (e) => {
+        mouseDown = true;
+
+        dragTrack = currentDrawTrack;
+
+        // Decide the action for this whole drag stroke up front, so painting
+        // across multiple cells is consistent instead of toggling each one.
+        if (e.shiftKey) {
+          dragAction = "off";
+        } else {
+          // toggle: cell already carries this exact colour -> erase it, otherwise paint/repaint it
+          dragAction = (state[y][x] === dragTrack) ? "off" : "on";
+        }
+
+        dragAction === "on" ? on(dragTrack) : off();
+      };
+
+      c.onmouseenter = () => {
+        if (!mouseDown) return;
+        dragAction === "on" ? on(dragTrack) : off();
+      };
+
+      grid.appendChild(c);
+    }
+  }
+
+  // ---- loop handles ----
+  handleA = document.createElement("div");
+  handleB = document.createElement("div");
+  handleA.className = handleB.className = "handle";
+  grid.appendChild(handleA);
+  grid.appendChild(handleB);
+
+  handleA.onmousedown = () => dragA = true;
+  handleB.onmousedown = () => dragB = true;
+
+  updateLoop();
+
+  // ---- volume row ----
+  for (let i = 0; i < COLS; i++) {
+    const col = document.createElement("div");
+    col.className = "vcol";
+
+    const fill = document.createElement("div");
+    fill.className = "vfill";
+    fill.style.height = "50%";
+
+    col.appendChild(fill);
+
+    const set = (e) => {
+      const r = col.getBoundingClientRect();
+      let v = 1 - (e.clientY - r.top) / r.height;
+      v = Math.max(0, Math.min(1, v));
+
+      volumeCurve[i] = v;
+      fill.style.height = (v * 100) + "%";
+    };
+
+    col.onmousedown = (e) => {
+      volMouse = true;
+      set(e);
+    };
+
+    col.onmouseenter = (e) => {
+      if (volMouse) set(e);
+    };
+
+    volumeDiv.appendChild(col);
+  }
+
+  updateNoteBars();
+}
+
+window.addEventListener("mouseup", () => { mouseDown = false; dragA = dragB = false; volMouse = false; });
+
+// ================= VISUAL NOTE JOINING =================
+function updateNoteBars() {
+  document.querySelectorAll(".note-bar").forEach(el => el.remove());
+
+  const combine = document.getElementById("combineNotes").checked;
+  if (!combine) return;
+
+  for (let row = 0; row < ROWS; row++) {
+    let col = 0;
+    while (col < COLS) {
+      if (state[row][col] === -1) { col++; continue; }
+
+      const track = state[row][col];
+      let runEnd = col;
+      while (runEnd + 1 < COLS && state[row][runEnd + 1] === track) runEnd++;
+      const runLength = runEnd - col + 1;
+
+      if (runLength > 1) {
+        const bar = document.createElement("div");
+        bar.className = "note-bar";
+        bar.style.left = (GRID_PADDING + col * CELL_STEP) + "px";
+        bar.style.top = (GRID_PADDING + row * CELL_STEP) + "px";
+        bar.style.width = (runLength * CELL_SIZE + (runLength - 1) * CELL_GAP) + "px";
+        bar.style.height = CELL_SIZE + "px";
+        bar.style.background = trackColors[track];
+        bar.style.boxShadow = `0 0 4px ${trackColors[track]}`;
+        grid.appendChild(bar);
+      }
+
+      col = runEnd + 1;
+    }
+  }
+}
+
+document.getElementById("combineNotes").addEventListener("change", updateNoteBars);
+
+// ================= LOOP =================
+grid.addEventListener("mousemove", (e) => {
+  if (!dragA && !dragB) return;
+
+  const rect = grid.getBoundingClientRect();
+  const colWidth = rect.width / COLS;
+  const x = Math.floor((e.clientX - rect.left) / colWidth);
+
+  if (dragA) loopStart = Math.max(0, Math.min(loopEnd - 1, x));
+  if (dragB) loopEnd = Math.min(COLS - 1, Math.max(loopStart + 1, x));
+
+  updateLoop();
+});
+
+function updateLoop() {
+  const rect = grid.getBoundingClientRect();
+  const colWidth = rect.width / COLS;
+
+  handleA.style.left = loopStart * colWidth + "px";
+  handleB.style.left = loopEnd * colWidth + "px";
+}
+
+// ================= SCALES =================
+// Each scale is a set of semitone offsets from the root, within one octave (0-11).
+const SCALES = {
+  chromatic:        [0,1,2,3,4,5,6,7,8,9,10,11],
+  major:            [0,2,4,5,7,9,11],
+  minor:            [0,2,3,5,7,8,10],
+  harmonicMinor:    [0,2,3,5,7,8,11],
+  melodicMinor:     [0,2,3,5,7,9,11],
+  dorian:           [0,2,3,5,7,9,10],
+  phrygian:         [0,1,3,5,7,8,10],
+  lydian:           [0,2,4,6,7,9,11],
+  mixolydian:       [0,2,4,5,7,9,10],
+  locrian:          [0,1,3,5,6,8,10],
+  majorPentatonic:  [0,2,4,7,9],
+  minorPentatonic:  [0,3,5,7,10],
+  blues:            [0,3,5,6,7,10],
+  wholeTone:        [0,2,4,6,8,10],
+  hirajoshi:        [0,2,3,7,8],
+  inSen:            [0,1,5,7,10],
+  hungarianMinor:   [0,2,3,6,7,8,11],
+  phrygianDominant: [0,1,4,5,7,8,10],
+};
+
+const scaleSelect = document.getElementById("scale");
+const rootSelect = document.getElementById("root");
+
+// Snap an arbitrary semitone value to the nearest note in the chosen scale/root.
+function quantizeSemitone(semitone) {
+  const pattern = SCALES[scaleSelect.value] || SCALES.chromatic;
+  const root = +rootSelect.value;
+
+  const shifted = semitone - root;
+  const octave = Math.floor(shifted / 12);
+  const local = shifted - octave * 12; // 0..11
+
+  let best = pattern[0];
+  let bestDist = Infinity;
+
+  for (const v of pattern) {
+    for (const wrap of [-12, 0, 12]) {
+      const cand = v + wrap;
+      const dist = Math.abs(cand - local);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = cand;
+      }
+    }
+  }
+
+  return root + octave * 12 + best;
+}
+
+// Row -> raw (pre-quantize) semitone offset. Centered on the grid's middle
+// row so the pattern is roughly centered on middle C regardless of height.
+function rowToRawSemitone(row) {
+  const center = Math.floor(ROWS / 2);
+  const inverted = ROWS - 1 - row;
+  return inverted - center;
+}
+
+// ================= AUDIO =================
+function stopAll() {
+  sources.forEach(s => { try { s.stop(); } catch {} });
+  sources = [];
+}
+
+function play(col) {
+  const master = +document.getElementById("master").value;
+  const combine = document.getElementById("combineNotes").checked;
+
+  if (!combine) {
+    // Original behaviour: cut everything and retrigger each active cell fresh.
+    stopAll();
+
+    for (let row = 0; row < ROWS; row++) {
+      const track = state[row][col];
+      if (track === -1) continue;
+      const buffer = trackBuffers[track];
+      if (!buffer) continue;
+
+      const src = audioCtx.createBufferSource();
+      src.buffer = buffer;
+
+      // Drums always play at normal pitch; melodic tracks are pitched by row/scale.
+      src.playbackRate.value = (track === DRUM_TRACK)
+        ? 1
+        : Math.pow(2, quantizeSemitone(rowToRawSemitone(row)) / 12);
+
+      const gain = audioCtx.createGain();
+      gain.gain.value = volumeCurve[col] * master;
+
+      src.connect(gain).connect(audioCtx.destination);
+      src.start();
+
+      sources.push(src);
+    }
+
+    draw(col);
+    return;
+  }
+
+  // Combine mode: consecutive lit cells of the SAME colour in the same row become one held note.
+  const prevCol = col === loopStart ? loopEnd : col - 1;
+
+  for (let row = 0; row < ROWS; row++) {
+    const track = state[row][col];
+    if (track === -1) continue;
+    const buffer = trackBuffers[track];
+    if (!buffer) continue;
+
+    // Was this row already sounding from the immediately preceding step (same colour)?
+    // (previousColPlayed guards against false positives on the very first step,
+    // or when the loop wraps back to a column that hasn't actually played yet.)
+    const isContinuation = previousColPlayed === prevCol && state[row][prevCol] === track;
+    if (isContinuation) continue; // already sustaining, don't retrigger
+
+    // Measure how many consecutive cells (within the loop range, same colour) this note spans.
+    let runLength = 1;
+    let c = col;
+    while (true) {
+      const nextCol = c === loopEnd ? loopStart : c + 1;
+      if (nextCol === col) break; // wrapped the whole loop
+      if (state[row][nextCol] !== track) break;
+      runLength++;
+      c = nextCol;
+    }
+
+    const src = audioCtx.createBufferSource();
+    src.buffer = buffer;
+
+    src.playbackRate.value = (track === DRUM_TRACK)
+      ? 1
+      : Math.pow(2, quantizeSemitone(rowToRawSemitone(row)) / 12);
+
+    const gain = audioCtx.createGain();
+    const targetVol = volumeCurve[col] * master;
+    gain.gain.value = targetVol;
+
+    src.connect(gain).connect(audioCtx.destination);
+
+    const now = audioCtx.currentTime;
+    const noteDuration = runLength * stepSeconds;
+    const fadeTime = Math.min(0.02, noteDuration * 0.3); // short fade avoids clicks
+
+    gain.gain.setValueAtTime(targetVol, now + Math.max(0, noteDuration - fadeTime));
+    gain.gain.linearRampToValueAtTime(0.0001, now + noteDuration);
+
+    src.start();
+    src.stop(now + noteDuration + 0.01);
+
+    sources.push(src);
+    src.onended = () => {
+      sources = sources.filter(s => s !== src);
+    };
+  }
+
+  draw(col);
+}
+
+function draw(col) {
+  document.querySelectorAll(".cell").forEach(c => c.classList.remove("playhead"));
+
+  for (let y = 0; y < ROWS; y++) {
+    const i = y * COLS + col;
+    grid.children[i]?.classList.add("playhead");
+  }
+}
+
+// ================= TRANSPORT =================
+// "Step length" dropdown value is in quarter-note units (1 = quarter, 0.25 = sixteenth, etc.)
+function getStepQuarterFraction() {
+  return +document.getElementById("noteLength").value || 0.25;
+}
+
+async function start() {
+  await initAudio();
+  if (trackBuffers.every(b => !b)) return alert("Load at least one instrument/drum sample first");
+
+  const bpm = +document.getElementById("bpm").value;
+  const interval = (60000 / bpm) * getStepQuarterFraction();
+  stepSeconds = interval / 1000;
+  previousColPlayed = null;
+
+  step = loopStart;
+  clearInterval(timer);
+
+  timer = setInterval(() => {
+    play(step);
+    previousColPlayed = step;
+    step++;
+    if (step > loopEnd) step = loopStart;
+  }, interval);
+
+  playing = true;
+  playToggleBtn.textContent = "Stop";
+}
+
+function stop() {
+  clearInterval(timer);
+  stopAll();
+  playing = false;
+  playToggleBtn.textContent = "Play";
+}
+
+// ================= IMAGE TO GRID =================
+let lastImage = null; // holds decoded Image for re-analysis on threshold change
+
+const imgFileInput = document.getElementById("imageFile");
+const thresholdInput = document.getElementById("threshold");
+const invertInput = document.getElementById("invert");
+const imgVolumeInput = document.getElementById("imgVolume");
+
+function analyzeImage() {
+  if (!lastImage) return;
+
+  // Work at the image's native resolution rather than crushing it straight down
+  // to COLS x ROWS — a single stretched downscale blurs thin hand-drawn lines
+  // into near-invisibility. Instead we sample several points per cell and vote.
+  const srcW = lastImage.naturalWidth || lastImage.width;
+  const srcH = lastImage.naturalHeight || lastImage.height;
+
+  const off = document.createElement("canvas");
+  off.width = srcW;
+  off.height = srcH;
+  const ctx = off.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(lastImage, 0, 0, srcW, srcH);
+
+  const { data } = ctx.getImageData(0, 0, srcW, srcH);
+
+  const threshold = +thresholdInput.value;
+  const invert = invertInput.checked;
+  const useVolume = imgVolumeInput.checked;
+
+  const cellW = srcW / COLS;
+  const cellH = srcH / ROWS;
+  const SAMPLES = 7; // per axis -> up to 49 sample points per cell
+
+  // Track per-column average brightness for the volume row
+  const colBrightnessSum = new Array(COLS).fill(0);
+  const colBrightnessCount = new Array(COLS).fill(0);
+
+  for (let y = 0; y < ROWS; y++) {
+    const py0 = y * cellH;
+    const py1 = (y + 1) * cellH;
+
+    for (let x = 0; x < COLS; x++) {
+      const px0 = x * cellW;
+      const px1 = (x + 1) * cellW;
+
+      let inkCount = 0, totalSamples = 0, lumSum = 0;
+      const votes = new Array(TRACK_COUNT).fill(0);
+
+      for (let sy = 0; sy < SAMPLES; sy++) {
+        const yy = Math.min(srcH - 1, Math.floor(py0 + ((sy + 0.5) / SAMPLES) * (py1 - py0)));
+        for (let sx = 0; sx < SAMPLES; sx++) {
+          const xx = Math.min(srcW - 1, Math.floor(px0 + ((sx + 0.5) / SAMPLES) * (px1 - px0)));
+          const i = (yy * srcW + xx) * 4;
+          const r = data[i], g = data[i + 1], b = data[i + 2];
+          const luminance = 0.299 * r + 0.587 * g + 0.114 * b; // 0 (black) - 255 (white), used only for the volume row
+
+          lumSum += luminance;
+          totalSamples++;
+
+          // "Ink" detection uses distance from the background colour (white, or
+          // black when inverted), NOT raw luminance — a bright colour like yellow
+          // or cyan has high luminance despite being clearly-visible coloured ink,
+          // so luminance alone would miss it. Distance-from-background catches any
+          // hue that stands out against the page, however light or dark it is.
+          const metric = invert
+            ? Math.max(r, g, b)                                            // distance from black
+            : Math.max(Math.abs(255 - r), Math.abs(255 - g), Math.abs(255 - b)); // distance from white
+          const isInk = metric > threshold;
+          if (isInk) {
+            votes[nearestTrackForColor(r, g, b)]++;
+            inkCount++;
+          }
+        }
+      }
+
+      // A cell counts as "on" once a modest fraction of its sample points are ink —
+      // this catches thin lines that only cross a small part of the cell, instead of
+      // needing the cell's *average* colour to cross the threshold.
+      const coverage = inkCount / totalSamples;
+      const on = coverage >= 0.12;
+      const track = on ? votes.indexOf(Math.max(...votes)) : -1;
+
+      const cellIndex = y * COLS + x;
+      const cell = grid.children[cellIndex];
+
+      state[y][x] = track;
+      if (cell) {
+        cell.classList.toggle("active", on);
+        cell.style.background = on ? trackColors[track] : "";
+      }
+
+      colBrightnessSum[x] += lumSum;
+      colBrightnessCount[x] += totalSamples;
+    }
+  }
+
+  if (useVolume) {
+    for (let x = 0; x < COLS; x++) {
+      const avg = colBrightnessSum[x] / colBrightnessCount[x]; // 0-255
+      let v = avg / 255;
+      if (invert) v = 1 - v;
+      v = Math.max(0, Math.min(1, v));
+
+      volumeCurve[x] = v;
+      const col = volumeDiv.children[x];
+      const fill = col?.querySelector(".vfill");
+      if (fill) fill.style.height = (v * 100) + "%";
+    }
+  }
+
+  updateNoteBars();
+}
+
+imgFileInput.onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    lastImage = img;
+    analyzeImage();
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+};
+
+thresholdInput.oninput = analyzeImage;
+invertInput.onchange = analyzeImage;
+imgVolumeInput.onchange = analyzeImage;
+
+// ================= PAPER SCORE SCAN =================
+// The printed sheet has 4 corner registration marks, a row of colour
+// swatches (one per track), and a fixed drawing grid. All positions below
+// are fractions (0..1) of the PDF page width/height, so they stay correct
+// no matter what resolution the person's phone photo is.
+const PAPER = {
+  // Width / height of the rectangle spanned by the 4 tapped corner marks
+  // (measured directly off a reference render of the sheet, corner-mark to corner-mark).
+  pageAspect: (2222.0 - 100.5) / (1550.87 - 76.5),
+  cornerOrder: ["Top-left", "Top-right", "Bottom-right", "Bottom-left"],
+  // All fractions below are relative to the rectangle spanned by the 4 tapped
+  // corner marks (0,0 = top-left mark, 1,1 = bottom-right mark) — NOT the raw
+  // photo or page edge, since the corner marks sit inset from the paper edge.
+  // fraction coords of each colour swatch centre, in the same order as TRACK_DEFS.
+  // These are fallbacks — import prefers auto-detected legend boxes above the grid.
+  swatches: [
+    { x: 0.07518, y: 0.13258 },
+    { x: 0.11127, y: 0.13207 },
+    { x: 0.15348, y: 0.13208 },
+    { x: 0.19243, y: 0.13193 },
+    { x: 0.27464, y: 0.13199 }, // drums
+  ],
+  // fraction coords of the drawing-grid rectangle (top-left / bottom-right)
+  gridRect: { x0: 0.04077, y0: 0.21365, x1: 0.95687, y1: 0.86918 },
+};
+
+
+const RECT_W = 1684; // canonical rectified canvas size (matches the page aspect ratio)
+const RECT_H = Math.round(RECT_W / PAPER.pageAspect);
+
+// ---- small linear-algebra helpers for the 4-point perspective (homography) fit ----
+function solveLinearSystem(A, b) {
+  const n = b.length;
+  for (let col = 0; col < n; col++) {
+    let piv = col;
+    for (let r = col + 1; r < n; r++) if (Math.abs(A[r][col]) > Math.abs(A[piv][col])) piv = r;
+    [A[col], A[piv]] = [A[piv], A[col]];
+    [b[col], b[piv]] = [b[piv], b[col]];
+    for (let r = col + 1; r < n; r++) {
+      const f = A[r][col] / A[col][col];
+      for (let c = col; c < n; c++) A[r][c] -= f * A[col][c];
+      b[r] -= f * b[col];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) {
+    let sum = b[r];
+    for (let c = r + 1; c < n; c++) sum -= A[r][c] * x[c];
+    x[r] = sum / A[r][r];
+  }
+  return x;
+}
+
+// Computes the homography mapping fromPts[i] -> toPts[i] (4 points each: {x,y}).
+function computeHomography(fromPts, toPts) {
+  const A = [];
+  const b = [];
+  for (let i = 0; i < 4; i++) {
+    const { x, y } = fromPts[i];
+    const { x: X, y: Y } = toPts[i];
+    A.push([x, y, 1, 0, 0, 0, -x * X, -y * X]);
+    b.push(X);
+    A.push([0, 0, 0, x, y, 1, -x * Y, -y * Y]);
+    b.push(Y);
+  }
+  const h = solveLinearSystem(A, b);
+  return [
+    [h[0], h[1], h[2]],
+    [h[3], h[4], h[5]],
+    [h[6], h[7], 1],
+  ];
+}
+
+function applyH(H, x, y) {
+  const w = H[2][0] * x + H[2][1] * y + H[2][2];
+  return [
+    (H[0][0] * x + H[0][1] * y + H[0][2]) / w,
+    (H[1][0] * x + H[1][1] * y + H[1][2]) / w,
+  ];
+}
+
+// ---- UI wiring ----
+const paperPhotoInput = document.getElementById("paperPhoto");
+const paperStatus = document.getElementById("paperStatus");
+const paperPreviewWrap = document.getElementById("paperPreviewWrap");
+const paperPreview = document.getElementById("paperPreview");
+const paperResetBtn = document.getElementById("paperReset");
+const paperConfirmBtn = document.getElementById("paperConfirm");
+const paperPreviewCtx = paperPreview.getContext("2d");
+
+let paperFullResCanvas = null; // full-resolution copy of the uploaded photo
+let paperDisplayScale = 1;     // full-res pixels per displayed (CSS) pixel
+let paperClicks = [];          // clicked corners, in full-res photo pixel coords
+
+function redrawPaperPreview() {
+  paperPreviewCtx.drawImage(paperFullResCanvas, 0, 0, paperPreview.width, paperPreview.height);
+  paperClicks.forEach((pt, i) => {
+    const dx = pt.x / paperDisplayScale;
+    const dy = pt.y / paperDisplayScale;
+    paperPreviewCtx.beginPath();
+    paperPreviewCtx.arc(dx, dy, 8, 0, Math.PI * 2);
+    paperPreviewCtx.strokeStyle = "#00ff99";
+    paperPreviewCtx.lineWidth = 2;
+    paperPreviewCtx.stroke();
+    paperPreviewCtx.fillStyle = "#00ff99";
+    paperPreviewCtx.font = "14px monospace";
+    paperPreviewCtx.fillText(String(i + 1), dx + 10, dy - 10);
+  });
+}
+
+function paperStatusText() {
+  if (paperClicks.length < 4) {
+    return `Tap the ${PAPER.cornerOrder[paperClicks.length]} corner mark (${paperClicks.length + 1} of 4)`;
+  }
+  return "All 4 corners marked — click Import.";
+}
+
+// Find the 4 nested-square registration marks (solid black centre + concentric
+// rings) near the page corners. Returns [{x,y}×4] in TL→TR→BR→BL order, or null.
+function findCornerMarks(imageData, width, height) {
+  const data = imageData.data;
+  const grayAt = (x, y) => {
+    const i = (y * width + x) * 4;
+    return 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  };
+
+  const margin = Math.max(40, Math.round(Math.min(width, height) * 0.32));
+  const regions = [
+    { x0: 0, y0: 0, x1: margin, y1: margin },
+    { x0: width - margin, y0: 0, x1: width, y1: margin },
+    { x0: width - margin, y0: height - margin, x1: width, y1: height },
+    { x0: 0, y0: height - margin, x1: margin, y1: height },
+  ];
+
+  function findInRegion(reg) {
+    const rw = reg.x1 - reg.x0;
+    const rh = reg.y1 - reg.y0;
+    // Adaptive dark threshold from this corner's luminance range.
+    let sum = 0, n = 0, minG = 255;
+    const step = Math.max(1, Math.floor(Math.min(rw, rh) / 80));
+    for (let y = reg.y0; y < reg.y1; y += step) {
+      for (let x = reg.x0; x < reg.x1; x += step) {
+        const g = grayAt(x, y);
+        sum += g; n++;
+        if (g < minG) minG = g;
+      }
+    }
+    const mean = sum / Math.max(1, n);
+    const darkThr = Math.min(110, Math.max(50, minG + (mean - minG) * 0.28));
+
+    const visited = new Uint8Array(rw * rh);
+    let best = null;
+
+    for (let ly = 0; ly < rh; ly++) {
+      for (let lx = 0; lx < rw; lx++) {
+        const vi = ly * rw + lx;
+        if (visited[vi]) continue;
+        const gx = reg.x0 + lx, gy = reg.y0 + ly;
+        if (grayAt(gx, gy) >= darkThr) {
+          visited[vi] = 1;
+          continue;
+        }
+
+        // Flood-fill a dark blob — looking for the solid black centre square.
+        const stack = [lx, ly];
+        visited[vi] = 1;
+        let minX = lx, maxX = lx, minY = ly, maxY = ly, count = 0;
+        while (stack.length) {
+          const cy = stack.pop();
+          const cx = stack.pop();
+          count++;
+          if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
+          if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = cx + dx, ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= rw || ny >= rh) continue;
+            const ni = ny * rw + nx;
+            if (visited[ni]) continue;
+            visited[ni] = 1;
+            if (grayAt(reg.x0 + nx, reg.y0 + ny) < darkThr) stack.push(nx, ny);
+          }
+        }
+
+        if (count < 16 || count > 900) continue;
+        const bw = maxX - minX + 1, bh = maxY - minY + 1;
+        if (bw < 4 || bh < 4 || bw > 55 || bh > 55) continue;
+        if (Math.abs(bw - bh) > Math.max(5, bw * 0.4)) continue;
+        const fill = count / (bw * bh);
+        if (fill < 0.5) continue; // rings are hollow; centre must be solid
+
+        const cx = reg.x0 + (minX + maxX) / 2;
+        const cy = reg.y0 + (minY + maxY) / 2;
+        const half = Math.max(bw, bh) / 2;
+
+        // Sample square rings outside the solid centre: expect L D L D …
+        let seq = "";
+        let prev = null;
+        for (let r = Math.ceil(half + 1); r <= half * 3.6; r++) {
+          let s = 0, m = 0;
+          const ri = Math.round(r);
+          for (let i = -ri; i <= ri; i++) {
+            const pts = [
+              [cx + i, cy - ri], [cx + i, cy + ri],
+              [cx - ri, cy + i], [cx + ri, cy + i],
+            ];
+            for (const [px, py] of pts) {
+              const ix = Math.round(px), iy = Math.round(py);
+              if (ix < 0 || iy < 0 || ix >= width || iy >= height) continue;
+              s += grayAt(ix, iy); m++;
+            }
+          }
+          if (!m) break;
+          const ch = (s / m) < (darkThr + 30) ? "D" : "L";
+          if (ch !== prev) { seq += ch; prev = ch; }
+        }
+        if (!(seq.includes("LDLD") || seq.includes("DLDL") || seq.includes("LDL"))) continue;
+
+        const score = fill * 10 + half + seq.length;
+        if (!best || score > best.score) best = { x: cx, y: cy, score };
+      }
+    }
+    return best;
+  }
+
+  const found = regions.map(findInRegion);
+  if (found.some(p => !p)) return null;
+  return found.map(p => ({ x: p.x, y: p.y }));
+}
+
+function runPaperImport() {
+  if (paperClicks.length !== 4 || !paperFullResCanvas) return;
+  paperStatus.textContent = "Processing photo\u2026";
+  // Give the status text a chance to paint before the (synchronous) warp work.
+  setTimeout(() => {
+    try {
+      importPaperScore();
+      paperStatus.textContent = "Imported! Colours and grid updated below.";
+    } catch (err) {
+      console.error(err);
+      paperStatus.textContent = "Couldn't process that photo — try re-marking the corners.";
+    }
+  }, 10);
+}
+
+paperPhotoInput.onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    loadPaperSource(img, img.naturalWidth, img.naturalHeight);
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+};
+
+// Shared by both the file-upload path and the camera-capture path: takes any
+// drawable source (an <img> or a <video> frame), finds corner marks, and imports.
+function loadPaperSource(drawable, w, h) {
+  paperFullResCanvas = document.createElement("canvas");
+  paperFullResCanvas.width = w;
+  paperFullResCanvas.height = h;
+  paperFullResCanvas.getContext("2d").drawImage(drawable, 0, 0, w, h);
+
+  // Display the photo scaled down to a manageable on-screen size.
+  const maxDisplayW = 720;
+  const dispW = Math.min(maxDisplayW, w);
+  const dispH = Math.round((dispW / w) * h);
+  paperPreview.width = dispW;
+  paperPreview.height = dispH;
+  paperDisplayScale = w / dispW;
+
+  paperClicks = [];
+  paperPreviewWrap.style.display = "";
+  paperResetBtn.style.display = "";
+  paperConfirmBtn.style.display = "none";
+  paperStatus.textContent = "Looking for corner marks\u2026";
+  openExpertMode();
+  redrawPaperPreview();
+
+  // Defer so the status line can paint before the (synchronous) scan.
+  setTimeout(() => {
+    const ctx = paperFullResCanvas.getContext("2d");
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const marks = findCornerMarks(imageData, w, h);
+    if (marks) {
+      paperClicks = marks;
+      paperConfirmBtn.style.display = "";
+      redrawPaperPreview();
+      paperStatus.textContent = "Corners found — importing\u2026";
+      runPaperImport();
+    } else {
+      paperStatus.textContent = paperStatusText();
+    }
+  }, 10);
+}
+
+// ---- camera capture ----
+const paperCameraBtn = document.getElementById("paperCameraBtn");
+const paperCameraWrap = document.getElementById("paperCameraWrap");
+const paperVideo = document.getElementById("paperVideo");
+const paperCaptureBtn = document.getElementById("paperCaptureBtn");
+const paperCameraCancel = document.getElementById("paperCameraCancel");
+let paperStream = null;
+
+function stopPaperCamera() {
+  if (paperStream) {
+    paperStream.getTracks().forEach(t => t.stop());
+    paperStream = null;
+  }
+  paperCameraWrap.style.display = "none";
+}
+
+paperCameraBtn.onclick = async () => {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    paperStatus.textContent = "Camera not available in this browser — use the file picker instead.";
+    return;
+  }
+  try {
+    // Rear camera on phones/tablets; falls back to whatever's available on desktop.
+    paperStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false,
+    });
+    paperVideo.srcObject = paperStream;
+    paperCameraWrap.style.display = "";
+    paperStatus.textContent = "Line the paper up in frame, then tap Capture.";
+    openExpertMode();
+  } catch (err) {
+    console.error(err);
+    // Camera access needs a secure context (https:// or localhost) — file:// pages get blocked by the browser.
+    paperStatus.textContent = "Couldn't access the camera (check permissions, and that this page is served over https or localhost). Use the file picker instead.";
+  }
+};
+
+paperCaptureBtn.onclick = () => {
+  if (!paperVideo.videoWidth) return;
+  loadPaperSource(paperVideo, paperVideo.videoWidth, paperVideo.videoHeight);
+  stopPaperCamera();
+};
+
+paperCameraCancel.onclick = () => {
+  stopPaperCamera();
+  paperStatus.textContent = "";
+};
+
+paperPreview.onclick = (e) => {
+  if (!paperFullResCanvas || paperClicks.length >= 4) return;
+  const rect = paperPreview.getBoundingClientRect();
+  const cssX = (e.clientX - rect.left) * (paperPreview.width / rect.width);
+  const cssY = (e.clientY - rect.top) * (paperPreview.height / rect.height);
+  paperClicks.push({ x: cssX * paperDisplayScale, y: cssY * paperDisplayScale });
+  redrawPaperPreview();
+  paperStatus.textContent = paperStatusText();
+  paperConfirmBtn.style.display = paperClicks.length === 4 ? "" : "none";
+};
+
+paperResetBtn.onclick = () => {
+  paperClicks = [];
+  paperConfirmBtn.style.display = "none";
+  if (paperFullResCanvas) {
+    paperStatus.textContent = paperStatusText();
+    redrawPaperPreview();
+  }
+};
+
+paperConfirmBtn.onclick = () => {
+  runPaperImport();
+};
+
+function importPaperScore() {
+  const destCorners = [
+    { x: 0, y: 0 },
+    { x: RECT_W, y: 0 },
+    { x: RECT_W, y: RECT_H },
+    { x: 0, y: RECT_H },
+  ];
+  // Mapping DEST (rectified canvas) -> SRC (photo pixels), so we can sample per dest pixel.
+  const H = computeHomography(destCorners, paperClicks);
+
+  const srcW = paperFullResCanvas.width;
+  const srcH = paperFullResCanvas.height;
+  const srcData = paperFullResCanvas.getContext("2d").getImageData(0, 0, srcW, srcH).data;
+
+  const rectCanvas = document.createElement("canvas");
+  rectCanvas.width = RECT_W;
+  rectCanvas.height = RECT_H;
+  const rectCtx = rectCanvas.getContext("2d");
+  const destImgData = rectCtx.createImageData(RECT_W, RECT_H);
+  const destData = destImgData.data;
+
+  for (let y = 0; y < RECT_H; y++) {
+    for (let x = 0; x < RECT_W; x++) {
+      const [sx, sy] = applyH(H, x, y);
+      const di = (y * RECT_W + x) * 4;
+      const ix = Math.round(sx), iy = Math.round(sy);
+      if (ix >= 0 && ix < srcW && iy >= 0 && iy < srcH) {
+        const si = (iy * srcW + ix) * 4;
+        destData[di] = srcData[si];
+        destData[di + 1] = srcData[si + 1];
+        destData[di + 2] = srcData[si + 2];
+        destData[di + 3] = 255;
+      } else {
+        destData[di + 3] = 0;
+      }
+    }
+  }
+  rectCtx.putImageData(destImgData, 0, 0);
+
+  // Sample a colourful neighbourhood around an expected swatch centre.
+  // Skips white paper / soft edges so slight corner-tap error doesn't wash
+  // the average toward white.
+  function sampleSwatch(fx, fy) {
+    const cx = Math.round(fx * RECT_W);
+    const cy = Math.round(fy * RECT_H);
+
+    for (let radius = 10; radius <= 40; radius += 8) {
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const px = cx + dx, py = cy + dy;
+          if (px < 0 || py < 0 || px >= RECT_W || py >= RECT_H) continue;
+          const i = (py * RECT_W + px) * 4;
+          const rr = destData[i], gg = destData[i + 1], bb = destData[i + 2];
+          const chroma = Math.max(rr, gg, bb) - Math.min(rr, gg, bb);
+          const lum = 0.299 * rr + 0.587 * gg + 0.114 * bb;
+          // Skip near-white/near-background pixels (low saturation, bright)
+          if (chroma < 40 && lum > 200) continue;
+          if (chroma < 50) continue; // need a real ink colour, not grey grid
+          r += rr; g += gg; b += bb; n++;
+        }
+      }
+      if (n >= 25) return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+    }
+    return null;
+  }
+
+  // Auto-detect the legend colour boxes just above the drawing area (left side).
+  // Looks for a horizontal row of TRACK_COUNT compact, saturated squares so
+  // we still pick up the right colours when the printed layout drifts a bit
+  // from the hardcoded PAPER.swatches fractions.
+  function detectLegendSwatches() {
+    const x0 = Math.round(0.01 * RECT_W);
+    const x1 = Math.round(0.42 * RECT_W);
+    const y0 = Math.round(0.02 * RECT_H);
+    const y1 = Math.max(y0 + 8, Math.round(PAPER.gridRect.y0 * RECT_H) - 4);
+    const bw = x1 - x0, bh = y1 - y0;
+    if (bw < 20 || bh < 10) return null;
+
+    const visited = new Uint8Array(bw * bh);
+    const blobs = [];
+
+    const chromaAt = (px, py) => {
+      const i = (py * RECT_W + px) * 4;
+      const r = destData[i], g = destData[i + 1], b = destData[i + 2];
+      const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      return { r, g, b, chroma, lum };
+    };
+
+    for (let ly = 0; ly < bh; ly++) {
+      for (let lx = 0; lx < bw; lx++) {
+        const vi = ly * bw + lx;
+        if (visited[vi]) continue;
+        const px = x0 + lx, py = y0 + ly;
+        const c0 = chromaAt(px, py);
+        // Bright, saturated ink — the solid legend squares.
+        if (c0.chroma < 90 || c0.lum < 50 || c0.lum > 250) {
+          visited[vi] = 1;
+          continue;
+        }
+
+        // Flood-fill this colourful blob.
+        const stack = [lx, ly];
+        visited[vi] = 1;
+        let minX = lx, maxX = lx, minY = ly, maxY = ly;
+        let sr = 0, sg = 0, sb = 0, n = 0;
+        while (stack.length) {
+          const cy = stack.pop();
+          const cx = stack.pop();
+          const { r, g, b, chroma, lum } = chromaAt(x0 + cx, y0 + cy);
+          if (chroma < 70 || lum < 40) continue;
+          sr += r; sg += g; sb += b; n++;
+          if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
+          if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = cx + dx, ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= bw || ny >= bh) continue;
+            const ni = ny * bw + nx;
+            if (visited[ni]) continue;
+            visited[ni] = 1;
+            const nc = chromaAt(x0 + nx, y0 + ny);
+            if (nc.chroma >= 70 && nc.lum >= 40 && nc.lum <= 250) stack.push(nx, ny);
+          }
+        }
+
+        if (n < 40) continue;
+        const boxW = maxX - minX + 1, boxH = maxY - minY + 1;
+        // Legend swatches are small-ish squares (not scribbles / snowflake).
+        if (boxW < 8 || boxH < 8 || boxW > 70 || boxH > 70) continue;
+        if (Math.abs(boxW - boxH) > Math.max(10, boxW * 0.45)) continue;
+        blobs.push({
+          fx: (x0 + (minX + maxX) / 2) / RECT_W,
+          fy: (y0 + (minY + maxY) / 2) / RECT_H,
+          y: y0 + (minY + maxY) / 2,
+          x: x0 + (minX + maxX) / 2,
+          rgb: [Math.round(sr / n), Math.round(sg / n), Math.round(sb / n)],
+        });
+      }
+    }
+
+    if (blobs.length < TRACK_COUNT) return null;
+
+    // Prefer a horizontal row of exactly TRACK_COUNT swatches (same band of y).
+    let best = null;
+    for (const seed of blobs) {
+      const row = blobs
+        .filter(b => Math.abs(b.y - seed.y) <= 18)
+        .sort((a, b) => a.x - b.x);
+      // Deduplicate blobs that overlap in x (same swatch split by flood fill).
+      const dedup = [];
+      for (const b of row) {
+        if (dedup.length && Math.abs(b.x - dedup[dedup.length - 1].x) < 12) continue;
+        dedup.push(b);
+      }
+      if (dedup.length < TRACK_COUNT) continue;
+      const chosen = dedup.slice(0, TRACK_COUNT);
+      // Score: tight y alignment + left-side placement (legend lives top-left).
+      const yMean = chosen.reduce((s, b) => s + b.y, 0) / chosen.length;
+      const ySpread = chosen.reduce((s, b) => s + Math.abs(b.y - yMean), 0);
+      const score = 1000 - ySpread - chosen[0].x * 0.05;
+      if (!best || score > best.score) best = { score, chosen };
+    }
+    return best ? best.chosen.map(b => b.rgb) : null;
+  }
+
+  let sampled = detectLegendSwatches();
+  if (!sampled) {
+    sampled = PAPER.swatches.map(sw => sampleSwatch(sw.x, sw.y) || [200, 200, 200]);
+  }
+
+  sampled.forEach((rgb, i) => {
+    const [r, g, b] = rgb;
+    const hex = "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
+    trackColors[i] = hex;
+    const colorInput = document.getElementById(`trackColor${i}`);
+    if (colorInput) {
+      colorInput.value = hex;
+      colorInput.closest(".track").style.setProperty("--tcolor", hex);
+    }
+    repaintTrack(i);
+  });
+
+  // Crop out just the drawing-grid rectangle and feed it through the existing
+  // threshold/invert/brightness-to-volume pipeline, same as a normal image import.
+  const gx0 = Math.round(PAPER.gridRect.x0 * RECT_W);
+  const gy0 = Math.round(PAPER.gridRect.y0 * RECT_H);
+  const gx1 = Math.round(PAPER.gridRect.x1 * RECT_W);
+  const gy1 = Math.round(PAPER.gridRect.y1 * RECT_H);
+  const gridCanvas = document.createElement("canvas");
+  gridCanvas.width = gx1 - gx0;
+  gridCanvas.height = gy1 - gy0;
+  gridCanvas.getContext("2d").drawImage(rectCanvas, gx0, gy0, gx1 - gx0, gy1 - gy0, 0, 0, gx1 - gx0, gy1 - gy0);
+
+  // The paper background is white, so "distance from white" is the right
+  // metric here — invert is for dark-background photos, not this case.
+  invertInput.checked = false;
+
+  const gridImg = new Image();
+  gridImg.onload = () => {
+    lastImage = gridImg;
+    analyzeImage();
+  };
+  gridImg.src = gridCanvas.toDataURL();
+}
+
+// ================= CLEAR =================
+document.getElementById("clear").onclick = () => {
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      state[y][x] = -1;
+    }
+  }
+  document.querySelectorAll(".cell").forEach(c => {
+    c.classList.remove("active");
+    c.style.background = "";
+  });
+  updateNoteBars();
+};
+
+// ================= REBUILD GRID =================
+document.getElementById("rebuildGrid").onclick = () => {
+  stop(); // playback indices would be invalid mid-rebuild
+  buildGrid();
+};
+
+// ================= MIDI EXPORT =================
+const PPQN = 480; // ticks per quarter note
+const DRUM_CHANNEL = 9; // GM convention: channel 10 (index 9) is the percussion channel
+const GM_DRUM_KIT = [36, 38, 42, 46, 45, 47, 50, 49]; // kick, snare, closed-hat, open-hat, toms, crash
+
+function drumPitchForRow(row) {
+  return GM_DRUM_KIT[row % GM_DRUM_KIT.length];
+}
+
+function writeVarLen(value) {
+  const bytes = [value & 0x7f];
+  value >>= 7;
+  while (value > 0) {
+    bytes.push((value & 0x7f) | 0x80);
+    value >>= 7;
+  }
+  return bytes.reverse();
+}
+
+// Walk the loop range and collect notes, merging consecutive same-row,
+// same-colour cells into single longer notes when "Combine adjacent notes" is on.
+function collectMidiNotes() {
+  const combine = document.getElementById("combineNotes").checked;
+  const notes = [];
+
+  for (let row = 0; row < ROWS; row++) {
+    let col = loopStart;
+    while (col <= loopEnd) {
+      const track = state[row][col];
+      if (track === -1) { col++; continue; }
+
+      let runEnd = col;
+      if (combine) {
+        while (runEnd + 1 <= loopEnd && state[row][runEnd + 1] === track) runEnd++;
+      }
+
+      notes.push({ startStep: col - loopStart, length: runEnd - col + 1, row, track });
+      col = runEnd + 1;
+    }
+  }
+
+  return notes;
+}
+
+function buildMidiFile() {
+  const bpm = +document.getElementById("bpm").value;
+  const ticksPerStep = Math.round(PPQN * getStepQuarterFraction());
+  const notes = collectMidiNotes();
+
+  const events = [];
+  notes.forEach(n => {
+    const isDrum = n.track === DRUM_TRACK;
+    const pitch = isDrum
+      ? drumPitchForRow(n.row)
+      : Math.max(0, Math.min(127, 60 + quantizeSemitone(rowToRawSemitone(n.row)))); // 60 = middle C reference
+    const channel = isDrum ? DRUM_CHANNEL : n.track; // tracks 0-2 -> MIDI channels 0-2, drums -> channel 9
+
+    const tickStart = n.startStep * ticksPerStep;
+    const tickEnd = tickStart + n.length * ticksPerStep;
+
+    events.push({ tick: tickStart, type: 1, pitch, channel }); // note on
+    events.push({ tick: tickEnd, type: 0, pitch, channel });   // note off
+  });
+
+  // Note-offs before note-ons at the same tick, to avoid stuck/overlapping notes.
+  events.sort((a, b) => a.tick - b.tick || a.type - b.type);
+
+  const trackBytes = [];
+
+  // Tempo meta event at time 0
+  const microsPerQuarter = Math.round(60000000 / bpm);
+  trackBytes.push(...writeVarLen(0), 0xFF, 0x51, 0x03,
+    (microsPerQuarter >> 16) & 0xff,
+    (microsPerQuarter >> 8) & 0xff,
+    microsPerQuarter & 0xff);
+
+  let prevTick = 0;
+  events.forEach(e => {
+    trackBytes.push(...writeVarLen(e.tick - prevTick));
+    if (e.type === 1) trackBytes.push(0x90 | e.channel, e.pitch, 100);
+    else trackBytes.push(0x80 | e.channel, e.pitch, 0);
+    prevTick = e.tick;
+  });
+
+  // End of track
+  trackBytes.push(...writeVarLen(0), 0xFF, 0x2F, 0x00);
+
+  const trackLength = trackBytes.length;
+
+  const header = [
+    0x4D, 0x54, 0x68, 0x64,       // "MThd"
+    0, 0, 0, 6,                   // header chunk length
+    0, 0,                         // format 0
+    0, 1,                         // 1 track
+    (PPQN >> 8) & 0xff, PPQN & 0xff,
+  ];
+
+  const trackHeader = [
+    0x4D, 0x54, 0x72, 0x6B,       // "MTrk"
+    (trackLength >> 24) & 0xff,
+    (trackLength >> 16) & 0xff,
+    (trackLength >> 8) & 0xff,
+    trackLength & 0xff,
+  ];
+
+  return new Uint8Array([...header, ...trackHeader, ...trackBytes]);
+}
+
+document.getElementById("exportMidi").onclick = () => {
+  const bytes = buildMidiFile();
+  const blob = new Blob([bytes], { type: "audio/midi" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "sequence.mid";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+// ================= BUTTONS =================
+const playToggleBtn = document.getElementById("playToggle");
+let playing = false;
+playToggleBtn.onclick = () => {
+  if (playing) stop();
+  else start();
+};
+
+document.getElementById("importPhotoBtn").onclick = () => {
+  document.getElementById("paperPhoto").click();
+};
+
+const expertOverlay = document.getElementById("expertOverlay");
+function openExpertMode() {
+  expertOverlay.classList.add("open");
+  expertOverlay.setAttribute("aria-hidden", "false");
+  const modal = document.getElementById("expertModal");
+  if (modal) modal.scrollTop = 0;
+}
+function closeExpertMode() {
+  expertOverlay.classList.remove("open");
+  expertOverlay.setAttribute("aria-hidden", "true");
+}
+document.getElementById("expertOpen").onclick = openExpertMode;
+document.getElementById("expertClose").onclick = closeExpertMode;
+expertOverlay.addEventListener("click", (e) => {
+  if (e.target === expertOverlay) closeExpertMode();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && expertOverlay.classList.contains("open")) closeExpertMode();
+});
+
+// ================= INIT =================
+buildGrid();
+</script>
+</body>
+</html>
