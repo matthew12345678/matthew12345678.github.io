@@ -111,8 +111,8 @@ canvas {
     <div class="row" id="colorModes">
         Color
     </div>
-    <div class="row" style="opacity:0.7">Hold <b>O</b> to cycle thin → fat → thin — thicker is louder</div>
-    <div class="row" style="opacity:0.7">Hold P to morph sine → triangle → saw → square</div>
+    <div class="row" style="opacity:0.7">Hold <b>P</b> / <b>L</b> for thicker / thinner — thicker is louder</div>
+    <div class="row" style="opacity:0.7">Hold <b>O</b> / <b>K</b> to morph waveform colour up / down</div>
     <div class="row" style="opacity:0.7">Hold <b>I</b> to erase with the current brush</div>
 </div>
 
@@ -165,7 +165,9 @@ let waveMorph = 0; // 0 sine → 1 triangle → 2 saw → 3 square
 let colorMode = "normal";
 let colorCarry = 0;
 let pHeld = false;
+let lHeld = false;
 let oHeld = false;
+let kHeld = false;
 let iHeld = false;
 
 BRUSH_SPACINGS.forEach(spacing => {
@@ -303,6 +305,10 @@ function chooseNextColor() {
     applyStrokeColor();
 }
 
+function setEraseMode() {
+    tapeCtx.globalCompositeOperation = iHeld ? "destination-out" : "source-over";
+}
+
 // Audio
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const masterGain = audioCtx.createGain();
@@ -319,13 +325,13 @@ let lastY = 0;
 let dashCarry = 0;
 let dashOn = true;
 let lineThickness = 8;
-let thickDir = 1;
 let lastTs = 0;
 let lastMoveTs = 0;
 
 const MIN_THICKNESS = 2;
 const MAX_THICKNESS = 48;
 const GROW_PER_SEC = 28;
+const MORPH_PER_SEC = 0.7;
 const MOVE_PX = 2;
 
 // playhead fixed in middle
@@ -340,10 +346,6 @@ tapeCtx.lineWidth = 3;
 tapeCtx.lineCap = "round";
 tapeCtx.lineJoin = "round";
 applyStrokeColor();
-
-function setEraseMode() {
-    tapeCtx.globalCompositeOperation = iHeld ? "destination-out" : "source-over";
-}
 
 function tapePos(e) {
     return { x: e.clientX + offsetX, y: e.clientY };
@@ -703,7 +705,6 @@ function findClusters(pixels, height) {
     let sumY = 0;
     let sumW = 0;
     let count = 0;
-
     let sumMorph = 0;
 
     function flush() {
@@ -781,6 +782,19 @@ function render() {
     ctx.stroke();
 }
 
+function nudgeThickness(dir, dt) {
+    lineThickness += dir * GROW_PER_SEC * dt;
+    lineThickness = Math.max(MIN_THICKNESS, Math.min(MAX_THICKNESS, lineThickness));
+    if (drawing) stampDot(lastX, lastY, lineThickness);
+}
+
+function nudgeWave(dir, dt) {
+    waveMorph += dir * MORPH_PER_SEC * dt;
+    waveMorph = wrapMorph(waveMorph);
+    applyStrokeColor();
+    updateWaveUI();
+}
+
 // -------------------------
 // MAIN LOOP
 // -------------------------
@@ -788,24 +802,10 @@ function loop(ts) {
     const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0;
     lastTs = ts;
 
-    if (pHeld) {
-        waveMorph += 0.7 * dt;
-        if (waveMorph >= 4) waveMorph -= 4;
-        applyStrokeColor();
-        updateWaveUI();
-    }
-
-    if (oHeld) {
-        lineThickness += thickDir * GROW_PER_SEC * dt;
-        if (lineThickness >= MAX_THICKNESS) {
-            lineThickness = MAX_THICKNESS;
-            thickDir = -1;
-        } else if (lineThickness <= MIN_THICKNESS) {
-            lineThickness = MIN_THICKNESS;
-            thickDir = 1;
-        }
-        if (drawing) stampDot(lastX, lastY, lineThickness);
-    }
+    if (pHeld) nudgeThickness(1, dt);
+    if (lHeld) nudgeThickness(-1, dt);
+    if (oHeld) nudgeWave(1, dt);
+    if (kHeld) nudgeWave(-1, dt);
 
     if (play) {
         offsetX += speed;
@@ -857,7 +857,7 @@ HARMONIC_SETS.forEach(set => {
     harmSet.appendChild(opt);
 });
 
-HARMONIC_ROOTS.forEach(([name, freq], i) => {
+HARMONIC_ROOTS.forEach(([name, freq]) => {
     const opt = document.createElement("option");
     opt.textContent = name;
     opt.value = String(freq);
@@ -925,34 +925,34 @@ recordBtn.onclick = async () => {
     recordBtn.textContent = "Stop rec";
 };
 
+function setHeld(code, down) {
+    if (code === "KeyP") pHeld = down;
+    if (code === "KeyL") lHeld = down;
+    if (code === "KeyO") oHeld = down;
+    if (code === "KeyK") kHeld = down;
+    if (code === "KeyI") {
+        iHeld = down;
+        setEraseMode();
+    }
+}
+
 window.addEventListener("keydown", e => {
     if (e.repeat) return;
-    if (e.code === "KeyP") {
-        pHeld = true;
+    if (e.code === "KeyP" || e.code === "KeyL" || e.code === "KeyO" || e.code === "KeyK" || e.code === "KeyI") {
         audioCtx.resume();
-    }
-    if (e.code === "KeyO") {
-        oHeld = true;
-        audioCtx.resume();
-    }
-    if (e.code === "KeyI") {
-        iHeld = true;
-        setEraseMode();
+        setHeld(e.code, true);
     }
 });
 
 window.addEventListener("keyup", e => {
-    if (e.code === "KeyP") pHeld = false;
-    if (e.code === "KeyO") oHeld = false;
-    if (e.code === "KeyI") {
-        iHeld = false;
-        setEraseMode();
-    }
+    setHeld(e.code, false);
 });
 
 window.addEventListener("blur", () => {
     pHeld = false;
+    lHeld = false;
     oHeld = false;
+    kHeld = false;
     iHeld = false;
     setEraseMode();
 });
