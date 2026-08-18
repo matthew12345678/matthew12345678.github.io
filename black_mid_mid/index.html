@@ -102,6 +102,11 @@ button, input, select {
   max-width: 160px;
 }
 
+.trackPicker.unused,
+.track.unused {
+  display: none;
+}
+
 #sampleControls.disabled {
   opacity: 0.45;
   pointer-events: none;
@@ -347,8 +352,8 @@ button, input, select {
     <div class="section">
       <h3>Grid</h3>
       <div class="controls">
-        <label>Width (steps) <input id="gridWidth" type="number" min="1" max="4096" value="64"></label>
-        <label>Height (rows, max 128) <input id="gridHeight" type="number" min="1" max="128" value="36"></label>
+        <label>Width (steps) <input id="gridWidth" type="number" min="1" max="4096" value="128"></label>
+        <label>Height (rows, max 128) <input id="gridHeight" type="number" min="1" max="128" value="64"></label>
         <label>Step length
           <select id="noteLength">
             <option value="4">1/1 (whole)</option>
@@ -453,6 +458,7 @@ const WEB_INSTRUMENTS = [
 const DEFAULT_INSTRUMENTS = ["piano", "bass", "saw", "pluck", "drums"];
 
 let trackColors = TRACK_DEFS.map(t => t.color);
+let trackActive = new Array(TRACK_COUNT).fill(true); // false = empty/white legend box, skip in colour match
 let trackBuffers = new Array(TRACK_COUNT).fill(null);
 let trackInstruments = DEFAULT_INSTRUMENTS.slice();
 let useSamples = false; // expert option; default = web instruments
@@ -560,19 +566,85 @@ function hexToRgb(hex) {
   return [parseInt(v.substr(0, 2), 16), parseInt(v.substr(2, 2), 16), parseInt(v.substr(4, 2), 16)];
 }
 
+// Paper / empty-box white: bright and unsaturated. Used so a blank legend
+// square is ignored instead of becoming a "white instrument" colour.
+function isPaperWhite(r, g, b) {
+  const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  return lum > 210 && chroma < 45;
+}
+
+// Printed grid lines, labels, and box borders: grey-black, not marker ink.
+// Chroma is kept tight so a dark green/red marker is not mistaken for the grid.
+function isPrintedBlack(r, g, b) {
+  const chroma = rgbChroma(r, g, b);
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  return lum < 160 && chroma < 22;
+}
+
+function rgbChroma(r, g, b) {
+  return Math.max(r, g, b) - Math.min(r, g, b);
+}
+
+function rgbHue(r, g, b) {
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const c = max - min;
+  if (c < 8) return null;
+  let h;
+  if (max === r) h = ((g - b) / c) % 6;
+  else if (max === g) h = (b - r) / c + 2;
+  else h = (r - g) / c + 4;
+  h *= 60;
+  if (h < 0) h += 360;
+  return h;
+}
+
+function hueDist(a, b) {
+  const d = Math.abs(a - b);
+  return Math.min(d, 360 - d);
+}
+
 function nearestTrackForColor(r, g, b) {
-  let best = 0, bestDist = Infinity;
+  const chroma = rgbChroma(r, g, b);
+  if (chroma < 22) return -1;
+  const hue = rgbHue(r, g, b);
+  let best = -1, bestDist = Infinity;
   for (let i = 0; i < TRACK_COUNT; i++) {
+    if (!trackActive[i]) continue;
     const [tr, tg, tb] = hexToRgb(trackColors[i]);
+    if (isPaperWhite(tr, tg, tb) || isPrintedBlack(tr, tg, tb)) continue;
+    const tHue = rgbHue(tr, tg, tb);
+    // Yellow-brown paper/table cast sits ~50° from red; keep the window
+    // tight so it cannot steal the red (or green) track.
+    if (hue != null && tHue != null && hueDist(hue, tHue) > 36) continue;
     const dist = (r - tr) ** 2 + (g - tg) ** 2 + (b - tb) ** 2;
+    if (dist > 140 * 140) continue;
     if (dist < bestDist) { bestDist = dist; best = i; }
   }
   return best;
 }
 
+function syncTrackPanelVisibility() {
+  let firstActive = -1;
+  for (let i = 0; i < TRACK_COUNT; i++) {
+    const show = !!trackActive[i];
+    const picker = document.getElementById(`trackPicker${i}`);
+    if (picker) picker.classList.toggle("unused", !show);
+    const fileInput = document.getElementById(`trackFile${i}`);
+    const trackEl = fileInput && fileInput.closest(".track");
+    if (trackEl) trackEl.classList.toggle("unused", !show);
+    if (show && firstActive < 0) firstActive = i;
+  }
+  if (firstActive >= 0 && !trackActive[currentDrawTrack]) {
+    currentDrawTrack = firstActive;
+    const radio = document.querySelector(`input[name="drawTrack"][value="${firstActive}"]`);
+    if (radio) radio.checked = true;
+  }
+}
+
 // Grid dimensions are now configurable at runtime (see buildGrid()).
-let ROWS = 36;
-let COLS = 64;
+let ROWS = 64;
+let COLS = 128;
 
 // Must match the CSS: .cell size, #grid gap, and #grid padding.
 const CELL_SIZE = 12;
@@ -622,8 +694,8 @@ async function initAudio() {
 // (Re)builds the whole grid + volume row from the Width/Height inputs.
 // Wipes the current pattern - call stop() first if the transport is running.
 function buildGrid() {
-  ROWS = Math.max(1, Math.min(128, Math.round(+document.getElementById("gridHeight").value) || 36));
-  COLS = Math.max(1, Math.round(+document.getElementById("gridWidth").value) || 64);
+  ROWS = Math.max(1, Math.min(128, Math.round(+document.getElementById("gridHeight").value) || 64));
+  COLS = Math.max(1, Math.round(+document.getElementById("gridWidth").value) || 128);
 
   state = Array.from({length: ROWS}, () => Array.from({length: COLS}, () => -1));
   volumeCurve = Array.from({length: COLS}, () => 1);
@@ -1168,6 +1240,32 @@ function analyzeImage() {
   const invert = invertInput.checked;
   const useVolume = imgVolumeInput.checked;
 
+  // Estimate the page colour so photo lighting (grey/yellow paper) is not
+  // treated as ink the way distance-from-pure-white would.
+  let paperR = 255, paperG = 255, paperB = 255;
+  if (!invert) {
+    const paperSamples = [];
+    const stepX = Math.max(1, Math.floor(srcW / 48));
+    const stepY = Math.max(1, Math.floor(srcH / 36));
+    for (let y = 0; y < srcH; y += stepY) {
+      for (let x = 0; x < srcW; x += stepX) {
+        const i = (y * srcW + x) * 4;
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        const chroma = rgbChroma(r, g, b);
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        if (chroma < 35 && lum > 140) paperSamples.push([r, g, b, lum]);
+      }
+    }
+    if (paperSamples.length >= 8) {
+      paperSamples.sort((a, b) => b[3] - a[3]);
+      const take = paperSamples.slice(0, Math.ceil(paperSamples.length * 0.5));
+      const n = take.length;
+      paperR = Math.round(take.reduce((s, p) => s + p[0], 0) / n);
+      paperG = Math.round(take.reduce((s, p) => s + p[1], 0) / n);
+      paperB = Math.round(take.reduce((s, p) => s + p[2], 0) / n);
+    }
+  }
+
   const cellW = srcW / COLS;
   const cellH = srcH / ROWS;
   const SAMPLES = 7; // per axis -> up to 49 sample points per cell
@@ -1184,33 +1282,50 @@ function analyzeImage() {
       const px0 = x * cellW;
       const px1 = (x + 1) * cellW;
 
-      let inkCount = 0, totalSamples = 0, lumSum = 0;
-      const votes = new Array(TRACK_COUNT).fill(0);
-
+      const samples = [];
       for (let sy = 0; sy < SAMPLES; sy++) {
         const yy = Math.min(srcH - 1, Math.floor(py0 + ((sy + 0.5) / SAMPLES) * (py1 - py0)));
         for (let sx = 0; sx < SAMPLES; sx++) {
           const xx = Math.min(srcW - 1, Math.floor(px0 + ((sx + 0.5) / SAMPLES) * (px1 - px0)));
           const i = (yy * srcW + xx) * 4;
-          const r = data[i], g = data[i + 1], b = data[i + 2];
-          const luminance = 0.299 * r + 0.587 * g + 0.114 * b; // 0 (black) - 255 (white), used only for the volume row
+          samples.push([data[i], data[i + 1], data[i + 2]]);
+        }
+      }
 
-          lumSum += luminance;
-          totalSamples++;
+      // Local page colour for this cell (handles left-side shadows / warm cast).
+      let locR = 0, locG = 0, locB = 0, locN = 0;
+      for (const [r, g, b] of samples) {
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        if (rgbChroma(r, g, b) < 25 && lum > 90) {
+          locR += r; locG += g; locB += b; locN++;
+        }
+      }
+      const cellPaperR = locN >= 4 ? locR / locN : paperR;
+      const cellPaperG = locN >= 4 ? locG / locN : paperG;
+      const cellPaperB = locN >= 4 ? locB / locN : paperB;
 
-          // "Ink" detection uses distance from the background colour (white, or
-          // black when inverted), NOT raw luminance — a bright colour like yellow
-          // or cyan has high luminance despite being clearly-visible coloured ink,
-          // so luminance alone would miss it. Distance-from-background catches any
-          // hue that stands out against the page, however light or dark it is.
-          const metric = invert
-            ? Math.max(r, g, b)                                            // distance from black
-            : Math.max(Math.abs(255 - r), Math.abs(255 - g), Math.abs(255 - b)); // distance from white
-          const isInk = metric > threshold;
-          if (isInk) {
-            votes[nearestTrackForColor(r, g, b)]++;
-            inkCount++;
-          }
+      let inkCount = 0, totalSamples = 0, lumSum = 0;
+      const votes = new Array(TRACK_COUNT).fill(0);
+
+      for (const [r, g, b] of samples) {
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+        lumSum += luminance;
+        totalSamples++;
+
+        if (!invert) {
+          const chroma = rgbChroma(r, g, b);
+          // Only skip true grey (grid / paper). Dark green marker is kept.
+          if (isPrintedBlack(r, g, b) || chroma < 20) continue;
+        }
+
+        const metric = invert
+          ? Math.max(r, g, b)
+          : Math.max(Math.abs(cellPaperR - r), Math.abs(cellPaperG - g), Math.abs(cellPaperB - b));
+        if (metric <= threshold) continue;
+        const trackVote = nearestTrackForColor(r, g, b);
+        if (trackVote >= 0) {
+          votes[trackVote]++;
+          inkCount++;
         }
       }
 
@@ -1218,8 +1333,9 @@ function analyzeImage() {
       // this catches thin lines that only cross a small part of the cell, instead of
       // needing the cell's *average* colour to cross the threshold.
       const coverage = inkCount / totalSamples;
-      const on = coverage >= 0.12;
-      const track = on ? votes.indexOf(Math.max(...votes)) : -1;
+      const bestVotes = Math.max(...votes);
+      const on = coverage >= 0.08 && bestVotes >= 3;
+      const track = on ? votes.indexOf(bestVotes) : -1;
 
       const cellIndex = y * COLS + x;
       const cell = grid.children[cellIndex];
@@ -1260,6 +1376,8 @@ imgFileInput.onchange = (e) => {
   const img = new Image();
   img.onload = () => {
     lastImage = img;
+    trackActive = new Array(TRACK_COUNT).fill(true);
+    syncTrackPanelVisibility();
     analyzeImage();
     URL.revokeObjectURL(url);
   };
@@ -1286,11 +1404,11 @@ const PAPER = {
   // fraction coords of each colour swatch centre, in the same order as TRACK_DEFS.
   // These are fallbacks — import prefers auto-detected legend boxes above the grid.
   swatches: [
-    { x: 0.07518, y: 0.13258 },
-    { x: 0.11127, y: 0.13207 },
-    { x: 0.15348, y: 0.13208 },
-    { x: 0.19243, y: 0.13193 },
-    { x: 0.27464, y: 0.13199 }, // drums
+    { x: 0.0677, y: 0.1761 },
+    { x: 0.1033, y: 0.1761 },
+    { x: 0.1425, y: 0.1761 },
+    { x: 0.1817, y: 0.1761 },
+    { x: 0.2589, y: 0.1761 }, // drums (further right, after a gap)
   ],
   // fraction coords of the drawing-grid rectangle (top-left / bottom-right)
   gridRect: { x0: 0.04077, y0: 0.21365, x1: 0.95687, y1: 0.86918 },
@@ -1418,7 +1536,8 @@ function findCornerMarks(imageData, width, height) {
       }
     }
     const mean = sum / Math.max(1, n);
-    const darkThr = Math.min(110, Math.max(50, minG + (mean - minG) * 0.28));
+    // Relative to this corner: phone photos are rarely true-black.
+    const darkThr = Math.min(130, Math.max(40, minG + (mean - minG) * 0.32));
 
     const visited = new Uint8Array(rw * rh);
     let best = null;
@@ -1453,9 +1572,9 @@ function findCornerMarks(imageData, width, height) {
           }
         }
 
-        if (count < 16 || count > 900) continue;
+        if (count < 10 || count > 1600) continue;
         const bw = maxX - minX + 1, bh = maxY - minY + 1;
-        if (bw < 4 || bh < 4 || bw > 55 || bh > 55) continue;
+        if (bw < 3 || bh < 3 || bw > 70 || bh > 70) continue;
         if (Math.abs(bw - bh) > Math.max(5, bw * 0.4)) continue;
         const fill = count / (bw * bh);
         if (fill < 0.5) continue; // rings are hollow; centre must be solid
@@ -1680,80 +1799,105 @@ function importPaperScore() {
   }
   rectCtx.putImageData(destImgData, 0, 0);
 
-  // Sample a colourful neighbourhood around an expected swatch centre.
-  // Skips white paper / soft edges so slight corner-tap error doesn't wash
-  // the average toward white.
+  function pixelAt(px, py) {
+    const i = (py * RECT_W + px) * 4;
+    const r = destData[i], g = destData[i + 1], b = destData[i + 2];
+    return {
+      r, g, b,
+      chroma: Math.max(r, g, b) - Math.min(r, g, b),
+      lum: 0.299 * r + 0.587 * g + 0.114 * b,
+    };
+  }
+
+  // Page colour from the legend band (handles grey/yellow phone lighting).
+  function estimatePaperColor() {
+    const vals = [];
+    const y0 = Math.round(0.08 * RECT_H);
+    const y1 = Math.round(PAPER.gridRect.y0 * RECT_H);
+    for (let y = y0; y < y1; y += 4) {
+      for (let x = 4; x < RECT_W - 4; x += 4) {
+        const p = pixelAt(x, y);
+        if (p.chroma < 35) vals.push(p);
+      }
+    }
+    vals.sort((a, b) => b.lum - a.lum);
+    const take = vals.slice(0, Math.max(20, Math.floor(vals.length * 0.5)));
+    if (!take.length) return [245, 245, 245];
+    const n = take.length;
+    return [
+      Math.round(take.reduce((s, p) => s + p.r, 0) / n),
+      Math.round(take.reduce((s, p) => s + p.g, 0) / n),
+      Math.round(take.reduce((s, p) => s + p.b, 0) / n),
+    ];
+  }
+
+  const paperRgb = estimatePaperColor();
+  const paperLum = 0.299 * paperRgb[0] + 0.587 * paperRgb[1] + 0.114 * paperRgb[2];
+
+  function isNearPaper(r, g, b) {
+    const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+    const dist = Math.abs(r - paperRgb[0]) + Math.abs(g - paperRgb[1]) + Math.abs(b - paperRgb[2]);
+    return chroma < 40 && dist < 90;
+  }
+
+  function isColorInk(r, g, b) {
+    const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+    return chroma >= 28 && !isNearPaper(r, g, b) && !isPaperWhite(r, g, b);
+  }
+
+  function samplePatchInk(px0, py0, px1, py1) {
+    let r = 0, g = 0, b = 0, n = 0, total = 0;
+    for (let py = py0; py <= py1; py++) {
+      for (let px = px0; px <= px1; px++) {
+        if (px < 0 || py < 0 || px >= RECT_W || py >= RECT_H) continue;
+        const p = pixelAt(px, py);
+        total++;
+        if (!isColorInk(p.r, p.g, p.b)) continue;
+        r += p.r; g += p.g; b += p.b; n++;
+      }
+    }
+    if (n < 8 || n / Math.max(total, 1) < 0.08) return null;
+    return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+  }
+
+  // Sample inside one legend square. Empty / white interiors return null.
   function sampleSwatch(fx, fy) {
     const cx = Math.round(fx * RECT_W);
     const cy = Math.round(fy * RECT_H);
-
-    for (let radius = 10; radius <= 40; radius += 8) {
-      let r = 0, g = 0, b = 0, n = 0;
-      for (let dy = -radius; dy <= radius; dy++) {
-        for (let dx = -radius; dx <= radius; dx++) {
-          const px = cx + dx, py = cy + dy;
-          if (px < 0 || py < 0 || px >= RECT_W || py >= RECT_H) continue;
-          const i = (py * RECT_W + px) * 4;
-          const rr = destData[i], gg = destData[i + 1], bb = destData[i + 2];
-          const chroma = Math.max(rr, gg, bb) - Math.min(rr, gg, bb);
-          const lum = 0.299 * rr + 0.587 * gg + 0.114 * bb;
-          // Skip near-white/near-background pixels (low saturation, bright)
-          if (chroma < 40 && lum > 200) continue;
-          if (chroma < 50) continue; // need a real ink colour, not grey grid
-          r += rr; g += gg; b += bb; n++;
-        }
-      }
-      if (n >= 25) return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
-    }
-    return null;
+    return samplePatchInk(cx - 12, cy - 12, cx + 12, cy + 12);
   }
 
-  // Auto-detect the legend colour boxes just above the drawing area (left side).
-  // Looks for a horizontal row of TRACK_COUNT compact, saturated squares so
-  // we still pick up the right colours when the printed layout drifts a bit
-  // from the hardcoded PAPER.swatches fractions.
+  // Find the 5 small inner squares by their black borders (works for both
+  // solid printed colours and empty boxes), then read the interior.
   function detectLegendSwatches() {
-    const x0 = Math.round(0.01 * RECT_W);
-    const x1 = Math.round(0.42 * RECT_W);
-    const y0 = Math.round(0.02 * RECT_H);
-    const y1 = Math.max(y0 + 8, Math.round(PAPER.gridRect.y0 * RECT_H) - 4);
+    const x0 = Math.round(0.02 * RECT_W);
+    const x1 = Math.round(0.40 * RECT_W);
+    const y0 = Math.round(0.08 * RECT_H);
+    const y1 = Math.max(y0 + 8, Math.round(PAPER.gridRect.y0 * RECT_H) - 2);
     const bw = x1 - x0, bh = y1 - y0;
-    if (bw < 20 || bh < 10) return null;
+    if (bw < 40 || bh < 20) return null;
 
+    const darkThr = Math.max(40, paperLum * 0.55);
     const visited = new Uint8Array(bw * bh);
-    const blobs = [];
-
-    const chromaAt = (px, py) => {
-      const i = (py * RECT_W + px) * 4;
-      const r = destData[i], g = destData[i + 1], b = destData[i + 2];
-      const chroma = Math.max(r, g, b) - Math.min(r, g, b);
-      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      return { r, g, b, chroma, lum };
-    };
+    const boxes = [];
 
     for (let ly = 0; ly < bh; ly++) {
       for (let lx = 0; lx < bw; lx++) {
         const vi = ly * bw + lx;
         if (visited[vi]) continue;
-        const px = x0 + lx, py = y0 + ly;
-        const c0 = chromaAt(px, py);
-        // Bright, saturated ink — the solid legend squares.
-        if (c0.chroma < 90 || c0.lum < 50 || c0.lum > 250) {
+        const p0 = pixelAt(x0 + lx, y0 + ly);
+        if (p0.lum >= darkThr) {
           visited[vi] = 1;
           continue;
         }
 
-        // Flood-fill this colourful blob.
         const stack = [lx, ly];
         visited[vi] = 1;
-        let minX = lx, maxX = lx, minY = ly, maxY = ly;
-        let sr = 0, sg = 0, sb = 0, n = 0;
+        let minX = lx, maxX = lx, minY = ly, maxY = ly, count = 0;
         while (stack.length) {
           const cy = stack.pop();
           const cx = stack.pop();
-          const { r, g, b, chroma, lum } = chromaAt(x0 + cx, y0 + cy);
-          if (chroma < 70 || lum < 40) continue;
-          sr += r; sg += g; sb += b; n++;
+          count++;
           if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
           if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
           for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -1762,57 +1906,72 @@ function importPaperScore() {
             const ni = ny * bw + nx;
             if (visited[ni]) continue;
             visited[ni] = 1;
-            const nc = chromaAt(x0 + nx, y0 + ny);
-            if (nc.chroma >= 70 && nc.lum >= 40 && nc.lum <= 250) stack.push(nx, ny);
+            if (pixelAt(x0 + nx, y0 + ny).lum < darkThr) stack.push(nx, ny);
           }
         }
 
-        if (n < 40) continue;
         const boxW = maxX - minX + 1, boxH = maxY - minY + 1;
-        // Legend swatches are small-ish squares (not scribbles / snowflake).
-        if (boxW < 8 || boxH < 8 || boxW > 70 || boxH > 70) continue;
-        if (Math.abs(boxW - boxH) > Math.max(10, boxW * 0.45)) continue;
-        blobs.push({
-          fx: (x0 + (minX + maxX) / 2) / RECT_W,
-          fy: (y0 + (minY + maxY) / 2) / RECT_H,
-          y: y0 + (minY + maxY) / 2,
+        if (boxW < 12 || boxH < 12 || boxW > 55 || boxH > 55) continue;
+        if (Math.abs(boxW - boxH) > Math.max(8, boxW * 0.4)) continue;
+        const fill = count / (boxW * boxH);
+        // Hollow printed frame (~0.2) or a dark fill that merged with the border (~0.8).
+        if (fill < 0.10 || fill > 0.85) continue;
+
+        const insetX = Math.max(2, Math.round(boxW * 0.22));
+        const insetY = Math.max(2, Math.round(boxH * 0.22));
+        const rgb = samplePatchInk(
+          x0 + minX + insetX, y0 + minY + insetY,
+          x0 + maxX - insetX, y0 + maxY - insetY
+        );
+        boxes.push({
           x: x0 + (minX + maxX) / 2,
-          rgb: [Math.round(sr / n), Math.round(sg / n), Math.round(sb / n)],
+          y: y0 + (minY + maxY) / 2,
+          rgb,
         });
       }
     }
 
-    if (blobs.length < TRACK_COUNT) return null;
+    if (!boxes.length) return null;
 
-    // Prefer a horizontal row of exactly TRACK_COUNT swatches (same band of y).
-    let best = null;
-    for (const seed of blobs) {
-      const row = blobs
-        .filter(b => Math.abs(b.y - seed.y) <= 18)
-        .sort((a, b) => a.x - b.x);
-      // Deduplicate blobs that overlap in x (same swatch split by flood fill).
-      const dedup = [];
-      for (const b of row) {
-        if (dedup.length && Math.abs(b.x - dedup[dedup.length - 1].x) < 12) continue;
-        dedup.push(b);
-      }
-      if (dedup.length < TRACK_COUNT) continue;
-      const chosen = dedup.slice(0, TRACK_COUNT);
-      // Score: tight y alignment + left-side placement (legend lives top-left).
-      const yMean = chosen.reduce((s, b) => s + b.y, 0) / chosen.length;
-      const ySpread = chosen.reduce((s, b) => s + Math.abs(b.y - yMean), 0);
-      const score = 1000 - ySpread - chosen[0].x * 0.05;
-      if (!best || score > best.score) best = { score, chosen };
+    const slots = new Array(TRACK_COUNT).fill(undefined);
+    const used = new Array(TRACK_COUNT).fill(false);
+    boxes.sort((a, b) => a.x - b.x);
+    for (const box of boxes) {
+      let bestI = -1, bestD = Infinity;
+      PAPER.swatches.forEach((sw, i) => {
+        if (used[i]) return;
+        const dx = box.x - sw.x * RECT_W;
+        const dy = box.y - sw.y * RECT_H;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; bestI = i; }
+      });
+      // ~50px: stay on the intended square, not its neighbour (~60px away).
+      if (bestI < 0 || bestD > 50 * 50) continue;
+      used[bestI] = true;
+      slots[bestI] = box.rgb; // null rgb = empty white box
     }
-    return best ? best.chosen.map(b => b.rgb) : null;
+    return slots;
   }
 
-  let sampled = detectLegendSwatches();
-  if (!sampled) {
-    sampled = PAPER.swatches.map(sw => sampleSwatch(sw.x, sw.y) || [200, 200, 200]);
-  }
+  const detected = detectLegendSwatches();
+  const sampled = PAPER.swatches.map((sw, i) => {
+    if (detected && detected[i] !== undefined) return detected[i];
+    return sampleSwatch(sw.x, sw.y);
+  });
 
+  const anyColor = sampled.some(rgb => rgb);
   sampled.forEach((rgb, i) => {
+    if (!anyColor) {
+      // Detection failed completely — keep the default palette so the grid
+      // can still be analysed rather than matching against nothing.
+      trackActive[i] = true;
+      return;
+    }
+    if (!rgb) {
+      trackActive[i] = false;
+      return;
+    }
+    trackActive[i] = true;
     const [r, g, b] = rgb;
     const hex = "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
     trackColors[i] = hex;
@@ -1821,8 +1980,11 @@ function importPaperScore() {
       colorInput.value = hex;
       colorInput.closest(".track").style.setProperty("--tcolor", hex);
     }
+    const pickerEl = document.getElementById(`trackPicker${i}`);
+    if (pickerEl) pickerEl.style.setProperty("--tcolor", hex);
     repaintTrack(i);
   });
+  syncTrackPanelVisibility();
 
   // Crop out just the drawing-grid rectangle and feed it through the existing
   // threshold/invert/brightness-to-volume pipeline, same as a normal image import.
