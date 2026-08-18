@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Newbrain</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="mist" aria-hidden="true"></div>
+
+  <main class="stage">
+    <header class="brand">
+      <p class="eyebrow">drawable waves</p>
+      <h1>Newbrain</h1>
+      <p class="lede">Draw a carrier. Freq and vol set pitch and loudness; freq freq and vol freq scale their speeds.</p>
+      <div class="cta">
+        <button type="button" id="startBtn" class="start">Start listening</button>
+        <label class="master">vol
+          <input type="range" min="0" max="1.5" step="0.001" value="1" data-param="masterVol" />
+          <span class="numwrap"><input type="number" data-num="masterVol" value="1" step="any" min="0" /></span>
+        </label>
+        <span id="status" class="status">audio off</span>
+      </div>
+      <div class="preset-bar">
+        <input id="presetName" type="text" placeholder="preset name" maxlength="48" autocomplete="off" />
+        <button type="button" id="savePreset">Save</button>
+        <button type="button" id="loadPreset">Load</button>
+        <input id="presetFile" type="file" accept="application/json,.json" hidden />
+      </div>
+      <div id="presetList" class="preset-list" role="group" aria-label="Saved presets"></div>
+    </header>
+
+    <article class="panel panel-carrier" data-wave="0">
+      <h2>Carrier</h2>
+      <canvas class="wave" data-table="0" aria-label="Carrier waveform, drag to draw"></canvas>
+      <label class="shape">shape
+        <select data-wave="0">
+          <option value="0">sine</option>
+          <option value="1">square</option>
+          <option value="2">tri</option>
+          <option value="3">rev tri</option>
+          <option value="4">saw</option>
+          <option value="5">rev saw</option>
+          <option value="6">flat</option>
+        </select>
+      </label>
+    </article>
+
+    <section class="mods" aria-label="Modulators">
+      <article class="panel" data-wave="1">
+        <h2>Freq</h2>
+        <canvas class="wave" data-table="1" aria-label="Frequency modulator, drag to draw"></canvas>
+        <label class="shape">shape
+          <select data-wave="1">
+            <option value="0">sine</option>
+            <option value="1">square</option>
+            <option value="2">tri</option>
+            <option value="3">rev tri</option>
+            <option value="4">saw</option>
+            <option value="5">rev saw</option>
+            <option value="6" selected>flat</option>
+          </select>
+        </label>
+        <div class="knobs">
+          <label>speed
+            <input type="range" min="0" max="1000" value="691" data-param="freqSpeed" data-scale="log" data-min="1" data-max="120000" />
+            <span class="numwrap"><input type="number" data-num="freqSpeed" value="2000" step="any" min="1" /><abbr>ms</abbr></span>
+          </label>
+          <label>lower
+            <input type="range" min="0" max="1000" value="511" data-param="freqLower" data-scale="log" data-min="0.1" data-max="8000" />
+            <span class="numwrap"><input type="number" data-num="freqLower" value="80" step="any" min="0.1" /><abbr>Hz</abbr></span>
+          </label>
+          <label>upper
+            <input type="range" min="0" max="1000" value="795" data-param="freqUpper" data-scale="log" data-min="0.1" data-max="8000" />
+            <span class="numwrap"><input type="number" data-num="freqUpper" value="800" step="any" min="0.1" /><abbr>Hz</abbr></span>
+          </label>
+        </div>
+      </article>
+
+      <article class="panel" data-wave="2">
+        <h2>Vol</h2>
+        <canvas class="wave" data-table="2" aria-label="Volume modulator, drag to draw"></canvas>
+        <label class="shape">shape
+          <select data-wave="2">
+            <option value="0">sine</option>
+            <option value="1">square</option>
+            <option value="2">tri</option>
+            <option value="3">rev tri</option>
+            <option value="4">saw</option>
+            <option value="5">rev saw</option>
+            <option value="6" selected>flat</option>
+          </select>
+        </label>
+        <div class="knobs">
+          <label>speed
+            <input type="range" min="0" max="1000" value="623" data-param="volSpeed" data-scale="log" data-min="1" data-max="120000" />
+            <span class="numwrap"><input type="number" data-num="volSpeed" value="1500" step="any" min="1" /><abbr>ms</abbr></span>
+          </label>
+        </div>
+      </article>
+
+      <article class="panel" data-wave="3">
+        <h2>Freq freq</h2>
+        <canvas class="wave" data-table="3" aria-label="Frequency speed modulator, drag to draw"></canvas>
+        <label class="shape">shape
+          <select data-wave="3">
+            <option value="0">sine</option>
+            <option value="1">square</option>
+            <option value="2">tri</option>
+            <option value="3">rev tri</option>
+            <option value="4">saw</option>
+            <option value="5">rev saw</option>
+            <option value="6" selected>flat</option>
+          </select>
+        </label>
+        <div class="knobs">
+          <label>speed
+            <input type="range" min="0" max="1000" value="769" data-param="freqFreqSpeed" data-scale="log" data-min="1" data-max="120000" />
+            <span class="numwrap"><input type="number" data-num="freqFreqSpeed" value="8000" step="any" min="1" /><abbr>ms</abbr></span>
+          </label>
+          <label>lower
+            <input type="range" min="0" max="8" step="0.01" value="0" data-param="freqFreqLower" />
+            <span class="numwrap"><input type="number" data-num="freqFreqLower" value="0" step="any" /><abbr>×</abbr></span>
+          </label>
+          <label>upper
+            <input type="range" min="0" max="8" step="0.01" value="1" data-param="freqFreqUpper" />
+            <span class="numwrap"><input type="number" data-num="freqFreqUpper" value="1" step="any" /><abbr>×</abbr></span>
+          </label>
+        </div>
+      </article>
+
+      <article class="panel" data-wave="4">
+        <h2>Vol freq</h2>
+        <canvas class="wave" data-table="4" aria-label="Volume speed modulator, drag to draw"></canvas>
+        <label class="shape">shape
+          <select data-wave="4">
+            <option value="0">sine</option>
+            <option value="1">square</option>
+            <option value="2">tri</option>
+            <option value="3">rev tri</option>
+            <option value="4">saw</option>
+            <option value="5">rev saw</option>
+            <option value="6" selected>flat</option>
+          </select>
+        </label>
+        <div class="knobs">
+          <label>speed
+            <input type="range" min="0" max="1000" value="788" data-param="volFreqSpeed" data-scale="log" data-min="1" data-max="120000" />
+            <span class="numwrap"><input type="number" data-num="volFreqSpeed" value="10000" step="any" min="1" /><abbr>ms</abbr></span>
+          </label>
+          <label>lower
+            <input type="range" min="0" max="8" step="0.01" value="0" data-param="volFreqLower" />
+            <span class="numwrap"><input type="number" data-num="volFreqLower" value="0" step="any" /><abbr>×</abbr></span>
+          </label>
+          <label>upper
+            <input type="range" min="0" max="8" step="0.01" value="1" data-param="volFreqUpper" />
+            <span class="numwrap"><input type="number" data-num="volFreqUpper" value="1" step="any" /><abbr>×</abbr></span>
+          </label>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script src="synth.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
