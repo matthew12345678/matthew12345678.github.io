@@ -74,12 +74,40 @@ button, input, select {
   min-width: 8px;
 }
 
+#instrumentRow {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
 #trackPickers {
   display: flex;
   gap: 10px;
   align-items: stretch;
-  margin-bottom: 14px;
   flex-wrap: wrap;
+}
+
+#importPreviewWrap {
+  display: none;
+  flex-shrink: 0;
+  background: #141414;
+  border: 1px solid #333;
+  padding: 6px;
+}
+
+#importPreviewWrap.visible {
+  display: flex;
+  align-items: center;
+}
+
+#importPreview {
+  display: block;
+  height: 200px;
+  width: auto;
+  max-width: 340px;
+  object-fit: contain;
+  background: #0b0b0b;
 }
 
 .trackPicker {
@@ -295,7 +323,12 @@ button, input, select {
   <button type="button" id="expertOpen">Expert mode</button>
 </div>
 
-<div id="trackPickers"></div>
+<div id="instrumentRow">
+  <div id="trackPickers"></div>
+  <div id="importPreviewWrap">
+    <img id="importPreview" alt="Imported photo" />
+  </div>
+</div>
 
 <div id="scoreArea">
   <div id="grid"></div>
@@ -546,6 +579,22 @@ function syncSampleModeUI() {
 }
 useSamplesInput.onchange = syncSampleModeUI;
 syncSampleModeUI();
+
+function showImportPreview(source) {
+  const wrap = document.getElementById("importPreviewWrap");
+  const img = document.getElementById("importPreview");
+  if (!wrap || !img || !source) return;
+  const sw = source.naturalWidth || source.width;
+  const sh = source.naturalHeight || source.height;
+  if (!sw || !sh) return;
+  const scale = Math.min(1, 560 / sw, 336 / sh);
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(sw * scale));
+  c.height = Math.max(1, Math.round(sh * scale));
+  c.getContext("2d").drawImage(source, 0, 0, c.width, c.height);
+  img.src = c.toDataURL("image/jpeg", 0.75);
+  wrap.classList.add("visible");
+}
 
 // Re-colour every already-painted cell/note-bar belonging to a track
 function repaintTrack(trackIndex) {
@@ -1378,6 +1427,7 @@ imgFileInput.onchange = (e) => {
     lastImage = img;
     trackActive = new Array(TRACK_COUNT).fill(true);
     syncTrackPanelVisibility();
+    showImportPreview(img);
     analyzeImage();
     URL.revokeObjectURL(url);
   };
@@ -2000,6 +2050,8 @@ function importPaperScore() {
   // The paper background is white, so "distance from white" is the right
   // metric here — invert is for dark-background photos, not this case.
   invertInput.checked = false;
+
+  showImportPreview(paperFullResCanvas || rectCanvas);
 
   const gridImg = new Image();
   gridImg.onload = () => {
