@@ -91,6 +91,8 @@ button, input, select {
 #importPreviewWrap {
   display: none;
   flex-shrink: 0;
+  flex-direction: column;
+  gap: 6px;
   background: #141414;
   border: 1px solid #333;
   padding: 6px;
@@ -98,7 +100,6 @@ button, input, select {
 
 #importPreviewWrap.visible {
   display: flex;
-  align-items: center;
 }
 
 #importPreview {
@@ -108,6 +109,17 @@ button, input, select {
   max-width: 340px;
   object-fit: contain;
   background: #0b0b0b;
+}
+
+#importPreviewActions {
+  display: flex;
+  gap: 6px;
+}
+
+#importPreviewActions button {
+  flex: 1;
+  font-size: 12px;
+  padding: 4px 6px;
 }
 
 .trackPicker {
@@ -327,6 +339,10 @@ button, input, select {
   <div id="trackPickers"></div>
   <div id="importPreviewWrap">
     <img id="importPreview" alt="Imported photo" />
+    <div id="importPreviewActions">
+      <button type="button" id="previewRotateLeft">Rotate left</button>
+      <button type="button" id="previewRotateRight">Rotate right</button>
+    </div>
   </div>
 </div>
 
@@ -347,6 +363,8 @@ button, input, select {
       <h3>Score photo</h3>
       <div class="controls">
         <span id="paperStatus"></span>
+        <button type="button" id="paperRotateLeft" style="display:none;">Rotate left</button>
+        <button type="button" id="paperRotateRight" style="display:none;">Rotate right</button>
         <button type="button" id="paperReset" style="display:none;">Redo corners</button>
         <button type="button" id="paperConfirm" style="display:none;">Re-import</button>
       </div>
@@ -1526,6 +1544,8 @@ const paperPreviewWrap = document.getElementById("paperPreviewWrap");
 const paperPreview = document.getElementById("paperPreview");
 const paperResetBtn = document.getElementById("paperReset");
 const paperConfirmBtn = document.getElementById("paperConfirm");
+const paperRotateLeftBtn = document.getElementById("paperRotateLeft");
+const paperRotateRightBtn = document.getElementById("paperRotateRight");
 const paperPreviewCtx = paperPreview.getContext("2d");
 
 let paperFullResCanvas = null; // full-resolution copy of the uploaded photo
@@ -1704,27 +1724,39 @@ function loadPaperSource(drawable, w, h) {
   paperFullResCanvas.height = h;
   paperFullResCanvas.getContext("2d").drawImage(drawable, 0, 0, w, h);
 
-  // Display the photo scaled down to a manageable on-screen size.
+  paperClicks = [];
+  paperPreviewWrap.style.display = "";
+  paperResetBtn.style.display = "";
+  paperRotateLeftBtn.style.display = "";
+  paperRotateRightBtn.style.display = "";
+  paperConfirmBtn.style.display = "none";
+  sizePaperPreview();
+  paperStatus.textContent = "Looking for corner marks\u2026";
+  openExpertMode();
+  redrawPaperPreview();
+  scanPaperCorners();
+}
+
+function sizePaperPreview() {
+  if (!paperFullResCanvas) return;
+  const w = paperFullResCanvas.width;
+  const h = paperFullResCanvas.height;
   const maxDisplayW = 720;
   const dispW = Math.min(maxDisplayW, w);
   const dispH = Math.round((dispW / w) * h);
   paperPreview.width = dispW;
   paperPreview.height = dispH;
   paperDisplayScale = w / dispW;
+}
 
-  paperClicks = [];
-  paperPreviewWrap.style.display = "";
-  paperResetBtn.style.display = "";
-  paperConfirmBtn.style.display = "none";
+function scanPaperCorners() {
+  if (!paperFullResCanvas) return;
   paperStatus.textContent = "Looking for corner marks\u2026";
-  openExpertMode();
-  redrawPaperPreview();
-
-  // Defer so the status line can paint before the (synchronous) scan.
   setTimeout(() => {
+    const w = paperFullResCanvas.width;
+    const h = paperFullResCanvas.height;
     const ctx = paperFullResCanvas.getContext("2d");
-    const imageData = ctx.getImageData(0, 0, w, h);
-    const marks = findCornerMarks(imageData, w, h);
+    const marks = findCornerMarks(ctx.getImageData(0, 0, w, h), w, h);
     if (marks) {
       paperClicks = marks;
       paperConfirmBtn.style.display = "";
@@ -1735,6 +1767,30 @@ function loadPaperSource(drawable, w, h) {
       paperStatus.textContent = paperStatusText();
     }
   }, 10);
+}
+
+function rotateCanvas90(src, clockwise) {
+  const sw = src.width, sh = src.height;
+  const dest = document.createElement("canvas");
+  dest.width = sh;
+  dest.height = sw;
+  const ctx = dest.getContext("2d");
+  ctx.translate(dest.width / 2, dest.height / 2);
+  ctx.rotate((clockwise ? 1 : -1) * Math.PI / 2);
+  ctx.drawImage(src, -sw / 2, -sh / 2);
+  return dest;
+}
+
+function rotatePaper(clockwise) {
+  if (!paperFullResCanvas) return;
+  openExpertMode();
+  paperFullResCanvas = rotateCanvas90(paperFullResCanvas, clockwise);
+  paperClicks = [];
+  paperConfirmBtn.style.display = "none";
+  sizePaperPreview();
+  redrawPaperPreview();
+  showImportPreview(paperFullResCanvas);
+  scanPaperCorners();
 }
 
 // ---- camera capture ----
@@ -1809,6 +1865,19 @@ paperResetBtn.onclick = () => {
 paperConfirmBtn.onclick = () => {
   runPaperImport();
 };
+
+function bindPaperRotate(id, clockwise) {
+  const btn = id instanceof HTMLElement ? id : document.getElementById(id);
+  if (!btn) return;
+  btn.onclick = () => {
+    if (!paperFullResCanvas) return;
+    rotatePaper(clockwise);
+  };
+}
+bindPaperRotate(paperRotateLeftBtn, false);
+bindPaperRotate(paperRotateRightBtn, true);
+bindPaperRotate("previewRotateLeft", false);
+bindPaperRotate("previewRotateRight", true);
 
 function importPaperScore() {
   const destCorners = [
