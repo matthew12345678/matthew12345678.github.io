@@ -1550,10 +1550,32 @@ const paperPreviewCtx = paperPreview.getContext("2d");
 
 let paperFullResCanvas = null; // full-resolution copy of the uploaded photo
 let paperDisplayScale = 1;     // full-res pixels per displayed (CSS) pixel
-let paperClicks = [];          // clicked corners, in full-res photo pixel coords
+let paperClicks = [];          // 4 corner marks; stored TL→TR→BR→BL once complete
+
+// Turn 4 unordered corner taps into a rectangle: top-left, top-right,
+// bottom-right, bottom-left. Uses x+y / x-y so a tilted photo still works.
+function orderRectCorners(pts) {
+  if (pts.length !== 4) return pts.slice();
+  let tl = pts[0], tr = pts[0], br = pts[0], bl = pts[0];
+  for (const p of pts) {
+    if (p.x + p.y < tl.x + tl.y) tl = p;
+    if (p.x + p.y > br.x + br.y) br = p;
+    if (p.x - p.y > tr.x - tr.y) tr = p;
+    if (p.x - p.y < bl.x - bl.y) bl = p;
+  }
+  const ordered = [tl, tr, br, bl];
+  const ids = new Set(ordered);
+  if (ids.size === 4) return ordered;
+  // Degenerate: fall back to top/bottom pair then left/right.
+  const byY = pts.slice().sort((a, b) => a.y - b.y);
+  const top = byY.slice(0, 2).sort((a, b) => a.x - b.x);
+  const bot = byY.slice(2).sort((a, b) => a.x - b.x);
+  return [top[0], top[1], bot[1], bot[0]];
+}
 
 function redrawPaperPreview() {
   paperPreviewCtx.drawImage(paperFullResCanvas, 0, 0, paperPreview.width, paperPreview.height);
+  const labels = paperClicks.length === 4 ? ["TL", "TR", "BR", "BL"] : null;
   paperClicks.forEach((pt, i) => {
     const dx = pt.x / paperDisplayScale;
     const dy = pt.y / paperDisplayScale;
@@ -1564,15 +1586,15 @@ function redrawPaperPreview() {
     paperPreviewCtx.stroke();
     paperPreviewCtx.fillStyle = "#00ff99";
     paperPreviewCtx.font = "14px monospace";
-    paperPreviewCtx.fillText(String(i + 1), dx + 10, dy - 10);
+    paperPreviewCtx.fillText(labels ? labels[i] : String(i + 1), dx + 10, dy - 10);
   });
 }
 
 function paperStatusText() {
   if (paperClicks.length < 4) {
-    return `Tap the ${PAPER.cornerOrder[paperClicks.length]} corner mark (${paperClicks.length + 1} of 4)`;
+    return `Tap the 4 corner marks, in any order (${paperClicks.length} of 4)`;
   }
-  return "All 4 corners marked — click Import.";
+  return "All 4 corners marked — importing.";
 }
 
 // Find the 4 nested-square registration marks (solid black centre + concentric
@@ -1685,7 +1707,7 @@ function findCornerMarks(imageData, width, height) {
 
   const found = regions.map(findInRegion);
   if (found.some(p => !p)) return null;
-  return found.map(p => ({ x: p.x, y: p.y }));
+  return orderRectCorners(found.map(p => ({ x: p.x, y: p.y })));
 }
 
 function runPaperImport() {
@@ -1848,9 +1870,17 @@ paperPreview.onclick = (e) => {
   const cssX = (e.clientX - rect.left) * (paperPreview.width / rect.width);
   const cssY = (e.clientY - rect.top) * (paperPreview.height / rect.height);
   paperClicks.push({ x: cssX * paperDisplayScale, y: cssY * paperDisplayScale });
-  redrawPaperPreview();
-  paperStatus.textContent = paperStatusText();
-  paperConfirmBtn.style.display = paperClicks.length === 4 ? "" : "none";
+  if (paperClicks.length === 4) {
+    paperClicks = orderRectCorners(paperClicks);
+    paperConfirmBtn.style.display = "";
+    redrawPaperPreview();
+    paperStatus.textContent = "Corners set — importing\u2026";
+    runPaperImport();
+  } else {
+    redrawPaperPreview();
+    paperStatus.textContent = paperStatusText();
+    paperConfirmBtn.style.display = "none";
+  }
 };
 
 paperResetBtn.onclick = () => {
@@ -1887,7 +1917,7 @@ function importPaperScore() {
     { x: 0, y: RECT_H },
   ];
   // Mapping DEST (rectified canvas) -> SRC (photo pixels), so we can sample per dest pixel.
-  const H = computeHomography(destCorners, paperClicks);
+  const H = computeHomography(destCorners, orderRectCorners(paperClicks));
 
   const srcW = paperFullResCanvas.width;
   const srcH = paperFullResCanvas.height;
